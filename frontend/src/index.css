@@ -1,0 +1,455 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #173055;
+  background:
+    radial-gradient(circle at top left, rgba(21, 51, 91, 0.16), transparent 26%),
+    linear-gradient(180deg, #f4f7fb 0%, #edf2f8 100%);
+  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.bg-app {
+  background:
+    radial-gradient(circle at top left, rgba(29, 78, 137, 0.1), transparent 24%),
+    linear-gradient(180deg, #f4f7fb 0%, #edf2f8 100%);
+}
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  height: 76px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  background: #15335b;
+  box-shadow: 0 16px 40px rgba(21, 51, 91, 0.18);
+}
+
+.app-logo {
+  display: flex;
+  height: 44px;
+  width: 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 18px;
+}
+
+.admin-nav {
+  min-width: 0;
+  flex: 1;
+  justify-content: center;
+  border-bottom: none !important;
+  background: transparent !important;
+}
+
+.admin-nav .ant-menu-item,
+.admin-nav .ant-menu-submenu-title,
+.admin-nav .ant-menu-title-content {
+  cursor: pointer !important;
+}
+
+.admin-nav .ant-menu-item * {
+  cursor: pointer !important;
+}
+
+.page-header {
+  margin-bottom: 20px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.page-header-text {
+  max-width: 780px;
+  color: #64748b;
+}
+
+.app-card {
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.06);
+}
+
+.dashboard-panel-card {
+  height: 100%;
+}
+
+.dashboard-panel-card .ant-card-body {
+  display: flex;
+  min-height: 320px;
+  flex-direction: column;
+}
+
+.pipeline-card {
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+}
+
+.pipeline-meta-panel {
+  margin-bottom: 18px;
+  border-radius: 18px;
+  background: #f6f8fb;
+  padding: 16px;
+}
+
+.pipeline-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.pipeline-icon {
+  display: flex;
+  height: 44px;
+  width: 44px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  font-size: 20px;
+}
+
+.pipeline-icon--generic {
+  color: #475569;
+}
+
+.pipeline-icon-image {
+  display: block;
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 4px rgba(148, 163, 184, 0.12);
+}
+
+.status-dot--pending {
+  background: #94a3b8;
+}
+
+.status-dot--running {
+  background: #2563eb;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.14);
+}
+
+.status-dot--stopped {
+  background: #f59e0b;
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.14);
+}
+
+.status-dot--success {
+  background: #16a34a;
+  box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.14);
+}
+
+.status-dot--failed {
+  background: #dc2626;
+  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.14);
+}
+
+.log-viewer {
+  width: 100%;
+  overflow: auto;
+  border-radius: 16px;
+  background: #08111f;
+  padding: 18px;
+  color: #a7f3d0;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
+}
+
+.log-line {
+  min-height: 1.6em;
+}
+
+.log-line-error {
+  color: #fca5a5;
+  background: rgba(127, 29, 29, 0.24);
+  border-radius: 8px;
+  padding: 0 6px;
+}
+
+.template-script-preview {
+  max-height: 260px;
+  overflow: auto;
+  border-radius: 14px;
+  background: #08111f;
+  padding: 16px;
+  color: #dbeafe;
+  font-size: 12px;
+}
+
+.table-code-preview {
+  max-width: 280px;
+  max-height: 140px;
+  overflow: auto;
+  margin: 0;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 10px 12px;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.variable-editor .ant-form-item {
+  margin-bottom: 12px;
+}
+
+.variable-empty {
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  padding: 14px;
+  color: #94a3b8;
+  text-align: center;
+}
+
+.variable-row {
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 16px;
+  background: #fbfdff;
+}
+
+.variable-row-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.empty-pane {
+  padding: 30px 0;
+}
+
+.dashboard-recent-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dashboard-recent-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 14px 16px;
+  background: #f8fbff;
+}
+
+.dashboard-recent-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.dashboard-recent-meta {
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.dashboard-recent-side {
+  flex-shrink: 0;
+  text-align: right;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.dashboard-stat-card .ant-statistic {
+  position: relative;
+}
+
+.dashboard-circle-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.dashboard-status-legend {
+  flex: 1;
+}
+
+.dashboard-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid #e2e8f0;
+  color: #64748b;
+}
+
+.dashboard-bar-chart {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 14px;
+  align-items: end;
+  min-height: 240px;
+}
+
+.dashboard-bar-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.dashboard-bar-stack {
+  position: relative;
+  display: flex;
+  width: 100%;
+  max-width: 44px;
+  min-height: 160px;
+  align-items: flex-end;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #eef3f8 0%, #dbe6f1 100%);
+  overflow: hidden;
+}
+
+.dashboard-bar-fill {
+  width: 100%;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #7dd3fc 0%, #2563eb 100%);
+}
+
+.dashboard-bar-success {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  background: linear-gradient(180deg, rgba(74, 222, 128, 0.7) 0%, #16a34a 100%);
+}
+
+.dashboard-bar-label {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.dashboard-bar-value {
+  color: #173055;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.dashboard-recent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dashboard-recent-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 18px;
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  background: #f8fbff;
+}
+
+.dashboard-recent-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+  color: #173055;
+  font-weight: 600;
+}
+
+.dashboard-recent-meta {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.dashboard-recent-side {
+  color: #64748b;
+  font-size: 13px;
+  text-align: right;
+}
+
+@media (max-width: 960px) {
+  .app-header {
+    height: auto;
+    flex-direction: column;
+    align-items: stretch;
+    padding-top: 16px;
+    padding-bottom: 16px;
+  }
+
+  .admin-nav {
+    justify-content: flex-start;
+  }
+
+  .page-header {
+    flex-direction: column;
+  }
+
+  .dashboard-circle-wrap {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .dashboard-recent-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .dashboard-recent-side {
+    text-align: left;
+  }
+}

@@ -1,0 +1,36 @@
+type LogViewerProps = {
+  /** 原始日志内容。 */
+  content: string;
+  /** 日志区域最大高度，超出后内部滚动。 */
+  maxHeight?: number;
+};
+
+/**
+ * 日志查看器。
+ * 负责高亮错误行，并把页面滚动限制在日志容器内部。
+ */
+export default function LogViewer({ content, maxHeight = 360 }: LogViewerProps) {
+  const lines = (content || '暂无日志输出。').split('\n');
+
+  return (
+    <div
+      className="log-viewer"
+      style={{ maxHeight }}
+    >
+      {lines.map((line, index) => {
+        const lowerLine = line.toLowerCase();
+        // 这里优先照顾运维排查体验，对常见错误关键词做红色高亮。
+        const isErrorLine = /(error|failed|fatal|exception|denied|refused|timed out|认证失败|失败|报错|错误)/.test(lowerLine);
+
+        return (
+          <div
+            key={`${index}-${line}`}
+            className={isErrorLine ? 'log-line log-line-error' : 'log-line'}
+          >
+            {line || ' '}
+          </div>
+        );
+      })}
+    </div>
+  );
+}

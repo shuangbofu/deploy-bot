@@ -1,0 +1,153 @@
+import type {
+  DeploymentSummary,
+  HostConnectionTestResult,
+  HostResourceSnapshot,
+  HostSummary,
+  PipelineSummary,
+  ProjectSummary,
+  RuntimeEnvironmentSummary,
+  ServiceSummary,
+  TemplateSummary,
+} from '../types/domain';
+
+/**
+ * 项目表单请求体。
+ */
+export interface ProjectPayload {
+  name: string;
+  description: string;
+  gitUrl: string;
+  gitAuthType: 'NONE' | 'BASIC' | 'SSH';
+  gitUsername: string;
+  gitPassword: string;
+}
+
+/**
+ * 模板表单请求体。
+ */
+export interface TemplatePayload {
+  name: string;
+  description: string;
+  templateType?: string;
+  buildScriptContent?: string;
+  deployScriptContent?: string;
+  variablesSchema: string;
+  monitorProcess?: boolean;
+}
+
+/**
+ * 流水线表单请求体。
+ */
+export interface PipelinePayload {
+  name: string;
+  description: string;
+  projectId?: number;
+  templateId?: number;
+  targetHostId?: number;
+  defaultBranch: string;
+  variablesJson: string;
+  javaEnvironmentId?: number;
+  nodeEnvironmentId?: number;
+  mavenEnvironmentId?: number;
+}
+
+/**
+ * 主机表单请求体。
+ */
+export interface HostPayload {
+  name: string;
+  type: 'LOCAL' | 'SSH';
+  description: string;
+  hostname: string;
+  port: number;
+  username: string;
+  sshAuthType: 'PASSWORD' | 'PRIVATE_KEY' | 'SYSTEM_KEY_PAIR';
+  sshPassword: string;
+  sshPrivateKey: string;
+  sshPassphrase: string;
+  workspaceRoot: string;
+  sshKnownHosts: string;
+  enabled: boolean;
+}
+
+/**
+ * 运行环境表单请求体。
+ */
+export interface RuntimeEnvironmentPayload {
+  name: string;
+  type: 'JAVA' | 'NODE' | 'MAVEN';
+  hostId?: number;
+  version: string;
+  homePath: string;
+  binPath: string;
+  activationScript: string;
+  environmentJson: string;
+  enabled: boolean;
+}
+
+/**
+ * 部署创建请求体。
+ */
+export interface DeploymentPayload {
+  pipelineId: number;
+  branchName?: string;
+  triggeredBy: string;
+  replaceRunning: boolean;
+}
+
+/**
+ * 系统设置表单请求体。
+ */
+export interface SystemSettingsPayload {
+  gitExecutable: string;
+  gitSshPublicKey?: string;
+  gitSshKnownHosts?: string;
+  hostSshPublicKey?: string;
+}
+
+export interface LogResponse {
+  content: string;
+}
+
+export interface DetectionItem {
+  name: string;
+  type: 'JAVA' | 'NODE' | 'MAVEN';
+  version: string;
+  homePath?: string;
+  binPath?: string;
+}
+
+export interface PresetItem {
+  id: string;
+  name: string;
+  type: 'JAVA' | 'NODE' | 'MAVEN';
+  version: string;
+  description: string;
+  downloadUrl: string;
+  homePath: string;
+  binPath: string;
+}
+
+export interface RuntimeEnvironmentInstallPayload {
+  presetId: string;
+  hostId: number;
+}
+
+export interface SystemSettingsResponse {
+  gitExecutable?: string;
+  gitSshPublicKey?: string;
+  gitSshKnownHosts?: string;
+  hostSshPublicKey?: string;
+}
+
+export type {
+  DeploymentSummary,
+  HostConnectionTestResult,
+  HostResourceSnapshot,
+  HostSummary,
+  PipelineSummary,
+  ProjectSummary,
+  RuntimeEnvironmentSummary,
+  ServiceSummary,
+  TemplateSummary,
+};

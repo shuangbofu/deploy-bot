@@ -1,0 +1,62 @@
+[
+  {
+    "id": "java-8",
+    "name": "Temurin Java 8",
+    "type": "JAVA",
+    "version": "8",
+    "description": "Eclipse Temurin JDK 8，适合仍依赖 Java 8 的项目。",
+    "downloadUrlTemplate": "https://api.adoptium.net/v3/binary/latest/8/ga/${os}/${arch}/jdk/hotspot/normal/eclipse",
+    "homePathTemplate": "${installRoot}/tools/java-8",
+    "binPathTemplate": "${installRoot}/tools/java-8/bin"
+  },
+  {
+    "id": "java-17",
+    "name": "Temurin Java 17",
+    "type": "JAVA",
+    "version": "17",
+    "description": "Eclipse Temurin JDK 17，适合主流 Spring Boot / Java 17 项目。",
+    "downloadUrlTemplate": "https://api.adoptium.net/v3/binary/latest/17/ga/${os}/${arch}/jdk/hotspot/normal/eclipse",
+    "homePathTemplate": "${installRoot}/tools/java-17",
+    "binPathTemplate": "${installRoot}/tools/java-17/bin"
+  },
+  {
+    "id": "node-16",
+    "name": "Node.js 16",
+    "type": "NODE",
+    "version": "16.20.2",
+    "description": "Node.js 16，适合较老的前端项目。",
+    "downloadUrlTemplate": "https://nodejs.org/dist/v16.20.2/node-v16.20.2-${nodePlatform}-${nodeArch}.${nodeArchiveExtension}",
+    "homePathTemplate": "${installRoot}/tools/node-16",
+    "binPathTemplate": "${installRoot}/tools/node-16/bin"
+  },
+  {
+    "id": "node-18",
+    "name": "Node.js 18",
+    "type": "NODE",
+    "version": "18.20.8",
+    "description": "Node.js 18，适合不少存量 React / Vue 项目。",
+    "downloadUrlTemplate": "https://nodejs.org/dist/v18.20.8/node-v18.20.8-${nodePlatform}-${nodeArch}.${nodeArchiveExtension}",
+    "homePathTemplate": "${installRoot}/tools/node-18",
+    "binPathTemplate": "${installRoot}/tools/node-18/bin"
+  },
+  {
+    "id": "node-20",
+    "name": "Node.js 20",
+    "type": "NODE",
+    "version": "20.20.1",
+    "description": "Node.js 20，适合较新的前端项目。",
+    "downloadUrlTemplate": "https://nodejs.org/dist/v20.20.1/node-v20.20.1-${nodePlatform}-${nodeArch}.${nodeArchiveExtension}",
+    "homePathTemplate": "${installRoot}/tools/node-20",
+    "binPathTemplate": "${installRoot}/tools/node-20/bin"
+  },
+  {
+    "id": "maven-3.9.14",
+    "name": "Apache Maven 3.9.14",
+    "type": "MAVEN",
+    "version": "3.9.14",
+    "description": "Apache Maven 3.9 系列当前推荐版本。",
+    "downloadUrlTemplate": "https://dlcdn.apache.org/maven/maven-3/3.9.14/binaries/apache-maven-3.9.14-bin.tar.gz",
+    "homePathTemplate": "${installRoot}/tools/maven-3.9.14",
+    "binPathTemplate": "${installRoot}/tools/maven-3.9.14/bin"
+  }
+]

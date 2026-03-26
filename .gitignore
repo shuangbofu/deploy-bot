@@ -1,0 +1,9 @@
+backend/target/
+frontend/node_modules/
+frontend/dist/
+runtime/
+.idea/
+.env
+.env.*
+*.log
+.DS_Store

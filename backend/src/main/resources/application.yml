@@ -1,0 +1,31 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:h2:file:./runtime/deploy-bot-db
+    username: sa
+    password:
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+
+deploybot:
+  workspace-root: ./runtime
+  runtime-environment-presets: classpath:runtime-environment-presets.json
+  default-templates: classpath:default-templates.json
+
+logging:
+  file:
+    name: ./runtime/logs/deploy-bot-app.log
+  level:
+    root: INFO
+    top.fusb.deploybot: INFO

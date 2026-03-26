@@ -1,0 +1,38 @@
+[
+  {
+    "name": "Spring Boot Jar 部署",
+    "description": "在本机拉取并构建 Spring Boot Jar，再发布到目标主机或本机目录并启动受管进程。",
+    "templateType": "springboot",
+    "buildScriptContent": "#!/usr/bin/env bash\nset -e\nexport PS4='+ $(date \"+%Y-%m-%d %H:%M:%S\") '\nset -x\nWORKSPACE=\"{{workspaceRoot}}/runs/{{deploymentId}}\"\necho \"[步骤 1/5] 准备本机工作目录：$WORKSPACE\"\nrm -rf \"$WORKSPACE\"\nmkdir -p \"$WORKSPACE\"\necho \"[步骤 2/5] 拉取代码：分支={{branch}} 仓库={{gitUrl}}\"\ngit clone --depth=1 --branch \"{{branch}}\" \"{{gitUrl}}\" \"$WORKSPACE\"\necho \"[步骤 3/5] 进入项目目录并开始构建\"\ncd \"$WORKSPACE\"\n{{buildCommand}}\necho \"[步骤 4/5] 准备构建产物目录：{{artifactDir}}\"\nmkdir -p \"{{artifactDir}}\"\necho \"[步骤 5/5] 复制 Jar 到构建产物目录\"\ncp \"{{jarPath}}\" \"{{artifactDir}}/app.jar\"\necho \"[完成] 本机构建完成\"\n",
+    "deployScriptContent": "#!/usr/bin/env bash\nset -e\nexport PS4='+ $(date \"+%Y-%m-%d %H:%M:%S\") '\nset -x\necho \"[步骤 1/4] 准备部署目录：{{targetDir}}\"\nmkdir -p \"{{targetDir}}\"\necho \"[步骤 2/4] 发布 Jar：{{artifactDir}}/app.jar -> {{targetDir}}/app.jar\"\ncp \"{{artifactDir}}/app.jar\" \"{{targetDir}}/app.jar\"\necho \"[步骤 3/4] 停止旧进程（如果存在）\"\npkill -f \"{{targetDir}}/app.jar\" || true\necho \"[步骤 4/4] 启动新进程\"\ncd \"{{targetDir}}\"\nbash -lc '{{startCommand}}'\nif [ -n \"{{pidFilePath}}\" ]; then\n  echo \"[附加信息] 记录进程 PID 到 {{pidFilePath}}\"\n  pgrep -f \"{{targetDir}}/app.jar\" | head -n 1 > \"{{pidFilePath}}\"\nfi\necho \"[完成] Spring Boot 应用部署完成\"\n",
+    "variablesSchema": "[\n  {\n    \"name\": \"targetDir\",\n    \"label\": \"部署目录\",\n    \"placeholder\": \"/opt/apps/your-app\",\n    \"required\": true,\n    \"phase\": \"deploy\"\n  },\n  {\n    \"name\": \"buildCommand\",\n    \"label\": \"构建命令\",\n    \"placeholder\": \"mvn -U clean package -DskipTests\",\n    \"required\": true,\n    \"phase\": \"build\"\n  },\n  {\n    \"name\": \"jarPath\",\n    \"label\": \"Jar 路径\",\n    \"placeholder\": \"target/app.jar\",\n    \"required\": true,\n    \"phase\": \"build\"\n  },\n  {\n    \"name\": \"startCommand\",\n    \"label\": \"启动命令\",\n    \"placeholder\": \"nohup java -jar app.jar > app.log 2>&1 &\",\n    \"required\": true,\n    \"phase\": \"deploy\"\n  }\n]",
+    "monitorProcess": true
+  },
+  {
+    "name": "React 静态站点部署",
+    "description": "在本机构建 React 项目，再将静态产物发布到目标主机或本机目录。",
+    "templateType": "react",
+    "buildScriptContent": "#!/usr/bin/env bash\nset -e\nset -x\nWORKSPACE=\"{{workspaceRoot}}/runs/{{deploymentId}}\"\necho \"[步骤 1/4] 准备本机工作目录\"\nrm -rf \"$WORKSPACE\"\necho \"[步骤 2/4] 拉取代码并切换分支\"\ngit clone --depth=1 --branch \"{{branch}}\" \"{{gitUrl}}\" \"$WORKSPACE\"\ncd \"$WORKSPACE\"\necho \"[步骤 3/4] 执行前端构建\"\n{{buildCommand}}\necho \"[步骤 4/4] 收集静态产物\"\nmkdir -p \"{{artifactDir}}\"\nrsync -a --delete \"$WORKSPACE/{{distDir}}/\" \"{{artifactDir}}/\"\n",
+    "deployScriptContent": "#!/usr/bin/env bash\nset -e\nset -x\necho \"[步骤 1/2] 准备部署目录\"\nmkdir -p \"{{targetDir}}\"\necho \"[步骤 2/2] 发布静态资源\"\nrsync -a --delete \"{{artifactDir}}/\" \"{{targetDir}}/\"\n",
+    "variablesSchema": "[{\"name\":\"targetDir\",\"label\":\"部署目录\",\"placeholder\":\"/data/www/react-app\",\"required\":true,\"phase\":\"deploy\"},{\"name\":\"buildCommand\",\"label\":\"构建命令\",\"placeholder\":\"npm ci --cache {{buildWorkspaceRoot}}/caches/npm --prefer-offline && npm run build\",\"required\":true,\"phase\":\"build\"},{\"name\":\"distDir\",\"label\":\"产物目录\",\"placeholder\":\"dist\",\"required\":true,\"phase\":\"shared\"}]",
+    "monitorProcess": false
+  },
+  {
+    "name": "Vue 静态站点部署",
+    "description": "在本机构建 Vue 项目，再将静态产物发布到目标主机或本机目录。",
+    "templateType": "vue",
+    "buildScriptContent": "#!/usr/bin/env bash\nset -e\nset -x\nWORKSPACE=\"{{workspaceRoot}}/runs/{{deploymentId}}\"\necho \"[步骤 1/4] 准备本机工作目录\"\nrm -rf \"$WORKSPACE\"\necho \"[步骤 2/4] 拉取代码并切换分支\"\ngit clone --depth=1 --branch \"{{branch}}\" \"{{gitUrl}}\" \"$WORKSPACE\"\ncd \"$WORKSPACE\"\necho \"[步骤 3/4] 执行前端构建\"\n{{buildCommand}}\necho \"[步骤 4/4] 收集静态产物\"\nmkdir -p \"{{artifactDir}}\"\nrsync -a --delete \"$WORKSPACE/{{distDir}}/\" \"{{artifactDir}}/\"\n",
+    "deployScriptContent": "#!/usr/bin/env bash\nset -e\nset -x\necho \"[步骤 1/2] 准备部署目录\"\nmkdir -p \"{{targetDir}}\"\necho \"[步骤 2/2] 发布静态资源\"\nrsync -a --delete \"{{artifactDir}}/\" \"{{targetDir}}/\"\n",
+    "variablesSchema": "[{\"name\":\"buildCommand\",\"label\":\"构建命令\",\"placeholder\":\"npm ci --cache {{buildWorkspaceRoot}}/caches/npm --prefer-offline && npm run build\",\"required\":true,\"phase\":\"build\"},{\"name\":\"distDir\",\"label\":\"产物目录\",\"placeholder\":\"dist\",\"required\":true,\"phase\":\"build\"},{\"name\":\"targetDir\",\"label\":\"部署目录\",\"placeholder\":\"/data/www/vue-app\",\"required\":true,\"phase\":\"deploy\"}]",
+    "monitorProcess": false
+  },
+  {
+    "name": "Spring Boot 前后端一体部署",
+    "description": "在本机完成前端构建与后端打包，再把 Jar 发布到目标主机或本机目录。",
+    "templateType": "springboot_frontend",
+    "buildScriptContent": "#!/usr/bin/env bash\nset -e\nexport PS4='+ $(date \"+%Y-%m-%d %H:%M:%S\") '\nset -x\nWORKSPACE=\"{{workspaceRoot}}/runs/{{deploymentId}}\"\necho \"[步骤 1/7] 准备本机工作目录：$WORKSPACE\"\nrm -rf \"$WORKSPACE\"\nmkdir -p \"$WORKSPACE\"\necho \"[步骤 2/7] 拉取代码：分支={{branch}} 仓库={{gitUrl}}\"\ngit clone --depth=1 --branch \"{{branch}}\" \"{{gitUrl}}\" \"$WORKSPACE\"\necho \"[步骤 3/7] 构建前端工程：{{frontendDir}}\"\ncd \"$WORKSPACE/{{frontendDir}}\"\n{{frontendBuildCommand}}\necho \"[步骤 4/7] 同步前端产物到后端 static\"\nrm -rf \"$WORKSPACE/{{backendDir}}/src/main/resources/static\"\nmkdir -p \"$WORKSPACE/{{backendDir}}/src/main/resources/static\"\ncp -R \"$WORKSPACE/{{frontendDir}}/{{distDir}}/.\" \"$WORKSPACE/{{backendDir}}/src/main/resources/static/\"\necho \"[步骤 5/7] 构建后端工程：{{backendDir}}\"\ncd \"$WORKSPACE/{{backendDir}}\"\n{{backendBuildCommand}}\necho \"[步骤 6/7] 准备构建产物目录：{{artifactDir}}\"\nmkdir -p \"{{artifactDir}}\"\necho \"[步骤 7/7] 复制 Jar 到构建产物目录\"\ncp \"{{jarPath}}\" \"{{artifactDir}}/app.jar\"\necho \"[完成] 前后端一体项目构建完成\"\n",
+    "deployScriptContent": "#!/usr/bin/env bash\nset -e\nexport PS4='+ $(date \"+%Y-%m-%d %H:%M:%S\") '\nset -x\necho \"[步骤 1/4] 准备部署目录：{{targetDir}}\"\nmkdir -p \"{{targetDir}}\"\necho \"[步骤 2/4] 发布 Jar：{{artifactDir}}/app.jar -> {{targetDir}}/app.jar\"\ncp \"{{artifactDir}}/app.jar\" \"{{targetDir}}/app.jar\"\necho \"[步骤 3/4] 停止旧进程（如果存在）\"\npkill -f \"{{targetDir}}/app.jar\" || true\necho \"[步骤 4/4] 启动新进程\"\ncd \"{{targetDir}}\"\nbash -lc '{{startCommand}}'\nif [ -n \"{{pidFilePath}}\" ]; then\n  echo \"[附加信息] 记录进程 PID 到 {{pidFilePath}}\"\n  pgrep -f \"{{targetDir}}/app.jar\" | head -n 1 > \"{{pidFilePath}}\"\nfi\necho \"[完成] Spring Boot 前后端一体部署完成\"\n",
+    "variablesSchema": "[{\"name\":\"frontendDir\",\"label\":\"前端目录\",\"required\":true,\"placeholder\":\"web\",\"phase\":\"build\"},{\"name\":\"backendDir\",\"label\":\"后端目录\",\"required\":true,\"placeholder\":\"server\",\"phase\":\"build\"},{\"name\":\"distDir\",\"label\":\"前端产物目录\",\"required\":true,\"placeholder\":\"dist\",\"phase\":\"build\"},{\"name\":\"frontendBuildCommand\",\"label\":\"前端构建命令\",\"required\":true,\"placeholder\":\"npm ci --cache {{buildWorkspaceRoot}}/caches/npm --prefer-offline && npm run build\",\"phase\":\"build\"},{\"name\":\"backendBuildCommand\",\"label\":\"后端构建命令\",\"required\":true,\"placeholder\":\"mvn -U clean package -DskipTests\",\"phase\":\"build\"},{\"name\":\"jarPath\",\"label\":\"Jar 路径\",\"required\":true,\"placeholder\":\"target/app.jar\",\"phase\":\"build\"},{\"name\":\"targetDir\",\"label\":\"部署目录\",\"required\":true,\"placeholder\":\"/opt/apps/fullstack-app\",\"phase\":\"deploy\"},{\"name\":\"startCommand\",\"label\":\"启动命令\",\"required\":true,\"placeholder\":\"nohup java -jar app.jar > app.log 2>&1 &\",\"phase\":\"deploy\"}]",
+    "monitorProcess": true
+  }
+]

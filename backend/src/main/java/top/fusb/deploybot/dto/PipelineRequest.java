@@ -1,0 +1,31 @@
+package top.fusb.deploybot.dto;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+
+/**
+ * 流水线新增或编辑请求体。
+ */
+public record PipelineRequest(
+        /** 流水线名称。 */
+        @NotBlank String name,
+        /** 流水线说明。 */
+        String description,
+        /** 关联项目 ID。 */
+        @NotNull Long projectId,
+        /** 关联模板 ID。 */
+        @NotNull Long templateId,
+        /** 目标主机 ID。 */
+        @NotNull Long targetHostId,
+        /** 默认分支。 */
+        @NotBlank String defaultBranch,
+        /** 默认变量 JSON。 */
+        String variablesJson,
+        /** 本机构建 Java 环境 ID。 */
+        Long javaEnvironmentId,
+        /** 本机构建 Node 环境 ID。 */
+        Long nodeEnvironmentId,
+        /** 本机构建 Maven 环境 ID。 */
+        Long mavenEnvironmentId
+) {
+}
