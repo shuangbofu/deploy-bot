@@ -36,6 +36,7 @@ interface DashboardData {
  * 这里主要解决“当前系统整体运转得怎么样”这个问题。
  */
 export default function AdminDashboardPage() {
+  const [loading, setLoading] = useState(false);
   const [data, setData] = useState<DashboardData>({
     projects: [],
     templates: [],
@@ -48,31 +49,36 @@ export default function AdminDashboardPage() {
 
   /** 并行加载控制台所需的全部统计数据。 */
   const load = async () => {
-    const [projects, templates, pipelines, deployments, hosts, services] = await Promise.all([
-      projectsApi.list(),
-      templatesApi.list(),
-      pipelinesApi.list(),
-      deploymentsApi.list(),
-      hostsApi.list(),
-      servicesApi.list(),
-    ]);
-    const resources = await Promise.all(
-      hosts.map((host) => hostsApi.previewResources(host.id).catch(() => ({
-        hostId: host.id,
-        hostName: host.name,
-        workspaceRoot: host.workspaceRoot,
-        preview: '资源采集失败',
-      } as HostResourceSnapshot))),
-    );
-    setData({
-      projects,
-      templates,
-      pipelines,
-      deployments,
-      hosts,
-      services,
-      resources,
-    });
+    setLoading(true);
+    try {
+      const [projects, templates, pipelines, deployments, hosts, services] = await Promise.all([
+        projectsApi.list(),
+        templatesApi.list(),
+        pipelinesApi.list(),
+        deploymentsApi.list(),
+        hostsApi.list(),
+        servicesApi.list(),
+      ]);
+      const resources = await Promise.all(
+        hosts.map((host) => hostsApi.previewResources(host.id).catch(() => ({
+          hostId: host.id,
+          hostName: host.name,
+          workspaceRoot: host.workspaceRoot,
+          preview: '资源采集失败',
+        } as HostResourceSnapshot))),
+      );
+      setData({
+        projects,
+        templates,
+        pipelines,
+        deployments,
+        hosts,
+        services,
+        resources,
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -119,22 +125,22 @@ export default function AdminDashboardPage() {
 
       <Row gutter={[16, 16]}>
         <Col xs={24} md={12} xl={6}>
-          <Card className="app-card dashboard-stat-card">
+          <Card className="app-card dashboard-stat-card" loading={loading}>
             <Statistic title="项目数" value={stats.projects} prefix={<FireOutlined />} />
           </Card>
         </Col>
         <Col xs={24} md={12} xl={6}>
-          <Card className="app-card dashboard-stat-card">
+          <Card className="app-card dashboard-stat-card" loading={loading}>
             <Statistic title="模板数" value={stats.templates} prefix={<ClockCircleOutlined />} />
           </Card>
         </Col>
         <Col xs={24} md={12} xl={6}>
-          <Card className="app-card dashboard-stat-card">
+          <Card className="app-card dashboard-stat-card" loading={loading}>
             <Statistic title="流水线数" value={stats.pipelines} prefix={<FieldTimeOutlined />} />
           </Card>
         </Col>
         <Col xs={24} md={12} xl={6}>
-          <Card className="app-card dashboard-stat-card">
+          <Card className="app-card dashboard-stat-card" loading={loading}>
             <Statistic title="部署记录" value={stats.deployments} suffix="" prefix={<CheckCircleOutlined />} />
           </Card>
         </Col>
@@ -143,121 +149,8 @@ export default function AdminDashboardPage() {
       <div style={{ height: 16 }} />
 
       <Row gutter={[16, 16]}>
-        <Col xs={24} xl={8}>
-          <Card className="app-card" title="状态分布">
-            <div className="dashboard-circle-wrap">
-              <Progress
-                type="circle"
-                percent={stats.successRate}
-                strokeColor="#16a34a"
-                trailColor="#dbe5f0"
-                format={() => `${stats.successRate}%`}
-              />
-              <div className="dashboard-status-legend">
-                <div className="dashboard-status-row">
-                  <span>执行中</span>
-                  <strong>{stats.running}</strong>
-                </div>
-                <div className="dashboard-status-row">
-                  <span>失败</span>
-                  <strong>{stats.failed}</strong>
-                </div>
-                <div className="dashboard-status-row">
-                  <span>总记录</span>
-                  <strong>{stats.deployments}</strong>
-                </div>
-              </div>
-            </div>
-          </Card>
-        </Col>
-        <Col xs={24} xl={16}>
-          <Card className="app-card" title="近 7 天部署趋势">
-            <div className="dashboard-bar-chart">
-              {trend.map((item) => (
-                <div key={item.key} className="dashboard-bar-item">
-                  <div className="dashboard-bar-stack">
-                    <div
-                      className="dashboard-bar-fill"
-                      style={{ height: `${Math.max(10, (item.total / maxTrendValue) * 100)}%` }}
-                    />
-                    <div
-                      className="dashboard-bar-success"
-                      style={{ height: item.total ? `${(item.success / item.total) * 100}%` : '0%' }}
-                    />
-                  </div>
-                  <div className="dashboard-bar-label">{item.label}</div>
-                  <div className="dashboard-bar-value">{item.total}</div>
-                </div>
-              ))}
-            </div>
-          </Card>
-        </Col>
-      </Row>
-
-      <div style={{ height: 16 }} />
-
-      <Row gutter={[16, 16]}>
-        <Col xs={24} xl={16}>
-          <Card className="app-card dashboard-panel-card" title="最近部署">
-            {latestDeployments.length === 0 ? (
-              <Empty description="还没有部署记录。" />
-            ) : (
-              <div className="dashboard-recent-list">
-                {latestDeployments.map((item: DeploymentSummary) => (
-                  <div key={item.id} className="dashboard-recent-item">
-                    <div>
-                      <div className="dashboard-recent-title">
-                        <span>{item.pipeline?.name || `部署 #${item.id}`}</span>
-                        <StatusTag status={item.status} />
-                      </div>
-                      <div className="dashboard-recent-meta">
-                        {item.pipeline?.project?.name || '-'} · {item.branchName || '-'} · {item.triggeredBy || '-'}
-                      </div>
-                    </div>
-                    <div className="dashboard-recent-side">
-                      <div>{formatDateTime(item.createdAt)}</div>
-                      <div>#{item.id}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-        </Col>
-        <Col xs={24} xl={8}>
-          <Card className="app-card dashboard-panel-card" title="执行告警">
-            {attentionDeployments.length === 0 ? (
-              <Empty description="当前没有需要优先处理的部署。" />
-            ) : (
-              <div className="dashboard-recent-list">
-                {attentionDeployments.map((item: DeploymentSummary) => (
-                  <div key={item.id} className="dashboard-recent-item">
-                    <div>
-                      <div className="dashboard-recent-title">
-                        <span>{item.pipeline?.name || `部署 #${item.id}`}</span>
-                        <StatusTag status={item.status} />
-                      </div>
-                      <div className="dashboard-recent-meta">
-                        {item.pipeline?.project?.name || '-'} · {item.branchName || '-'}
-                      </div>
-                    </div>
-                    <div className="dashboard-recent-side">
-                      <div>{formatDateTime(item.createdAt)}</div>
-                      <div>#{item.id}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-        </Col>
-      </Row>
-
-      <div style={{ height: 16 }} />
-
-      <Row gutter={[16, 16]}>
         <Col xs={24} xl={14}>
-          <Card className="app-card dashboard-panel-card" title={`主机资源概览 · ${stats.hosts} 台`}>
+          <Card className="app-card dashboard-panel-card" title={`主机资源概览 · ${stats.hosts} 台`} loading={loading}>
             {data.resources.length === 0 ? (
               <Empty description="当前没有主机资源数据。" />
             ) : (
@@ -296,7 +189,7 @@ export default function AdminDashboardPage() {
           </Card>
         </Col>
         <Col xs={24} xl={10}>
-          <Card className="app-card dashboard-panel-card" title={`服务概况 · 运行中 ${stats.runningServices}`}>
+          <Card className="app-card dashboard-panel-card" title={`服务概况 · 运行中 ${stats.runningServices}`} loading={loading}>
             {data.services.length === 0 ? (
               <Empty description="当前没有受管服务。" />
             ) : (
@@ -323,6 +216,120 @@ export default function AdminDashboardPage() {
           </Card>
         </Col>
       </Row>
+
+      <div style={{ height: 16 }} />
+
+      <Row gutter={[16, 16]}>
+        <Col xs={24} xl={8}>
+          <Card className="app-card" title="状态分布" loading={loading}>
+            <div className="dashboard-circle-wrap">
+              <Progress
+                type="circle"
+                percent={stats.successRate}
+                strokeColor="#16a34a"
+                trailColor="#dbe5f0"
+                format={() => `${stats.successRate}%`}
+              />
+              <div className="dashboard-status-legend">
+                <div className="dashboard-status-row">
+                  <span>执行中</span>
+                  <strong>{stats.running}</strong>
+                </div>
+                <div className="dashboard-status-row">
+                  <span>失败</span>
+                  <strong>{stats.failed}</strong>
+                </div>
+                <div className="dashboard-status-row">
+                  <span>总记录</span>
+                  <strong>{stats.deployments}</strong>
+                </div>
+              </div>
+            </div>
+          </Card>
+        </Col>
+        <Col xs={24} xl={16}>
+          <Card className="app-card" title="近 7 天部署趋势" loading={loading}>
+            <div className="dashboard-bar-chart">
+              {trend.map((item) => (
+                <div key={item.key} className="dashboard-bar-item">
+                  <div className="dashboard-bar-stack">
+                    <div
+                      className="dashboard-bar-fill"
+                      style={{ height: `${Math.max(10, (item.total / maxTrendValue) * 100)}%` }}
+                    />
+                    <div
+                      className="dashboard-bar-success"
+                      style={{ height: item.total ? `${(item.success / item.total) * 100}%` : '0%' }}
+                    />
+                  </div>
+                  <div className="dashboard-bar-label">{item.label}</div>
+                  <div className="dashboard-bar-value">{item.total}</div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </Col>
+      </Row>
+
+      <div style={{ height: 16 }} />
+
+      <Row gutter={[16, 16]}>
+        <Col xs={24} xl={16}>
+          <Card className="app-card dashboard-panel-card" title="最近部署" loading={loading}>
+            {latestDeployments.length === 0 ? (
+              <Empty description="还没有部署记录。" />
+            ) : (
+              <div className="dashboard-recent-list">
+                {latestDeployments.map((item: DeploymentSummary) => (
+                  <div key={item.id} className="dashboard-recent-item">
+                    <div>
+                      <div className="dashboard-recent-title">
+                        <span>{item.pipeline?.name || `部署 #${item.id}`}</span>
+                        <StatusTag status={item.status} />
+                      </div>
+                      <div className="dashboard-recent-meta">
+                        {item.pipeline?.project?.name || '-'} · {item.branchName || '-'} · {item.triggeredBy || '-'}
+                      </div>
+                    </div>
+                    <div className="dashboard-recent-side">
+                      <div>{formatDateTime(item.createdAt)}</div>
+                      <div>#{item.id}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </Col>
+        <Col xs={24} xl={8}>
+          <Card className="app-card dashboard-panel-card" title="执行告警" loading={loading}>
+            {attentionDeployments.length === 0 ? (
+              <Empty description="当前没有需要优先处理的部署。" />
+            ) : (
+              <div className="dashboard-recent-list">
+                {attentionDeployments.map((item: DeploymentSummary) => (
+                  <div key={item.id} className="dashboard-recent-item">
+                    <div>
+                      <div className="dashboard-recent-title">
+                        <span>{item.pipeline?.name || `部署 #${item.id}`}</span>
+                        <StatusTag status={item.status} />
+                      </div>
+                      <div className="dashboard-recent-meta">
+                        {item.pipeline?.project?.name || '-'} · {item.branchName || '-'}
+                      </div>
+                    </div>
+                    <div className="dashboard-recent-side">
+                      <div>{formatDateTime(item.createdAt)}</div>
+                      <div>#{item.id}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </Col>
+      </Row>
+
     </>
   );
 }

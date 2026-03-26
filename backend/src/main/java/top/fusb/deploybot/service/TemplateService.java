@@ -1,6 +1,8 @@
 package top.fusb.deploybot.service;
 
 import top.fusb.deploybot.dto.TemplateRequest;
+import top.fusb.deploybot.exception.BusinessException;
+import top.fusb.deploybot.exception.ErrorSubCode;
 import top.fusb.deploybot.model.TemplateEntity;
 import top.fusb.deploybot.repo.TemplateRepository;
 import org.springframework.stereotype.Service;
@@ -21,19 +23,20 @@ public class TemplateService {
     }
 
     public TemplateEntity save(TemplateRequest request, Long id) {
-        TemplateEntity entity = id == null ? new TemplateEntity() : repository.findById(id).orElseThrow();
+        TemplateEntity entity = id == null ? new TemplateEntity() : repository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.TEMPLATE_NOT_FOUND));
         String name = request.name() == null ? "" : request.name().trim();
         if (name.isBlank()) {
-            throw new IllegalStateException("模板名称不能为空。");
+            throw new BusinessException(ErrorSubCode.TEMPLATE_NAME_REQUIRED);
         }
         String variablesSchema = request.variablesSchema() == null ? "" : request.variablesSchema().trim();
         if (variablesSchema.isBlank()) {
-            throw new IllegalStateException("模板变量定义不能为空。");
+            throw new BusinessException(ErrorSubCode.TEMPLATE_VARIABLES_REQUIRED);
         }
         String buildScript = normalizeScript(request.buildScriptContent());
         String deployScript = normalizeScript(request.deployScriptContent());
         if (buildScript == null || buildScript.isBlank()) {
-            throw new IllegalStateException("构建脚本不能为空。");
+            throw new BusinessException(ErrorSubCode.TEMPLATE_BUILD_SCRIPT_REQUIRED);
         }
 
         entity.setName(name);
@@ -47,6 +50,8 @@ public class TemplateService {
     }
 
     public void delete(Long id) {
+        repository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.TEMPLATE_NOT_FOUND));
         repository.deleteById(id);
     }
 

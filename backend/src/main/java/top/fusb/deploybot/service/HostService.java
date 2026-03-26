@@ -3,6 +3,8 @@ package top.fusb.deploybot.service;
 import top.fusb.deploybot.dto.HostRequest;
 import top.fusb.deploybot.dto.HostConnectionTestResult;
 import top.fusb.deploybot.dto.HostResourceSnapshot;
+import top.fusb.deploybot.exception.BusinessException;
+import top.fusb.deploybot.exception.ErrorSubCode;
 import top.fusb.deploybot.model.HostEntity;
 import top.fusb.deploybot.model.HostSshAuthType;
 import top.fusb.deploybot.model.HostType;
@@ -60,7 +62,8 @@ public class HostService {
 
     public HostEntity findById(Long id) {
         ensureLocalHost();
-        return hostRepository.findById(id).orElseThrow();
+        return hostRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.HOST_NOT_FOUND));
     }
 
     public HostEntity ensureLocalHost() {
@@ -78,9 +81,10 @@ public class HostService {
     }
 
     public HostEntity save(HostRequest request, Long id) {
-        HostEntity entity = id == null ? new HostEntity() : hostRepository.findById(id).orElseThrow();
+        HostEntity entity = id == null ? new HostEntity() : hostRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.HOST_NOT_FOUND));
         if (Boolean.TRUE.equals(entity.getBuiltIn()) && request.type() != HostType.LOCAL) {
-            throw new IllegalStateException("系统内置的本机记录不能改成远程主机。");
+            throw new BusinessException(ErrorSubCode.BUILT_IN_LOCAL_HOST_TYPE_CHANGE_FORBIDDEN);
         }
         entity.setName(request.name().trim());
         entity.setType(request.type());
@@ -102,15 +106,16 @@ public class HostService {
     }
 
     public void delete(Long id) {
-        HostEntity entity = hostRepository.findById(id).orElseThrow();
+        HostEntity entity = hostRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.HOST_NOT_FOUND));
         if (Boolean.TRUE.equals(entity.getBuiltIn())) {
-            throw new IllegalStateException("系统内置的本机记录不能删除。");
+            throw new BusinessException(ErrorSubCode.BUILT_IN_LOCAL_HOST_DELETE_FORBIDDEN);
         }
         if (pipelineRepository.existsByTargetHostId(id)) {
-            throw new IllegalStateException("仍有流水线绑定到这台主机，不能删除。");
+            throw new BusinessException(ErrorSubCode.HOST_HAS_PIPELINES);
         }
         if (runtimeEnvironmentRepository.existsByHostId(id)) {
-            throw new IllegalStateException("仍有运行环境归属这台主机，不能删除。");
+            throw new BusinessException(ErrorSubCode.HOST_HAS_ENVIRONMENTS);
         }
         hostRepository.delete(entity);
     }
@@ -164,7 +169,7 @@ public class HostService {
     public String executeRemoteScript(Long id, String script, int timeoutSeconds) throws Exception {
         HostEntity host = findById(id);
         if (host.getType() != HostType.SSH) {
-            throw new IllegalStateException("只有 SSH 主机支持远程命令执行。");
+            throw new BusinessException(ErrorSubCode.SSH_ONLY_REMOTE_SCRIPT);
         }
 
         Path tempDir = Files.createTempDirectory("deploybot-host-exec-");
@@ -182,7 +187,7 @@ public class HostService {
         int exitCode = process.waitFor();
         if (exitCode != 0) {
             log.warn("Remote script execution failed on host {} with exit code {}.", host.getName(), exitCode);
-            throw new IllegalStateException(output.isBlank() ? "远程执行失败" : output.trim());
+            throw new BusinessException(ErrorSubCode.REMOTE_EXECUTION_FAILED, output.isBlank() ? null : output.trim());
         }
         log.info("Remote script execution succeeded on host {}.", host.getName());
         return output;
@@ -209,7 +214,7 @@ public class HostService {
             }
             int exitCode = process.waitFor();
             if (exitCode != 0) {
-                throw new IllegalStateException(output.isBlank() ? "读取本机资源信息失败。" : output);
+                throw new BusinessException(ErrorSubCode.LOCAL_RESOURCE_PREVIEW_FAILED, output.isBlank() ? null : output);
             }
         } else {
             output = executeRemoteScript(id, script, 10);
@@ -289,14 +294,14 @@ public class HostService {
         String escapedWorkspace = workspaceRoot.replace("\"", "\\\"");
         return """
                 set -e
-                WORKSPACE="%s"
+                WORKSPACE="__DEPLOYBOT_WORKSPACE__"
                 mkdir -p "$WORKSPACE"
                 OS_TYPE="$(uname -s 2>/dev/null || echo UNKNOWN)"
                 CPU_CORES="$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 0)"
                 CPU_USAGE=""
                 LOAD_AVG=""
                 if [ "$OS_TYPE" = "Linux" ]; then
-                  CPU_USAGE="$(top -bn1 2>/dev/null | awk -F'[, ]+' '/Cpu\\(s\\)/ {for (i=1; i<=NF; i++) if ($i ~ /id/) {printf \"%%d\", 100 - $(i-1); exit}}')"
+                  CPU_USAGE="$(top -bn1 2>/dev/null | awk -F'[, ]+' '/Cpu\\(s\\)/ {for (i=1; i<=NF; i++) if ($i ~ /id/) {printf \"%d\", 100 - $(i-1); exit}}')"
                   LOAD_AVG="$(awk '{print $1}' /proc/loadavg 2>/dev/null || echo '')"
                   MEM_TOTAL_KB="$(awk '/MemTotal/ {print $2}' /proc/meminfo)"
                   MEM_AVAIL_KB="$(awk '/MemAvailable/ {print $2}' /proc/meminfo)"
@@ -319,25 +324,25 @@ public class HostService {
                 DISK_LINE="$(df -Pk "$WORKSPACE" | tail -n 1)"
                 DISK_TOTAL_KB="$(echo "$DISK_LINE" | awk '{print $2}')"
                 DISK_USED_KB="$(echo "$DISK_LINE" | awk '{print $3}')"
-                DISK_USE_PERCENT="$(echo "$DISK_LINE" | awk '{print $5}' | tr -d '%%')"
-                printf '__DEPLOYBOT_OS__%%s\\n' "$OS_TYPE"
-                printf '__DEPLOYBOT_CPU__%%s\\n' "$CPU_CORES"
-                printf '__DEPLOYBOT_CPU_USAGE__%%s\\n' "$CPU_USAGE"
-                printf '__DEPLOYBOT_LOAD__%%s\\n' "$LOAD_AVG"
-                printf '__DEPLOYBOT_MEM_TOTAL_MB__%%s\\n' "$MEM_TOTAL_MB"
-                printf '__DEPLOYBOT_MEM_USED_MB__%%s\\n' "$MEM_USED_MB"
-                printf '__DEPLOYBOT_DISK_TOTAL_GB__%%s\\n' "$(( DISK_TOTAL_KB / 1024 / 1024 ))"
-                printf '__DEPLOYBOT_DISK_USED_GB__%%s\\n' "$(( DISK_USED_KB / 1024 / 1024 ))"
-                printf '__DEPLOYBOT_DISK_PERCENT__%%s\\n' "$DISK_USE_PERCENT"
+                DISK_USE_PERCENT="$(echo "$DISK_LINE" | awk '{print $5}' | tr -d '%')"
+                printf '__DEPLOYBOT_OS__%s\\n' "$OS_TYPE"
+                printf '__DEPLOYBOT_CPU__%s\\n' "$CPU_CORES"
+                printf '__DEPLOYBOT_CPU_USAGE__%s\\n' "$CPU_USAGE"
+                printf '__DEPLOYBOT_LOAD__%s\\n' "$LOAD_AVG"
+                printf '__DEPLOYBOT_MEM_TOTAL_MB__%s\\n' "$MEM_TOTAL_MB"
+                printf '__DEPLOYBOT_MEM_USED_MB__%s\\n' "$MEM_USED_MB"
+                printf '__DEPLOYBOT_DISK_TOTAL_GB__%s\\n' "$(( DISK_TOTAL_KB / 1024 / 1024 ))"
+                printf '__DEPLOYBOT_DISK_USED_GB__%s\\n' "$(( DISK_USED_KB / 1024 / 1024 ))"
+                printf '__DEPLOYBOT_DISK_PERCENT__%s\\n' "$DISK_USE_PERCENT"
                 echo "__DEPLOYBOT_PREVIEW__"
                 echo "系统类型: $OS_TYPE"
                 echo "工作空间: $WORKSPACE"
                 echo "CPU 核数: $CPU_CORES"
-                echo "CPU 使用率: ${CPU_USAGE:-未知}%%"
+                echo "CPU 使用率: ${CPU_USAGE:-未知}%"
                 echo "1 分钟负载: ${LOAD_AVG:-未知}"
                 echo "内存: ${MEM_USED_MB}MB / ${MEM_TOTAL_MB}MB"
-                echo "磁盘: $(( DISK_USED_KB / 1024 / 1024 ))GB / $(( DISK_TOTAL_KB / 1024 / 1024 ))GB (${DISK_USE_PERCENT}%%)"
-                """.formatted(escapedWorkspace);
+                echo "磁盘: $(( DISK_USED_KB / 1024 / 1024 ))GB / $(( DISK_TOTAL_KB / 1024 / 1024 ))GB (${DISK_USE_PERCENT}%)"
+                """.replace("__DEPLOYBOT_WORKSPACE__", escapedWorkspace);
     }
 
     private HostResourceSnapshot mapResourceSnapshot(HostEntity host, String workspaceRoot, String output) {

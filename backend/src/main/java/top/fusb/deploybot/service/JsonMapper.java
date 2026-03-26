@@ -3,6 +3,8 @@ package top.fusb.deploybot.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import top.fusb.deploybot.exception.BusinessException;
+import top.fusb.deploybot.exception.ErrorSubCode;
 import org.springframework.stereotype.Component;
 
 import java.util.Collections;
@@ -26,7 +28,7 @@ public class JsonMapper {
             return objectMapper.readValue(content, new TypeReference<>() {
             });
         } catch (JsonProcessingException ex) {
-            throw new IllegalArgumentException("JSON content is invalid", ex);
+            throw new BusinessException(ErrorSubCode.JSON_INVALID, ex);
         }
     }
 
@@ -38,7 +40,7 @@ public class JsonMapper {
             return objectMapper.readValue(content, new TypeReference<>() {
             });
         } catch (JsonProcessingException ex) {
-            throw new IllegalArgumentException("JSON content is invalid", ex);
+            throw new BusinessException(ErrorSubCode.JSON_INVALID, ex);
         }
     }
 
@@ -50,7 +52,7 @@ public class JsonMapper {
             return objectMapper.readValue(content, new TypeReference<>() {
             });
         } catch (JsonProcessingException ex) {
-            throw new IllegalArgumentException("JSON content is invalid", ex);
+            throw new BusinessException(ErrorSubCode.JSON_INVALID, ex);
         }
     }
 
@@ -58,7 +60,7 @@ public class JsonMapper {
         try {
             return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(value);
         } catch (JsonProcessingException ex) {
-            throw new IllegalArgumentException("Unable to serialize JSON", ex);
+            throw new BusinessException(ErrorSubCode.JSON_WRITE_FAILED, ex);
         }
     }
 
@@ -67,12 +69,12 @@ public class JsonMapper {
      */
     public <T> T read(String content, TypeReference<T> typeReference) {
         if (content == null || content.isBlank()) {
-            throw new IllegalArgumentException("JSON content is blank");
+            throw new BusinessException(ErrorSubCode.JSON_BLANK);
         }
         try {
             return objectMapper.readValue(content, typeReference);
         } catch (JsonProcessingException ex) {
-            throw new IllegalArgumentException("JSON content is invalid", ex);
+            throw new BusinessException(ErrorSubCode.JSON_INVALID, ex);
         }
     }
 }

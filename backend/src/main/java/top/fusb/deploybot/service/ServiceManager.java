@@ -1,5 +1,7 @@
 package top.fusb.deploybot.service;
 
+import top.fusb.deploybot.exception.BusinessException;
+import top.fusb.deploybot.exception.ErrorSubCode;
 import top.fusb.deploybot.model.DeploymentEntity;
 import top.fusb.deploybot.model.HostEntity;
 import top.fusb.deploybot.model.HostType;
@@ -32,7 +34,8 @@ public class ServiceManager {
     }
 
     public ServiceEntity findById(Long id) {
-        ServiceEntity service = serviceRepository.findById(id).orElseThrow();
+        ServiceEntity service = serviceRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.SERVICE_NOT_FOUND));
         return refreshStatus(service);
     }
 
@@ -54,7 +57,8 @@ public class ServiceManager {
     }
 
     public ServiceEntity stop(Long id) {
-        ServiceEntity service = serviceRepository.findById(id).orElseThrow();
+        ServiceEntity service = serviceRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.SERVICE_NOT_FOUND));
         HostEntity targetHost = service.getPipeline() == null ? null : service.getPipeline().getTargetHost();
         if (service.getCurrentPid() != null) {
             stopProcess(service.getCurrentPid(), targetHost);
@@ -119,7 +123,7 @@ public class ServiceManager {
                     10
             );
         } catch (Exception ex) {
-            throw new IllegalStateException("远程停止服务失败：" + ex.getMessage(), ex);
+            throw new BusinessException(ErrorSubCode.REMOTE_SERVICE_STOP_FAILED, ex.getMessage(), ex);
         }
     }
 }

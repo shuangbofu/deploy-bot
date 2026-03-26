@@ -5,6 +5,8 @@ import top.fusb.deploybot.dto.RuntimeEnvironmentDetection;
 import top.fusb.deploybot.dto.RuntimeEnvironmentInstallRequest;
 import top.fusb.deploybot.dto.RuntimeEnvironmentPreset;
 import com.fasterxml.jackson.core.type.TypeReference;
+import top.fusb.deploybot.exception.BusinessException;
+import top.fusb.deploybot.exception.ErrorSubCode;
 import top.fusb.deploybot.model.HostEntity;
 import top.fusb.deploybot.model.HostType;
 import top.fusb.deploybot.model.RuntimeEnvironmentEntity;
@@ -94,15 +96,18 @@ public class RuntimeEnvironmentService {
     }
 
     public RuntimeEnvironmentEntity findById(Long id) {
-        return repository.findById(id).orElseThrow();
+        return repository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.RUNTIME_ENVIRONMENT_NOT_FOUND));
     }
 
     /**
      * 保存运行环境元信息，包括路径、激活脚本和附加环境变量。
      */
     public RuntimeEnvironmentEntity save(RuntimeEnvironmentRequest request, Long id) {
-        RuntimeEnvironmentEntity entity = id == null ? new RuntimeEnvironmentEntity() : repository.findById(id).orElseThrow();
-        HostEntity host = hostRepository.findById(request.hostId()).orElseThrow();
+        RuntimeEnvironmentEntity entity = id == null ? new RuntimeEnvironmentEntity() : repository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.RUNTIME_ENVIRONMENT_NOT_FOUND));
+        HostEntity host = hostRepository.findById(request.hostId())
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.HOST_NOT_FOUND));
         entity.setName(request.name().trim());
         entity.setType(request.type());
         entity.setHost(host);
@@ -134,7 +139,8 @@ public class RuntimeEnvironmentService {
     }
 
     public List<RuntimeEnvironmentDetection> detectAvailable(Long hostId) {
-        HostEntity host = hostId == null ? hostService.ensureLocalHost() : hostRepository.findById(hostId).orElseThrow();
+        HostEntity host = hostId == null ? hostService.ensureLocalHost() : hostRepository.findById(hostId)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.HOST_NOT_FOUND));
         if (host.getType() == HostType.LOCAL) {
             return detectAvailable();
         }
@@ -148,7 +154,8 @@ public class RuntimeEnvironmentService {
     }
 
     public List<RuntimeEnvironmentPreset> listPresets(Long hostId) {
-        HostEntity host = hostId == null ? hostService.ensureLocalHost() : hostRepository.findById(hostId).orElseThrow();
+        HostEntity host = hostId == null ? hostService.ensureLocalHost() : hostRepository.findById(hostId)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.HOST_NOT_FOUND));
         PlatformInfo platform = detectPlatform(host);
         Path installRoot = installRoot(host);
         Map<String, String> variables = buildPresetTemplateVariables(platform, installRoot);
@@ -168,11 +175,12 @@ public class RuntimeEnvironmentService {
     }
 
     public RuntimeEnvironmentEntity installPreset(RuntimeEnvironmentInstallRequest request) throws IOException, InterruptedException {
-        HostEntity host = hostRepository.findById(request.hostId()).orElseThrow();
+        HostEntity host = hostRepository.findById(request.hostId())
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.HOST_NOT_FOUND));
         RuntimeEnvironmentPreset preset = listPresets(host.getId()).stream()
                 .filter(item -> item.id().equals(request.presetId()))
                 .findFirst()
-                .orElseThrow();
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.PRESET_NOT_FOUND));
 
         log.info("Start installing preset {} ({}) on host {} ({})", preset.name(), preset.id(), host.getName(), host.getType());
 
@@ -196,7 +204,7 @@ public class RuntimeEnvironmentService {
         HttpResponse<Path> response = client.send(httpRequest, HttpResponse.BodyHandlers.ofFile(archiveFile));
         if (response.statusCode() >= 400) {
             log.warn("Preset download failed for {} with HTTP {}", preset.name(), response.statusCode());
-            throw new IllegalStateException("下载运行环境失败，HTTP 状态码：" + response.statusCode());
+            throw new BusinessException(ErrorSubCode.PRESET_DOWNLOAD_FAILED, "HTTP 状态码：" + response.statusCode());
         }
         validateArchive(archiveFile);
         log.info("Preset {} archive validated: {}", preset.name(), archiveFile);
@@ -212,12 +220,12 @@ public class RuntimeEnvironmentService {
         int exitCode = process.waitFor();
         if (exitCode != 0) {
             log.warn("Preset extract failed for {}: {}", preset.name(), output);
-            throw new IllegalStateException("解压运行环境失败：" + output);
+            throw new BusinessException(ErrorSubCode.PRESET_EXTRACT_FAILED, output);
         }
 
         Path extractedRoot = Files.list(extractDir)
                 .findFirst()
-                .orElseThrow(() -> new IllegalStateException("未找到解压后的目录"));
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.PRESET_EXTRACT_ROOT_MISSING));
 
         Path finalHome = Path.of(preset.homePath());
         deleteIfExists(finalHome);
@@ -274,7 +282,7 @@ public class RuntimeEnvironmentService {
             hostService.executeRemoteScript(host.getId(), script, 600);
         } catch (Exception ex) {
             log.warn("Remote preset install failed for {} on {}: {}", preset.name(), host.getName(), ex.getMessage(), ex);
-            throw new IllegalStateException("远程主机安装预置环境失败：" + ex.getMessage(), ex);
+            throw new BusinessException(ErrorSubCode.PRESET_REMOTE_INSTALL_FAILED, ex.getMessage(), ex);
         }
 
         RuntimeEnvironmentRequest saveRequest = new RuntimeEnvironmentRequest(
@@ -451,10 +459,10 @@ public class RuntimeEnvironmentService {
             }
             int exitCode = process.waitFor();
             if (exitCode != 0) {
-                throw new IllegalStateException("下载结果不是有效压缩包。返回内容预览：\n" + output);
+                throw new BusinessException(ErrorSubCode.PRESET_ARCHIVE_INVALID, "返回内容预览：\n" + output);
             }
         } catch (IOException | InterruptedException ex) {
-            throw new IllegalStateException("校验下载文件失败：" + ex.getMessage(), ex);
+            throw new BusinessException(ErrorSubCode.PRESET_ARCHIVE_VALIDATE_FAILED, ex.getMessage(), ex);
         }
     }
 
@@ -523,7 +531,7 @@ public class RuntimeEnvironmentService {
             return jsonMapper.read(content, new TypeReference<List<PresetDefinition>>() {
             });
         } catch (IOException ex) {
-            throw new IllegalStateException("读取运行环境预置配置失败：" + ex.getMessage(), ex);
+            throw new BusinessException(ErrorSubCode.PRESET_CONFIG_READ_FAILED, ex.getMessage(), ex);
         }
     }
 

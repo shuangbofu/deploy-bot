@@ -16,18 +16,24 @@ import { formatDeploymentElapsed } from '../../utils/deploymentDuration';
  * 用户不需要配置资源，只需要快速看到“能不能部署、最近稳不稳定”。
  */
 export default function UserDashboardPage() {
+  const [loading, setLoading] = useState(false);
   const [pipelines, setPipelines] = useState<PipelineSummary[]>([]);
   const [deployments, setDeployments] = useState<DeploymentSummary[]>([]);
   const [tick, setTick] = useState(() => Date.now());
 
   /** 加载用户端控制台所需的流水线与部署记录。 */
   const loadData = async () => {
-    const [nextPipelines, nextDeployments] = await Promise.all([
-      pipelinesApi.list(),
-      deploymentsApi.list(),
-    ]);
-    setPipelines(nextPipelines);
-    setDeployments(nextDeployments);
+    setLoading(true);
+    try {
+      const [nextPipelines, nextDeployments] = await Promise.all([
+        pipelinesApi.list(),
+        deploymentsApi.list(),
+      ]);
+      setPipelines(nextPipelines);
+      setDeployments(nextDeployments);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -72,22 +78,22 @@ export default function UserDashboardPage() {
       />
       <Row gutter={[16, 16]}>
         <Col xs={24} md={12} xl={6}>
-          <Card className="app-card dashboard-stat-card">
+          <Card className="app-card dashboard-stat-card" loading={loading}>
             <Statistic title="可部署流水线" value={stats.pipelines} prefix={<FireOutlined />} />
           </Card>
         </Col>
         <Col xs={24} md={12} xl={6}>
-          <Card className="app-card dashboard-stat-card">
+          <Card className="app-card dashboard-stat-card" loading={loading}>
             <Statistic title="执行中任务" value={stats.running} prefix={<ClockCircleOutlined />} />
           </Card>
         </Col>
         <Col xs={24} md={12} xl={6}>
-          <Card className="app-card dashboard-stat-card">
+          <Card className="app-card dashboard-stat-card" loading={loading}>
             <Statistic title="失败任务" value={stats.failed} prefix={<FieldTimeOutlined />} />
           </Card>
         </Col>
         <Col xs={24} md={12} xl={6}>
-          <Card className="app-card dashboard-stat-card">
+          <Card className="app-card dashboard-stat-card" loading={loading}>
             <Statistic title="成功率" value={stats.successRate} suffix="%" prefix={<CheckCircleOutlined />} />
           </Card>
         </Col>
@@ -97,7 +103,7 @@ export default function UserDashboardPage() {
 
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={8}>
-          <Card className="app-card" title="状态分布">
+          <Card className="app-card" title="状态分布" loading={loading}>
             <div className="dashboard-circle-wrap">
               <Progress
                 type="circle"
@@ -124,7 +130,7 @@ export default function UserDashboardPage() {
           </Card>
         </Col>
         <Col xs={24} xl={16}>
-          <Card className="app-card" title="近 7 天部署趋势">
+          <Card className="app-card" title="近 7 天部署趋势" loading={loading}>
             <div className="dashboard-bar-chart">
               {trend.map((item) => (
                 <div key={item.key} className="dashboard-bar-item">
@@ -151,7 +157,7 @@ export default function UserDashboardPage() {
 
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={16}>
-          <Card className="app-card dashboard-panel-card" title="最近部署">
+          <Card className="app-card dashboard-panel-card" title="最近部署" loading={loading}>
             {latestDeployments.length === 0 ? (
               <Empty description="还没有部署记录。" />
             ) : (
@@ -178,7 +184,7 @@ export default function UserDashboardPage() {
           </Card>
         </Col>
         <Col xs={24} xl={8}>
-          <Card className="app-card dashboard-panel-card" title="执行告警">
+          <Card className="app-card dashboard-panel-card" title="执行告警" loading={loading}>
             {attentionDeployments.length === 0 ? (
               <Empty description="当前没有需要优先处理的部署。" />
             ) : (

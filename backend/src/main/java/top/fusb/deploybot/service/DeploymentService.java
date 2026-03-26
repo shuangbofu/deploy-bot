@@ -1,6 +1,8 @@
 package top.fusb.deploybot.service;
 
 import top.fusb.deploybot.dto.DeploymentRequest;
+import top.fusb.deploybot.exception.BusinessException;
+import top.fusb.deploybot.exception.ErrorSubCode;
 import top.fusb.deploybot.model.DeploymentEntity;
 import top.fusb.deploybot.model.DeploymentStatus;
 import top.fusb.deploybot.model.GitAuthType;
@@ -81,13 +83,15 @@ public class DeploymentService {
     }
 
     public DeploymentEntity findById(Long id) {
-        return deploymentRepository.findById(id).orElseThrow();
+        return deploymentRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.DEPLOYMENT_NOT_FOUND));
     }
 
     @Transactional
     public DeploymentEntity create(DeploymentRequest request) {
         // 1. 读取并校验流水线。
-        PipelineEntity pipeline = pipelineRepository.findById(request.pipelineId()).orElseThrow();
+        PipelineEntity pipeline = pipelineRepository.findById(request.pipelineId())
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.PIPELINE_NOT_FOUND));
         log.info("Creating deployment for pipeline {} with requested branch {}.", pipeline.getName(), request.branchName());
         List<DeploymentEntity> activeDeployments = deploymentRepository.findByPipelineIdAndStatusInOrderByCreatedAtDesc(
                 pipeline.getId(),
@@ -95,7 +99,7 @@ public class DeploymentService {
         );
         if (!activeDeployments.isEmpty()) {
             if (!Boolean.TRUE.equals(request.replaceRunning())) {
-                throw new IllegalStateException("当前流水线已有执行中的部署，请先停止后再发起新的部署。");
+                throw new BusinessException(ErrorSubCode.PIPELINE_HAS_RUNNING_DEPLOYMENT);
             }
             activeDeployments.forEach(item -> deploymentRunner.stop(item.getId()));
         }
@@ -347,7 +351,7 @@ public class DeploymentService {
     private String resolveBuildScriptTemplate(PipelineEntity pipeline) {
         String buildScript = pipeline.getTemplate().getBuildScriptContent();
         if (buildScript == null || buildScript.isBlank()) {
-            throw new IllegalStateException("模板缺少构建脚本。");
+            throw new BusinessException(ErrorSubCode.TEMPLATE_BUILD_SCRIPT_MISSING);
         }
         return buildScript;
     }
@@ -362,19 +366,21 @@ public class DeploymentService {
 
     @Transactional
     public DeploymentEntity stop(Long id) {
-        DeploymentEntity entity = deploymentRepository.findById(id).orElseThrow();
+        DeploymentEntity entity = deploymentRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.DEPLOYMENT_NOT_FOUND));
         deploymentRunner.stop(id);
         return deploymentRepository.findById(id).orElse(entity);
     }
 
     @Transactional
     public DeploymentEntity rollback(Long id) {
-        DeploymentEntity source = deploymentRepository.findById(id).orElseThrow();
+        DeploymentEntity source = deploymentRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.DEPLOYMENT_NOT_FOUND));
         if (source.getStatus() == DeploymentStatus.PENDING || source.getStatus() == DeploymentStatus.RUNNING) {
-            throw new IllegalStateException("执行中的部署不能直接回滚，请先等待结束或停止任务。");
+            throw new BusinessException(ErrorSubCode.RUNNING_DEPLOYMENT_CANNOT_ROLLBACK);
         }
         if (source.getBackupPath() == null || source.getBackupPath().isBlank()) {
-            throw new IllegalStateException("这条部署记录没有可用备份，暂时无法回滚。");
+            throw new BusinessException(ErrorSubCode.DEPLOYMENT_BACKUP_MISSING);
         }
 
         PipelineEntity pipeline = source.getPipeline();
@@ -428,10 +434,11 @@ public class DeploymentService {
 
     @Transactional
     public DeploymentEntity startService(Long serviceId) {
-        ServiceEntity service = serviceRepository.findById(serviceId).orElseThrow();
+        ServiceEntity service = serviceRepository.findById(serviceId)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.SERVICE_NOT_FOUND));
         DeploymentEntity source = service.getLastDeployment();
         if (source == null) {
-            throw new IllegalStateException("当前服务没有可用于启动的历史部署记录。");
+            throw new BusinessException(ErrorSubCode.SERVICE_NO_DEPLOYMENT_TO_START);
         }
 
         Map<String, String> sourceVariables = new LinkedHashMap<>(jsonMapper.toStringMap(source.getVariablesJson()));
@@ -453,7 +460,8 @@ public class DeploymentService {
     }
 
     public String readLog(Long id) throws IOException {
-        DeploymentEntity entity = deploymentRepository.findById(id).orElseThrow();
+        DeploymentEntity entity = deploymentRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.DEPLOYMENT_NOT_FOUND));
         log.debug("Reading deployment log for deployment {}.", id);
         if (entity.getLogPath() == null) {
             if (entity.getStatus() == DeploymentStatus.PENDING) {

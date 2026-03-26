@@ -11,4 +11,5 @@ public interface DeploymentRepository extends JpaRepository<DeploymentEntity, Lo
     List<DeploymentEntity> findAllByOrderByCreatedAtDesc();
     List<DeploymentEntity> findByPipelineIdAndStatusInOrderByCreatedAtDesc(Long pipelineId, List<DeploymentStatus> statuses);
     Optional<DeploymentEntity> findFirstByPipelineIdAndStatusOrderByCreatedAtDesc(Long pipelineId, DeploymentStatus status);
+    long countByPipelineId(Long pipelineId);
 }

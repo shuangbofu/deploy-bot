@@ -1,5 +1,7 @@
 package top.fusb.deploybot.service;
 
+import top.fusb.deploybot.exception.BusinessException;
+import top.fusb.deploybot.exception.ErrorSubCode;
 import top.fusb.deploybot.model.PipelineEntity;
 import top.fusb.deploybot.repo.PipelineRepository;
 import org.slf4j.Logger;
@@ -31,7 +33,8 @@ public class GitBranchService {
     }
 
     public List<String> listBranches(Long pipelineId) {
-        PipelineEntity pipeline = pipelineRepository.findById(pipelineId).orElseThrow();
+        PipelineEntity pipeline = pipelineRepository.findById(pipelineId)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.PIPELINE_NOT_FOUND));
         String sourceGitUrl = pipeline.getProject().getGitUrl();
         String defaultBranch = pipeline.getDefaultBranch();
 

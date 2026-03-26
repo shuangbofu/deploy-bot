@@ -1,5 +1,7 @@
 package top.fusb.deploybot.service;
 
+import top.fusb.deploybot.exception.BusinessException;
+import top.fusb.deploybot.exception.ErrorSubCode;
 import top.fusb.deploybot.model.SystemSettingsEntity;
 import org.springframework.stereotype.Service;
 
@@ -47,7 +49,7 @@ public class SystemSshKeyService {
 
         int exitCode = process.waitFor();
         if (exitCode != 0) {
-            throw new IllegalStateException("生成 SSH 密钥对失败：" + output);
+            throw new BusinessException(ErrorSubCode.SSH_KEY_GENERATE_FAILED, output);
         }
 
         String privateKey = Files.readString(keyPath, StandardCharsets.UTF_8);

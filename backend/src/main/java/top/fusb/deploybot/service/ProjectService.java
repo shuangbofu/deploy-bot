@@ -1,6 +1,8 @@
 package top.fusb.deploybot.service;
 
 import top.fusb.deploybot.dto.ProjectRequest;
+import top.fusb.deploybot.exception.BusinessException;
+import top.fusb.deploybot.exception.ErrorSubCode;
 import top.fusb.deploybot.model.GitAuthType;
 import top.fusb.deploybot.model.ProjectEntity;
 import top.fusb.deploybot.repo.ProjectRepository;
@@ -25,7 +27,8 @@ public class ProjectService {
      * 项目负责保存仓库接入信息，因此这里会同时处理名称、描述与 Git 认证配置。
      */
     public ProjectEntity save(ProjectRequest request, Long id) {
-        ProjectEntity entity = id == null ? new ProjectEntity() : repository.findById(id).orElseThrow();
+        ProjectEntity entity = id == null ? new ProjectEntity() : repository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.PROJECT_NOT_FOUND));
         entity.setName(request.name());
         entity.setDescription(request.description());
         entity.setGitUrl(request.gitUrl());
@@ -39,6 +42,8 @@ public class ProjectService {
     }
 
     public void delete(Long id) {
+        repository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.PROJECT_NOT_FOUND));
         repository.deleteById(id);
     }
 

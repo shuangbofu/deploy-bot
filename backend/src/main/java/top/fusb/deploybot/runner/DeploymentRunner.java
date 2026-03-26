@@ -1,5 +1,7 @@
 package top.fusb.deploybot.runner;
 
+import top.fusb.deploybot.exception.BusinessException;
+import top.fusb.deploybot.exception.ErrorSubCode;
 import top.fusb.deploybot.model.DeploymentEntity;
 import top.fusb.deploybot.model.DeploymentStatus;
 import top.fusb.deploybot.model.HostEntity;
@@ -75,7 +77,8 @@ public class DeploymentRunner {
         Path logFile = null;
         try {
             // 1. 读取部署与主机上下文，准备运行时目录。
-            DeploymentEntity deployment = deploymentRepository.findById(deploymentId).orElseThrow();
+            DeploymentEntity deployment = deploymentRepository.findById(deploymentId)
+                    .orElseThrow(() -> new BusinessException(ErrorSubCode.DEPLOYMENT_NOT_FOUND));
             if (deployment.getStatus() == DeploymentStatus.STOPPED) {
                 log.info("Skip deployment {} because it is already stopped.", deploymentId);
                 return;
@@ -255,7 +258,7 @@ public class DeploymentRunner {
                 deploymentId
         );
         if (prepareExitCode != 0) {
-            throw new IllegalStateException("远程主机目录准备失败。");
+            throw new BusinessException(ErrorSubCode.REMOTE_DIRECTORY_PREPARE_FAILED);
         }
     }
 
@@ -603,7 +606,7 @@ public class DeploymentRunner {
         );
         if (copyExitCode != 0) {
             log.warn("Artifact sync failed for deployment {} with exit code {}.", deploymentId, copyExitCode);
-            throw new IllegalStateException("构建产物同步到远程主机失败。");
+            throw new BusinessException(ErrorSubCode.REMOTE_ARTIFACT_SYNC_FAILED);
         }
     }
 }

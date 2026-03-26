@@ -11,6 +11,19 @@ import type {
 } from '../types/domain';
 
 /**
+ * 后端统一响应包装结构。
+ */
+export interface ApiResult<T> {
+  success: boolean;
+  code: string;
+  message: string;
+  subCode?: string | null;
+  subMessage?: string | null;
+  data: T;
+  timestamp: string;
+}
+
+/**
  * 项目表单请求体。
  */
 export interface ProjectPayload {
