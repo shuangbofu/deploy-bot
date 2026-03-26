@@ -25,12 +25,19 @@ const emptyFilters: DeploymentRecordFilters = {
 export default function UserDeploymentRecordsPage() {
   const navigate = useNavigate();
   const [deployments, setDeployments] = useState<DeploymentSummary[]>([]);
+  const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState<DeploymentRecordFilters>(emptyFilters);
   const [tick, setTick] = useState(() => Date.now());
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
 
   /** 读取全部部署记录供用户筛选和查看。 */
   const loadDeployments = async () => {
-    setDeployments(await deploymentsApi.list());
+    setLoading(true);
+    try {
+      setDeployments(await deploymentsApi.list());
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -95,7 +102,10 @@ export default function UserDeploymentRecordsPage() {
               value={filters.projectName}
               options={projectOptions}
               placeholder="筛选项目"
-              onChange={(value) => setFilters({ ...filters, projectName: value })}
+              onChange={(value) => {
+                setFilters({ ...filters, projectName: value });
+                setPagination((previous) => ({ ...previous, current: 1 }));
+              }}
             />
           </Col>
           <Col xs={24} md={12} xl={5}>
@@ -105,14 +115,20 @@ export default function UserDeploymentRecordsPage() {
               value={filters.pipelineName}
               options={pipelineOptions}
               placeholder="筛选流水线"
-              onChange={(value) => setFilters({ ...filters, pipelineName: value })}
+              onChange={(value) => {
+                setFilters({ ...filters, pipelineName: value });
+                setPagination((previous) => ({ ...previous, current: 1 }));
+              }}
             />
           </Col>
           <Col xs={24} md={12} xl={4}>
             <Input
               value={filters.triggeredBy}
               placeholder="筛选触发人"
-              onChange={(event) => setFilters({ ...filters, triggeredBy: event.target.value })}
+              onChange={(event) => {
+                setFilters({ ...filters, triggeredBy: event.target.value });
+                setPagination((previous) => ({ ...previous, current: 1 }));
+              }}
             />
           </Col>
           <Col xs={24} md={12} xl={4}>
@@ -122,14 +138,20 @@ export default function UserDeploymentRecordsPage() {
               value={filters.status}
               options={DEPLOYMENT_STATUS_OPTIONS}
               placeholder="筛选状态"
-              onChange={(value) => setFilters({ ...filters, status: value })}
+              onChange={(value) => {
+                setFilters({ ...filters, status: value });
+                setPagination((previous) => ({ ...previous, current: 1 }));
+              }}
             />
           </Col>
           <Col xs={24} xl={6}>
             <DatePicker.RangePicker
               className="w-full"
               value={filters.timeRange}
-              onChange={(value) => setFilters({ ...filters, timeRange: value })}
+              onChange={(value) => {
+                setFilters({ ...filters, timeRange: value });
+                setPagination((previous) => ({ ...previous, current: 1 }));
+              }}
               placeholder={['开始时间', '结束时间']}
             />
           </Col>
@@ -140,14 +162,21 @@ export default function UserDeploymentRecordsPage() {
             <Button onClick={() => loadDeployments().catch(() => message.error('刷新部署记录失败'))}>刷新</Button>
           </Space>
         </div>
-        {filteredDeployments.length === 0 ? (
-          <EmptyPane description="暂无符合条件的部署记录。" />
-        ) : (
-          <Table
-            rowKey="id"
-            scroll={{ x: 1180 }}
-            dataSource={filteredDeployments}
-            columns={[
+        <Table
+          rowKey="id"
+          loading={loading}
+          scroll={{ x: 1180 }}
+          dataSource={filteredDeployments}
+          locale={{ emptyText: <EmptyPane description="暂无符合条件的部署记录。" /> }}
+          pagination={{
+            current: pagination.current,
+            pageSize: pagination.pageSize,
+            total: filteredDeployments.length,
+            showSizeChanger: true,
+            showTotal: (total) => `共 ${total} 条`,
+            onChange: (current, pageSize) => setPagination({ current, pageSize }),
+          }}
+          columns={[
               { title: '编号', dataIndex: 'id' },
               { title: '项目', render: (_, row) => row.pipeline?.project?.name || '-' },
               { title: '流水线', render: (_, row) => row.pipeline?.name || '-' },
@@ -172,9 +201,8 @@ export default function UserDeploymentRecordsPage() {
                   </Button>
                 ),
               },
-            ]}
-          />
-        )}
+          ]}
+        />
       </Card>
     </>
   );

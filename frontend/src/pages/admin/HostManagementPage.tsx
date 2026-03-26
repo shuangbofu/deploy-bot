@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Descriptions, Form, Input, Modal, Popconfirm, Progress, Select, Space, Switch, Table, Tag, message } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { hostsApi } from '../../api/hosts';
@@ -63,6 +63,7 @@ export default function HostManagementPage() {
   const navigate = useNavigate();
   const [hosts, setHosts] = useState<HostSummary[]>([]);
   const [environments, setEnvironments] = useState<RuntimeEnvironmentSummary[]>([]);
+  const [loading, setLoading] = useState(false);
   const [form, setForm] = useState<HostFormState>(emptyHost);
   const [editingId, setEditingId] = useState<number | undefined>();
   const [modalOpen, setModalOpen] = useState(false);
@@ -70,14 +71,23 @@ export default function HostManagementPage() {
   const [previewingHostId, setPreviewingHostId] = useState<number | undefined>();
   const [resourceModalOpen, setResourceModalOpen] = useState(false);
   const [resourceSnapshot, setResourceSnapshot] = useState<HostResourceSnapshot>();
+  const [keyword, setKeyword] = useState('');
+  const [typeFilter, setTypeFilter] = useState<HostType>();
+  const [enabledFilter, setEnabledFilter] = useState<string>();
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
 
   const loadHosts = async () => {
-    const [hostResponse, environmentResponse] = await Promise.all([
-      hostsApi.list(),
-      runtimeEnvironmentsApi.list(),
-    ]);
-    setHosts(hostResponse);
-    setEnvironments(environmentResponse);
+    setLoading(true);
+    try {
+      const [hostResponse, environmentResponse] = await Promise.all([
+        hostsApi.list(),
+        runtimeEnvironmentsApi.list(),
+      ]);
+      setHosts(hostResponse);
+      setEnvironments(environmentResponse);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -171,22 +181,101 @@ export default function HostManagementPage() {
     }
   };
 
+  const filteredHosts = useMemo(() => hosts.filter((item) => {
+    const normalizedKeyword = keyword.trim().toLowerCase();
+    if (normalizedKeyword) {
+      const matched = [item.name, item.description, item.hostname, item.workspaceRoot]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(normalizedKeyword));
+      if (!matched) {
+        return false;
+      }
+    }
+    if (typeFilter && item.type !== typeFilter) {
+      return false;
+    }
+    if (enabledFilter != null) {
+      const expected = enabledFilter === 'true';
+      if (Boolean(item.enabled !== false) !== expected) {
+        return false;
+      }
+    }
+    return true;
+  }), [hosts, keyword, typeFilter, enabledFilter]);
+
   return (
     <>
       <PageHeaderBar
         title="主机管理"
         description="统一管理本机和远程主机。流水线只选择目标主机，运行环境也归属到对应主机。"
-        extra={<Button type="primary" onClick={openCreate}>新建主机</Button>}
+        extra={(
+          <Space>
+            <Button onClick={() => loadHosts().catch(() => message.error('加载主机失败'))}>刷新</Button>
+            <Button type="primary" onClick={openCreate}>新建主机</Button>
+          </Space>
+        )}
       />
       <Card className="app-card">
-        {hosts.length === 0 ? (
-          <EmptyPane description="还没有主机，系统会自动内置一条本机记录。" />
-        ) : (
-          <Table
-            rowKey="id"
-            scroll={{ x: 1080 }}
-            dataSource={hosts}
-            columns={[
+        <div className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-4">
+          <Input
+            value={keyword}
+            placeholder="搜索主机名称 / 地址 / 工作空间"
+            onChange={(event) => {
+              setKeyword(event.target.value);
+              setPagination((previous) => ({ ...previous, current: 1 }));
+            }}
+          />
+          <Select
+            allowClear
+            value={typeFilter}
+            placeholder="筛选主机类型"
+            options={hostTypeOptions}
+            onChange={(value) => {
+              setTypeFilter(value);
+              setPagination((previous) => ({ ...previous, current: 1 }));
+            }}
+          />
+          <Select
+            allowClear
+            value={enabledFilter}
+            placeholder="筛选启用状态"
+            options={[
+              { label: '启用', value: 'true' },
+              { label: '停用', value: 'false' },
+            ]}
+            onChange={(value) => {
+              setEnabledFilter(value);
+              setPagination((previous) => ({ ...previous, current: 1 }));
+            }}
+          />
+          <div className="flex items-center">
+            <Button
+              onClick={() => {
+                setKeyword('');
+                setTypeFilter(undefined);
+                setEnabledFilter(undefined);
+                setPagination((previous) => ({ ...previous, current: 1 }));
+              }}
+            >
+              重置条件
+            </Button>
+          </div>
+        </div>
+        <Table
+          rowKey="id"
+          loading={loading}
+          scroll={{ x: 1080 }}
+          dataSource={filteredHosts}
+          locale={{ emptyText: <EmptyPane description="还没有主机，系统会自动内置一条本机记录。" /> }}
+          pagination={{
+            current: pagination.current,
+            pageSize: pagination.pageSize,
+            total: filteredHosts.length,
+            showSizeChanger: true,
+            showTotal: (total) => `共 ${total} 条`,
+            onChange: (current, pageSize) => setPagination({ current, pageSize }),
+          }}
+          columns={[
               { title: '名称', dataIndex: 'name', width: 180 },
               { title: '类型', render: (_, row) => row.type === 'LOCAL' ? '本机' : 'SSH 远程主机', width: 140 },
               { title: '说明', dataIndex: 'description' },
@@ -235,9 +324,8 @@ export default function HostManagementPage() {
                   </Space>
                 ),
               },
-            ]}
-          />
-        )}
+          ]}
+        />
       </Card>
       <Modal
         title={editingId ? '编辑主机' : '新建主机'}

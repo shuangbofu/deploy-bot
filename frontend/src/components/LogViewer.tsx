@@ -19,13 +19,19 @@ export default function LogViewer({ content, maxHeight = 360 }: LogViewerProps) 
     >
       {lines.map((line, index) => {
         const lowerLine = line.toLowerCase();
+        const isSystemLine = line.startsWith('[系统]');
         // 这里优先照顾运维排查体验，对常见错误关键词做红色高亮。
         const isErrorLine = /(error|failed|fatal|exception|denied|refused|timed out|认证失败|失败|报错|错误)/.test(lowerLine);
+        const lineClassName = [
+          'log-line',
+          isSystemLine ? 'log-line-system' : '',
+          isErrorLine ? 'log-line-error' : '',
+        ].filter(Boolean).join(' ');
 
         return (
           <div
             key={`${index}-${line}`}
-            className={isErrorLine ? 'log-line log-line-error' : 'log-line'}
+            className={lineClassName}
           >
             {line || ' '}
           </div>

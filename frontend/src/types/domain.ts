@@ -138,6 +138,12 @@ export interface PipelineSummary {
   nodeEnvironment?: RuntimeEnvironmentSummary | null;
   /** 本机构建 Maven 环境。 */
   mavenEnvironment?: RuntimeEnvironmentSummary | null;
+  /** 目标主机运行 Java 环境。 */
+  runtimeJavaEnvironment?: RuntimeEnvironmentSummary | null;
+  /** 启用服务监测时的启动关键字。 */
+  startupKeyword?: string | null;
+  /** 启用服务监测时的启动观察窗口，单位秒。 */
+  startupTimeoutSeconds?: number | null;
   /** 流水线默认变量，可能是 JSON 字符串或对象。 */
   variablesJson?: string | Record<string, string>;
 }
@@ -188,6 +194,10 @@ export interface ServiceSummary {
   status?: string;
   /** 最近更新时间。 */
   updatedAt?: string;
+  /** 当前这次运行开始被系统接管的时间。 */
+  activeSince?: string | null;
+  /** 最近一次心跳确认仍然存活的时间。 */
+  lastHeartbeatAt?: string | null;
   /** 关联流水线。 */
   pipeline?: PipelineSummary | null;
   /** 最近一次部署。 */

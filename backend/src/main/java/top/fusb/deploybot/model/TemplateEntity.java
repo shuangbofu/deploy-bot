@@ -53,4 +53,5 @@ public class TemplateEntity {
     /** 是否需要记录并管理发布后的进程。 */
     @Column
     private Boolean monitorProcess = false;
+
 }

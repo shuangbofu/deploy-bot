@@ -56,8 +56,8 @@ public class DeploymentEntity {
     private Long id;
 
     /** 本次部署关联的流水线。 */
-    @ManyToOne(fetch = FetchType.EAGER, optional = false)
-    @JoinColumn(name = "pipeline_id")
+    @ManyToOne(fetch = FetchType.EAGER, optional = true)
+    @JoinColumn(name = "pipeline_id", nullable = true)
     private PipelineEntity pipeline;
 
     /** 本次部署使用的分支。 */

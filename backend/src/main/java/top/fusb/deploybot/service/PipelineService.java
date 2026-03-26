@@ -11,7 +11,9 @@ import top.fusb.deploybot.repo.RuntimeEnvironmentRepository;
 import top.fusb.deploybot.repo.PipelineRepository;
 import top.fusb.deploybot.repo.DeploymentRepository;
 import top.fusb.deploybot.repo.ProjectRepository;
+import top.fusb.deploybot.repo.ServiceRepository;
 import top.fusb.deploybot.repo.TemplateRepository;
+import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -24,6 +26,7 @@ public class PipelineService {
     private final TemplateRepository templateRepository;
     private final RuntimeEnvironmentRepository runtimeEnvironmentRepository;
     private final DeploymentRepository deploymentRepository;
+    private final ServiceRepository serviceRepository;
     private final HostRepository hostRepository;
     private final HostService hostService;
 
@@ -33,6 +36,7 @@ public class PipelineService {
             TemplateRepository templateRepository,
             RuntimeEnvironmentRepository runtimeEnvironmentRepository,
             DeploymentRepository deploymentRepository,
+            ServiceRepository serviceRepository,
             HostRepository hostRepository,
             HostService hostService
     ) {
@@ -41,6 +45,7 @@ public class PipelineService {
         this.templateRepository = templateRepository;
         this.runtimeEnvironmentRepository = runtimeEnvironmentRepository;
         this.deploymentRepository = deploymentRepository;
+        this.serviceRepository = serviceRepository;
         this.hostRepository = hostRepository;
         this.hostService = hostService;
     }
@@ -69,14 +74,16 @@ public class PipelineService {
         entity.setJavaEnvironment(resolveEnvironment(request.javaEnvironmentId()));
         entity.setNodeEnvironment(resolveEnvironment(request.nodeEnvironmentId()));
         entity.setMavenEnvironment(resolveEnvironment(request.mavenEnvironmentId()));
+        entity.setRuntimeJavaEnvironment(resolveRuntimeJavaEnvironment(request.runtimeJavaEnvironmentId(), targetHost));
+        entity.setStartupKeyword(normalizeText(request.startupKeyword()));
+        entity.setStartupTimeoutSeconds(normalizeStartupTimeout(request.startupTimeoutSeconds()));
         return pipelineRepository.save(entity);
     }
 
+    @Transactional
     public void delete(Long id) {
-        long deploymentCount = deploymentRepository.countByPipelineId(id);
-        if (deploymentCount > 0) {
-            throw new BusinessException(ErrorSubCode.PIPELINE_HAS_DEPLOYMENTS);
-        }
+        serviceRepository.deleteByPipelineId(id);
+        deploymentRepository.detachPipeline(id);
         pipelineRepository.deleteById(id);
     }
 
@@ -94,5 +101,38 @@ public class PipelineService {
             throw new BusinessException(ErrorSubCode.PIPELINE_ENV_MUST_BE_LOCAL);
         }
         return environment;
+    }
+
+    /**
+     * 发布阶段的 Java 环境必须来自目标主机，避免把本机构建环境误用于远端运行。
+     */
+    private RuntimeEnvironmentEntity resolveRuntimeJavaEnvironment(Long environmentId, HostEntity targetHost) {
+        if (environmentId == null) {
+            return null;
+        }
+        RuntimeEnvironmentEntity environment = runtimeEnvironmentRepository.findById(environmentId)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.RUNTIME_ENVIRONMENT_NOT_FOUND));
+        if (environment.getType() != top.fusb.deploybot.model.RuntimeEnvironmentType.JAVA) {
+            throw new BusinessException(ErrorSubCode.PIPELINE_RUNTIME_ENV_MUST_BE_JAVA);
+        }
+        if (targetHost == null || environment.getHost() == null || !environment.getHost().getId().equals(targetHost.getId())) {
+            throw new BusinessException(ErrorSubCode.PIPELINE_RUNTIME_ENV_MUST_MATCH_TARGET_HOST);
+        }
+        return environment;
+    }
+
+    private String normalizeText(String content) {
+        if (content == null) {
+            return null;
+        }
+        String trimmed = content.trim();
+        return trimmed.isBlank() ? null : trimmed;
+    }
+
+    private Integer normalizeStartupTimeout(Integer startupTimeoutSeconds) {
+        if (startupTimeoutSeconds == null) {
+            return null;
+        }
+        return Math.max(5, startupTimeoutSeconds);
     }
 }

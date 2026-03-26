@@ -26,6 +26,12 @@ public record PipelineRequest(
         /** 本机构建 Node 环境 ID。 */
         Long nodeEnvironmentId,
         /** 本机构建 Maven 环境 ID。 */
-        Long mavenEnvironmentId
+        Long mavenEnvironmentId,
+        /** 目标主机运行 Java 环境 ID。 */
+        Long runtimeJavaEnvironmentId,
+        /** 启用服务监测时的启动关键字。 */
+        String startupKeyword,
+        /** 启用服务监测时的启动观察窗口，单位秒。 */
+        Integer startupTimeoutSeconds
 ) {
 }

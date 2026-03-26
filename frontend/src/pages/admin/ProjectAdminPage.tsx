@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Button, Card, Form, Input, Modal, Popconfirm, Radio, Space, Table, message } from 'antd';
+import { useEffect, useMemo, useState } from 'react';
+import { Button, Card, Form, Input, Modal, Popconfirm, Radio, Select, Space, Table, message } from 'antd';
 import { projectsApi } from '../../api/projects';
 import type { ProjectPayload, ProjectSummary } from '../../api/types';
 import BooleanBadge from '../../components/BooleanBadge';
@@ -17,12 +17,21 @@ const emptyProject: ProjectPayload = {
 
 export default function ProjectAdminPage() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [loading, setLoading] = useState(false);
   const [form, setForm] = useState<ProjectPayload>(emptyProject);
   const [editingId, setEditingId] = useState<number>();
   const [modalOpen, setModalOpen] = useState(false);
+  const [keyword, setKeyword] = useState('');
+  const [gitAuthTypeFilter, setGitAuthTypeFilter] = useState<string>();
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
 
   const loadProjects = async () => {
-    setProjects(await projectsApi.list());
+    setLoading(true);
+    try {
+      setProjects(await projectsApi.list());
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -109,23 +118,85 @@ export default function ProjectAdminPage() {
     message.success('项目已删除');
   };
 
+  const filteredProjects = useMemo(() => projects.filter((item) => {
+    const normalizedKeyword = keyword.trim().toLowerCase();
+    if (normalizedKeyword) {
+      const matched = [item.name, item.description, item.gitUrl]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(normalizedKeyword));
+      if (!matched) {
+        return false;
+      }
+    }
+    if (gitAuthTypeFilter && item.gitAuthType !== gitAuthTypeFilter) {
+      return false;
+    }
+    return true;
+  }), [projects, keyword, gitAuthTypeFilter]);
+
   return (
     <>
       <PageHeaderBar
         title="项目管理"
         description="维护项目名称、说明、仓库地址和项目自己的 Git 认证方式。不同项目可以对接不同 Git 平台和不同账号或 SSH 密钥。"
-        extra={<Button type="primary" onClick={openCreate}>新建项目</Button>}
+        extra={(
+          <Space>
+            <Button onClick={() => loadProjects().catch(() => message.error('加载项目失败'))}>刷新</Button>
+            <Button type="primary" onClick={openCreate}>新建项目</Button>
+          </Space>
+        )}
       />
       <Card className="app-card">
-        {projects.length === 0 ? (
-          <EmptyPane description="还没有项目，点击右上角先创建一个真实项目。" />
-        ) : (
-          <Table
-            rowKey="id"
-            pagination={false}
-            scroll={{ x: 820 }}
-            dataSource={projects}
-            columns={[
+        <div className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-3">
+          <Input
+            value={keyword}
+            placeholder="搜索项目名称 / 描述 / Git 地址"
+            onChange={(event) => {
+              setKeyword(event.target.value);
+              setPagination((previous) => ({ ...previous, current: 1 }));
+            }}
+          />
+          <Select
+            allowClear
+            value={gitAuthTypeFilter}
+            placeholder="筛选 Git 认证方式"
+            options={[
+              { label: '不认证', value: 'NONE' },
+              { label: '账号密码', value: 'BASIC' },
+              { label: '密钥对模式', value: 'SSH' },
+            ]}
+            onChange={(value) => {
+              setGitAuthTypeFilter(value);
+              setPagination((previous) => ({ ...previous, current: 1 }));
+            }}
+          />
+          <div className="flex items-center">
+            <Button
+              onClick={() => {
+                setKeyword('');
+                setGitAuthTypeFilter(undefined);
+                setPagination((previous) => ({ ...previous, current: 1 }));
+              }}
+            >
+              重置条件
+            </Button>
+          </div>
+        </div>
+        <Table
+          rowKey="id"
+          loading={loading}
+          scroll={{ x: 820 }}
+          dataSource={filteredProjects}
+          locale={{ emptyText: <EmptyPane description="还没有项目，点击右上角先创建一个真实项目。" /> }}
+          pagination={{
+            current: pagination.current,
+            pageSize: pagination.pageSize,
+            total: filteredProjects.length,
+            showSizeChanger: true,
+            showTotal: (total) => `共 ${total} 条`,
+            onChange: (current, pageSize) => setPagination({ current, pageSize }),
+          }}
+          columns={[
               { title: '名称', dataIndex: 'name' },
               { title: '描述', dataIndex: 'description' },
               { title: 'Git 地址', dataIndex: 'gitUrl' },
@@ -158,9 +229,8 @@ export default function ProjectAdminPage() {
                   </Space>
                 ),
               },
-            ]}
-          />
-        )}
+          ]}
+        />
       </Card>
       <Modal
         title={editingId ? '编辑项目' : '新建项目'}

@@ -21,7 +21,7 @@ import lombok.ToString;
 @Entity
 @Table(name = "pipelines")
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
-@ToString(exclude = {"project", "template", "targetHost", "javaEnvironment", "nodeEnvironment", "mavenEnvironment"})
+@ToString(exclude = {"project", "template", "targetHost", "javaEnvironment", "nodeEnvironment", "mavenEnvironment", "runtimeJavaEnvironment"})
 public class PipelineEntity {
 
     @Id
@@ -74,4 +74,16 @@ public class PipelineEntity {
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "maven_environment_id")
     private RuntimeEnvironmentEntity mavenEnvironment;
+
+    /** 目标主机运行 Java 环境。 */
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "runtime_java_environment_id")
+    private RuntimeEnvironmentEntity runtimeJavaEnvironment;
+
+    /** 启用服务监测时使用的启动关键字，用于更精准判断业务是否真正启动成功。 */
+    @Column(name = "process_keyword", length = 500)
+    private String startupKeyword;
+
+    /** 启用服务监测时的启动观察窗口，单位秒。 */
+    private Integer startupTimeoutSeconds;
 }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Divider, Form, Input, Modal, Popconfirm, Space, Steps, Switch, Table, Tag, message } from 'antd';
+import { Button, Card, Divider, Form, Input, Modal, Popconfirm, Select, Space, Steps, Switch, Table, Tag, message } from 'antd';
 import { templatesApi } from '../../api/templates';
 import type { TemplatePayload } from '../../api/types';
 import BooleanBadge from '../../components/BooleanBadge';
@@ -80,13 +80,23 @@ const phaseLabelMap = {
 
 export default function TemplateAdminPage() {
   const [templates, setTemplates] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [form, setForm] = useState<TemplateFormState>(emptyTemplate);
   const [editingId, setEditingId] = useState();
   const [modalOpen, setModalOpen] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
+  const [keyword, setKeyword] = useState('');
+  const [templateTypeFilter, setTemplateTypeFilter] = useState<string>();
+  const [monitorFilter, setMonitorFilter] = useState<string>();
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
 
   const loadTemplates = async () => {
-    setTemplates(await templatesApi.list());
+    setLoading(true);
+    try {
+      setTemplates(await templatesApi.list());
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -204,22 +214,101 @@ export default function TemplateAdminPage() {
     parsedVariables: parseVariablesSchema(item.variablesSchema),
   })), [templates]);
 
+  const filteredTemplates = useMemo(() => tableData.filter((item) => {
+    const normalizedKeyword = keyword.trim().toLowerCase();
+    if (normalizedKeyword) {
+      const matched = [item.name, item.description]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(normalizedKeyword));
+      if (!matched) {
+        return false;
+      }
+    }
+    if (templateTypeFilter && item.templateType !== templateTypeFilter) {
+      return false;
+    }
+    if (monitorFilter != null) {
+      const expected = monitorFilter === 'true';
+      if (Boolean(item.monitorProcess) !== expected) {
+        return false;
+      }
+    }
+    return true;
+  }), [tableData, keyword, templateTypeFilter, monitorFilter]);
+
   return (
     <>
       <PageHeaderBar
         title="模板管理"
         description="模板负责沉淀部署脚本，只暴露变量定义给流水线复用。"
-        extra={<Button type="primary" onClick={openCreate}>新建模板</Button>}
+        extra={(
+          <Space>
+            <Button onClick={() => loadTemplates().catch(() => message.error('加载模板失败'))}>刷新</Button>
+            <Button type="primary" onClick={openCreate}>新建模板</Button>
+          </Space>
+        )}
       />
       <Card className="app-card">
-        {templates.length === 0 ? (
-          <EmptyPane description="还没有模板，点击右上角先沉淀一套真实部署脚本。" />
-        ) : (
-          <Table
-            rowKey="id"
-            scroll={{ x: 960 }}
-            dataSource={tableData}
-            columns={[
+        <div className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-4">
+          <Input
+            value={keyword}
+            placeholder="搜索模板名称 / 描述"
+            onChange={(event) => {
+              setKeyword(event.target.value);
+              setPagination((previous) => ({ ...previous, current: 1 }));
+            }}
+          />
+          <Select
+            allowClear
+            value={templateTypeFilter}
+            placeholder="筛选模板类型"
+            options={templateTypeOptions}
+            onChange={(value) => {
+              setTemplateTypeFilter(value);
+              setPagination((previous) => ({ ...previous, current: 1 }));
+            }}
+          />
+          <Select
+            allowClear
+            value={monitorFilter}
+            placeholder="筛选监控进程"
+            options={[
+              { label: '监控进程', value: 'true' },
+              { label: '不监控进程', value: 'false' },
+            ]}
+            onChange={(value) => {
+              setMonitorFilter(value);
+              setPagination((previous) => ({ ...previous, current: 1 }));
+            }}
+          />
+          <div className="flex items-center">
+            <Button
+              onClick={() => {
+                setKeyword('');
+                setTemplateTypeFilter(undefined);
+                setMonitorFilter(undefined);
+                setPagination((previous) => ({ ...previous, current: 1 }));
+              }}
+            >
+              重置条件
+            </Button>
+          </div>
+        </div>
+        <Table
+          rowKey="id"
+          loading={loading}
+          scroll={{ x: 960 }}
+          dataSource={filteredTemplates}
+          locale={{ emptyText: <EmptyPane description="还没有模板，点击右上角先沉淀一套真实部署脚本。" /> }}
+          pagination={{
+            current: pagination.current,
+            pageSize: pagination.pageSize,
+            total: filteredTemplates.length,
+            showSizeChanger: true,
+            showTotal: (total) => `共 ${total} 条`,
+            onChange: (current, pageSize) => setPagination({ current, pageSize }),
+          }}
+          columns={[
               { title: '名称', dataIndex: 'name', width: 180 },
               {
                 title: '模板类型',
@@ -284,9 +373,8 @@ export default function TemplateAdminPage() {
                   </Space>
                 ),
               },
-            ]}
-          />
-        )}
+          ]}
+        />
       </Card>
       <Modal
         title={editingId ? '编辑模板' : '新建模板'}
@@ -441,9 +529,15 @@ export default function TemplateAdminPage() {
                       onChange={(checked) => setForm({ ...form, monitorProcess: checked })}
                     />
                   </Form.Item>
-                  <div className="text-xs text-slate-500">
-                    只有发布脚本最终会拉起长期运行的进程时，才需要开启监控进程。
-                  </div>
+                  {form.monitorProcess ? (
+                    <div className="text-xs text-slate-500">
+                      开启后表示系统会在发布后尝试接管服务。更精确的启动关键字和启动超时配置放在流水线上，按具体部署环境单独设置。
+                    </div>
+                  ) : (
+                    <div className="text-xs text-slate-500">
+                      只有发布脚本最终会拉起长期运行的进程时，才需要开启监控进程。
+                    </div>
+                  )}
                 </Form>
               </div>
               </Card>

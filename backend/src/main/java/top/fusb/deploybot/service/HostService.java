@@ -186,10 +186,14 @@ public class HostService {
         }
         int exitCode = process.waitFor();
         if (exitCode != 0) {
-            log.warn("Remote script execution failed on host {} with exit code {}.", host.getName(), exitCode);
+            log.warn("主机 {} 的远程脚本执行失败，退出码={}。", host.getName(), exitCode);
             throw new BusinessException(ErrorSubCode.REMOTE_EXECUTION_FAILED, output.isBlank() ? null : output.trim());
         }
-        log.info("Remote script execution succeeded on host {}.", host.getName());
+        log.info(
+                "主机 {} 的远程脚本执行成功，输出预览={}",
+                host.getName(),
+                previewOutput(output)
+        );
         return output;
     }
 
@@ -278,7 +282,7 @@ public class HostService {
         }
         command.add((host.getUsername() == null || host.getUsername().isBlank()) ? host.getHostname() : host.getUsername().trim() + "@" + host.getHostname().trim());
         command.add("bash -s");
-        log.info("Built SSH command for host {} with auth type {} and timeout {}s.", host.getName(), authType, timeoutSeconds);
+        log.info("已构建主机 {} 的 SSH 命令，认证方式={}，超时时间={}秒。", host.getName(), authType, timeoutSeconds);
         return command;
     }
 
@@ -405,5 +409,16 @@ public class HostService {
                 .toLowerCase(Locale.ROOT);
         String firstToken = normalized.split(" ")[0];
         return Double.parseDouble(firstToken);
+    }
+
+    private String previewOutput(String output) {
+        if (output == null || output.isBlank()) {
+            return "<empty>";
+        }
+        String normalized = output.replaceAll("\\s+", " ").trim();
+        if (normalized.length() <= 240) {
+            return normalized;
+        }
+        return normalized.substring(0, 240) + "...";
     }
 }

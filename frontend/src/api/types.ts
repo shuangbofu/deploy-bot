@@ -62,6 +62,9 @@ export interface PipelinePayload {
   javaEnvironmentId?: number;
   nodeEnvironmentId?: number;
   mavenEnvironmentId?: number;
+  runtimeJavaEnvironmentId?: number;
+  startupKeyword?: string;
+  startupTimeoutSeconds?: number;
 }
 
 /**

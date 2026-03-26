@@ -28,18 +28,25 @@ export default function UserPipelineHistoryPage() {
   const navigate = useNavigate();
   const [pipeline, setPipeline] = useState<PipelineSummary>();
   const [deployments, setDeployments] = useState<DeploymentSummary[]>([]);
+  const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState<PipelineHistoryFilters>(emptyFilters);
   const [tick, setTick] = useState(() => Date.now());
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
 
   /** 同时读取流水线元信息和它的历史部署记录。 */
   const loadData = async () => {
-    const [pipelineList, deploymentList] = await Promise.all([
-      pipelinesApi.list(),
-      deploymentsApi.list(),
-    ]);
-    const targetPipeline = pipelineList.find((item) => String(item.id) === String(pipelineId));
-    setPipeline(targetPipeline);
-    setDeployments(deploymentList.filter((item) => String(item.pipeline?.id) === String(pipelineId)));
+    setLoading(true);
+    try {
+      const [pipelineList, deploymentList] = await Promise.all([
+        pipelinesApi.list(),
+        deploymentsApi.list(),
+      ]);
+      const targetPipeline = pipelineList.find((item) => String(item.id) === String(pipelineId));
+      setPipeline(targetPipeline);
+      setDeployments(deploymentList.filter((item) => String(item.pipeline?.id) === String(pipelineId)));
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -98,14 +105,20 @@ export default function UserPipelineHistoryPage() {
             <Input
               value={filters.branchName}
               placeholder="筛选分支"
-              onChange={(event) => setFilters({ ...filters, branchName: event.target.value })}
+              onChange={(event) => {
+                setFilters({ ...filters, branchName: event.target.value });
+                setPagination((previous) => ({ ...previous, current: 1 }));
+              }}
             />
           </Col>
           <Col xs={24} md={12} xl={6}>
             <Input
               value={filters.triggeredBy}
               placeholder="筛选触发人"
-              onChange={(event) => setFilters({ ...filters, triggeredBy: event.target.value })}
+              onChange={(event) => {
+                setFilters({ ...filters, triggeredBy: event.target.value });
+                setPagination((previous) => ({ ...previous, current: 1 }));
+              }}
             />
           </Col>
           <Col xs={24} md={12} xl={4}>
@@ -115,14 +128,20 @@ export default function UserPipelineHistoryPage() {
               value={filters.status}
               options={DEPLOYMENT_STATUS_OPTIONS}
               placeholder="筛选状态"
-              onChange={(value) => setFilters({ ...filters, status: value })}
+              onChange={(value) => {
+                setFilters({ ...filters, status: value });
+                setPagination((previous) => ({ ...previous, current: 1 }));
+              }}
             />
           </Col>
           <Col xs={24} md={12} xl={8}>
             <DatePicker.RangePicker
               className="w-full"
               value={filters.timeRange}
-              onChange={(value) => setFilters({ ...filters, timeRange: value })}
+              onChange={(value) => {
+                setFilters({ ...filters, timeRange: value });
+                setPagination((previous) => ({ ...previous, current: 1 }));
+              }}
               placeholder={['开始时间', '结束时间']}
             />
           </Col>
@@ -133,14 +152,21 @@ export default function UserPipelineHistoryPage() {
             <Button onClick={() => loadData().catch(() => message.error('刷新流水线历史失败'))}>刷新列表</Button>
           </Space>
         </div>
-        {filteredDeployments.length === 0 ? (
-          <EmptyPane description="这条流水线还没有符合条件的部署记录。" />
-        ) : (
-          <Table
-            rowKey="id"
-            scroll={{ x: 1180 }}
-            dataSource={filteredDeployments}
-            columns={[
+        <Table
+          rowKey="id"
+          loading={loading}
+          scroll={{ x: 1180 }}
+          dataSource={filteredDeployments}
+          locale={{ emptyText: <EmptyPane description="这条流水线还没有符合条件的部署记录。" /> }}
+          pagination={{
+            current: pagination.current,
+            pageSize: pagination.pageSize,
+            total: filteredDeployments.length,
+            showSizeChanger: true,
+            showTotal: (total) => `共 ${total} 条`,
+            onChange: (current, pageSize) => setPagination({ current, pageSize }),
+          }}
+          columns={[
               { title: '编号', dataIndex: 'id' },
               { title: '项目', render: (_, row) => row.pipeline?.project?.name || '-' },
               { title: '流水线', render: (_, row) => row.pipeline?.name || '-' },
@@ -166,9 +192,8 @@ export default function UserPipelineHistoryPage() {
                   </Button>
                 ),
               },
-            ]}
-          />
-        )}
+          ]}
+        />
       </Card>
     </>
   );

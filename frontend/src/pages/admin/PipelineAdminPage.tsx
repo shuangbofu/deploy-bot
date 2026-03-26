@@ -9,7 +9,7 @@ import type { PipelinePayload } from '../../api/types';
 import EmptyPane from '../../components/EmptyPane';
 import PageHeaderBar from '../../components/PageHeaderBar';
 import PipelineVariablesEditor from '../../components/PipelineVariablesEditor';
-import PipelineIcon, { getRequiredEnvironmentTypes } from '../../components/PipelineIcon';
+import PipelineIcon, { getRequiredEnvironmentTypes, getRequiredRuntimeEnvironmentTypes } from '../../components/PipelineIcon';
 import type {
   HostSummary,
   PipelineSummary,
@@ -29,6 +29,9 @@ interface PipelineFormState {
   javaEnvironmentId?: number;
   nodeEnvironmentId?: number;
   mavenEnvironmentId?: number;
+  runtimeJavaEnvironmentId?: number;
+  startupKeyword: string;
+  startupTimeoutSeconds?: number;
 }
 
 const emptyPipeline: PipelineFormState = {
@@ -42,6 +45,9 @@ const emptyPipeline: PipelineFormState = {
   javaEnvironmentId: undefined,
   nodeEnvironmentId: undefined,
   mavenEnvironmentId: undefined,
+  runtimeJavaEnvironmentId: undefined,
+  startupKeyword: '',
+  startupTimeoutSeconds: 30,
 };
 
 /**
@@ -126,24 +132,35 @@ export default function PipelineAdminPage() {
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [runtimeEnvironments, setRuntimeEnvironments] = useState<RuntimeEnvironmentSummary[]>([]);
   const [pipelines, setPipelines] = useState<PipelineSummary[]>([]);
+  const [loading, setLoading] = useState(false);
   const [form, setForm] = useState<PipelineFormState>(emptyPipeline);
   const [editingId, setEditingId] = useState<number>();
   const [modalOpen, setModalOpen] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
+  const [keyword, setKeyword] = useState('');
+  const [projectFilter, setProjectFilter] = useState<number>();
+  const [templateFilter, setTemplateFilter] = useState<number>();
+  const [hostFilter, setHostFilter] = useState<number>();
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
 
   const loadData = async () => {
-    const [projectResponse, hostResponse, templateResponse, runtimeEnvironmentsResponse, pipelineResponse] = await Promise.all([
-      projectsApi.list(),
-      hostsApi.list(true),
-      templatesApi.list(),
-      runtimeEnvironmentsApi.list(),
-      pipelinesApi.list(),
-    ]);
-    setProjects(projectResponse);
-    setHosts(hostResponse);
-    setTemplates(templateResponse);
-    setRuntimeEnvironments(runtimeEnvironmentsResponse);
-    setPipelines(pipelineResponse);
+    setLoading(true);
+    try {
+      const [projectResponse, hostResponse, templateResponse, runtimeEnvironmentsResponse, pipelineResponse] = await Promise.all([
+        projectsApi.list(),
+        hostsApi.list(true),
+        templatesApi.list(),
+        runtimeEnvironmentsApi.list(),
+        pipelinesApi.list(),
+      ]);
+      setProjects(projectResponse);
+      setHosts(hostResponse);
+      setTemplates(templateResponse);
+      setRuntimeEnvironments(runtimeEnvironmentsResponse);
+      setPipelines(pipelineResponse);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -170,6 +187,9 @@ export default function PipelineAdminPage() {
       javaEnvironmentId: record.javaEnvironment?.id || undefined,
       nodeEnvironmentId: record.nodeEnvironment?.id || undefined,
       mavenEnvironmentId: record.mavenEnvironment?.id || undefined,
+      runtimeJavaEnvironmentId: record.runtimeJavaEnvironment?.id || undefined,
+      startupKeyword: record.startupKeyword || '',
+      startupTimeoutSeconds: record.startupTimeoutSeconds || 30,
     });
     setCurrentStep(0);
     setModalOpen(true);
@@ -223,12 +243,38 @@ export default function PipelineAdminPage() {
     () => getRequiredEnvironmentTypes(selectedTemplate?.templateType),
     [selectedTemplate],
   );
+  const requiredRuntimeEnvironmentTypes = useMemo(
+    () => getRequiredRuntimeEnvironmentTypes(selectedTemplate?.templateType),
+    [selectedTemplate],
+  );
 
   const tableData = useMemo(() => pipelines.map((item) => ({
     ...item,
     parsedVariablesJson: parseVariablesJson(item.variablesJson),
     parsedTemplateVariables: parseVariablesSchema(item.template?.variablesSchema),
   })), [pipelines]);
+
+  const filteredPipelines = useMemo(() => tableData.filter((item) => {
+    const normalizedKeyword = keyword.trim().toLowerCase();
+    if (normalizedKeyword) {
+      const matched = [item.name, item.description, item.defaultBranch]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(normalizedKeyword));
+      if (!matched) {
+        return false;
+      }
+    }
+    if (projectFilter && item.project?.id !== projectFilter) {
+      return false;
+    }
+    if (templateFilter && item.template?.id !== templateFilter) {
+      return false;
+    }
+    if (hostFilter && item.targetHost?.id !== hostFilter) {
+      return false;
+    }
+    return true;
+  }), [tableData, keyword, projectFilter, templateFilter, hostFilter]);
 
   const javaOptions = useMemo(
     () => getLocalBuildEnvironmentOptions(runtimeEnvironments, 'JAVA', localHost?.id),
@@ -242,23 +288,97 @@ export default function PipelineAdminPage() {
     () => getLocalBuildEnvironmentOptions(runtimeEnvironments, 'MAVEN', localHost?.id),
     [runtimeEnvironments, localHost],
   );
+  const runtimeJavaOptions = useMemo(
+    () => runtimeEnvironments
+      .filter((item) => item.type === 'JAVA' && item.enabled !== false && item.host?.id === form.targetHostId)
+      .sort(sortEnvironmentOptions)
+      .map((item) => ({ label: `${item.name}${item.version ? ` (${item.version})` : ''}`, value: item.id })),
+    [runtimeEnvironments, form.targetHostId],
+  );
 
   return (
     <>
       <PageHeaderBar
         title="流水线管理"
         description="流水线绑定项目、模板和默认变量，是用户端直接可部署的对象。构建始终在本机完成，目标主机只负责接收产物并发布。"
-        extra={<Button type="primary" onClick={openCreate}>新建流水线</Button>}
+        extra={(
+          <Space>
+            <Button onClick={() => loadData().catch(() => message.error('加载流水线数据失败'))}>刷新</Button>
+            <Button type="primary" onClick={openCreate}>新建流水线</Button>
+          </Space>
+        )}
       />
       <Card className="app-card">
-        {pipelines.length === 0 ? (
-          <EmptyPane description="还没有流水线，点击右上角先把项目和模板组合起来。" />
-        ) : (
-          <Table
-            rowKey="id"
-            scroll={{ x: 980 }}
-            dataSource={tableData}
-            columns={[
+        <div className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-4">
+          <Input
+            value={keyword}
+            placeholder="搜索流水线名称 / 描述 / 默认分支"
+            onChange={(event) => {
+              setKeyword(event.target.value);
+              setPagination((previous) => ({ ...previous, current: 1 }));
+            }}
+          />
+          <Select
+            allowClear
+            value={projectFilter}
+            placeholder="筛选项目"
+            options={projects.map((item) => ({ label: item.name, value: item.id }))}
+            onChange={(value) => {
+              setProjectFilter(value);
+              setPagination((previous) => ({ ...previous, current: 1 }));
+            }}
+          />
+          <Select
+            allowClear
+            value={templateFilter}
+            placeholder="筛选模板"
+            options={templates.map((item) => ({ label: item.name, value: item.id }))}
+            onChange={(value) => {
+              setTemplateFilter(value);
+              setPagination((previous) => ({ ...previous, current: 1 }));
+            }}
+          />
+          <Select
+            allowClear
+            value={hostFilter}
+            placeholder="筛选目标主机"
+            options={hosts.map((item) => ({ label: item.name, value: item.id }))}
+            onChange={(value) => {
+              setHostFilter(value);
+              setPagination((previous) => ({ ...previous, current: 1 }));
+            }}
+          />
+        </div>
+        <div className="mb-4">
+          <div className="flex items-center">
+            <Button
+              onClick={() => {
+                setKeyword('');
+                setProjectFilter(undefined);
+                setTemplateFilter(undefined);
+                setHostFilter(undefined);
+                setPagination((previous) => ({ ...previous, current: 1 }));
+              }}
+            >
+              重置条件
+            </Button>
+          </div>
+        </div>
+        <Table
+          rowKey="id"
+          loading={loading}
+          scroll={{ x: 980 }}
+          dataSource={filteredPipelines}
+          locale={{ emptyText: <EmptyPane description="还没有流水线，点击右上角先把项目和模板组合起来。" /> }}
+          pagination={{
+            current: pagination.current,
+            pageSize: pagination.pageSize,
+            total: filteredPipelines.length,
+            showSizeChanger: true,
+            showTotal: (total) => `共 ${total} 条`,
+            onChange: (current, pageSize) => setPagination({ current, pageSize }),
+          }}
+          columns={[
               { title: '名称', dataIndex: 'name', width: 180 },
               {
                 title: '图标',
@@ -271,6 +391,9 @@ export default function PipelineAdminPage() {
               { title: '构建 Java', render: (_, row) => row.javaEnvironment?.name || '-' },
               { title: '构建 Node', render: (_, row) => row.nodeEnvironment?.name || '-' },
               { title: '构建 Maven', render: (_, row) => row.mavenEnvironment?.name || '-' },
+              { title: '运行 Java', render: (_, row) => row.runtimeJavaEnvironment?.name || '-' },
+              { title: '启动关键字', render: (_, row) => row.startupKeyword || '-' },
+              { title: '启动超时(秒)', width: 120, render: (_, row) => row.startupTimeoutSeconds || '-' },
               { title: '默认分支', dataIndex: 'defaultBranch', width: 120 },
               { title: '描述', dataIndex: 'description' },
               {
@@ -296,16 +419,15 @@ export default function PipelineAdminPage() {
                       title="确认删除这条流水线吗？"
                       okText="确认"
                       cancelText="取消"
-                      onConfirm={() => removePipeline(record.id).catch(() => message.error('删除流水线失败'))}
+                      onConfirm={() => removePipeline(record.id)}
                     >
                       <Button size="small" danger>删除</Button>
                     </Popconfirm>
                   </Space>
                 ),
               },
-            ]}
-          />
-        )}
+          ]}
+        />
       </Card>
       <Modal
         title={editingId ? '编辑流水线' : '新建流水线'}
@@ -352,8 +474,8 @@ export default function PipelineAdminPage() {
               current={currentStep}
               items={[
                 { title: '基础信息', description: '名称、项目、模板、分支' },
-                { title: '目标主机', description: '选择发布到哪台主机' },
                 { title: '构建环境', description: '选择本机构建用环境' },
+                { title: '目标主机', description: '选择发布到哪台主机' },
                 { title: '默认变量', description: '按阶段填写默认值' },
               ]}
             />
@@ -386,6 +508,9 @@ export default function PipelineAdminPage() {
                         javaEnvironmentId: undefined,
                         nodeEnvironmentId: undefined,
                         mavenEnvironmentId: undefined,
+                        runtimeJavaEnvironmentId: undefined,
+                        startupKeyword: '',
+                        startupTimeoutSeconds: 30,
                       })}
                     />
                   </Form.Item>
@@ -396,31 +521,7 @@ export default function PipelineAdminPage() {
               </Card>
             ) : null}
             {currentStep === 1 ? (
-              <Card size="small" title="步骤 2 · 目标主机">
-                <Form layout="vertical">
-                  <Form.Item label="目标主机">
-                    <Select
-                      value={form.targetHostId}
-                      options={hosts.map((item) => ({ label: item.name, value: item.id }))}
-                      onChange={(value) => setForm({
-                        ...form,
-                        targetHostId: value,
-                        javaEnvironmentId: undefined,
-                        nodeEnvironmentId: undefined,
-                        mavenEnvironmentId: undefined,
-                      })}
-                    />
-                  </Form.Item>
-                </Form>
-                {selectedTargetHost ? (
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                    当前部署目标：{selectedTargetHost.name}
-                  </div>
-                ) : null}
-              </Card>
-            ) : null}
-            {currentStep === 2 ? (
-              <Card size="small" title="步骤 3 · 构建环境">
+              <Card size="small" title="步骤 2 · 构建环境">
                 {localHost ? (
                   <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
                     构建会固定在本机完成，不会跟随目标主机切换。当前使用的构建主机：{localHost.name}
@@ -461,6 +562,65 @@ export default function PipelineAdminPage() {
                     </Form.Item>
                   ) : null}
                 </Form>
+              </Card>
+            ) : null}
+            {currentStep === 2 ? (
+              <Card size="small" title="步骤 3 · 目标主机">
+                <Form layout="vertical">
+                  <Form.Item label="目标主机">
+                    <Select
+                      value={form.targetHostId}
+                      options={hosts.map((item) => ({ label: item.name, value: item.id }))}
+                      onChange={(value) => setForm({
+                        ...form,
+                        targetHostId: value,
+                        runtimeJavaEnvironmentId: undefined,
+                      })}
+                    />
+                  </Form.Item>
+                  {requiredRuntimeEnvironmentTypes.includes('JAVA') ? (
+                    <Form.Item label="目标主机运行 Java 环境">
+                      <Select
+                        allowClear
+                        value={form.runtimeJavaEnvironmentId}
+                        options={runtimeJavaOptions}
+                        onChange={(value) => setForm({ ...form, runtimeJavaEnvironmentId: value })}
+                        placeholder="请选择目标主机运行应用时使用的 Java 环境"
+                      />
+                    </Form.Item>
+                  ) : null}
+                  {selectedTemplate?.monitorProcess ? (
+                    <>
+                      <Form.Item label="启动关键字">
+                        <Input
+                          value={form.startupKeyword}
+                          onChange={(event) => setForm({ ...form, startupKeyword: event.target.value })}
+                          placeholder="例如：app.jar、deploy-bot-backend"
+                        />
+                      </Form.Item>
+                      <Form.Item label="启动超时（秒）">
+                        <Input
+                          type="number"
+                          min={5}
+                          value={form.startupTimeoutSeconds}
+                          onChange={(event) => setForm({
+                            ...form,
+                            startupTimeoutSeconds: event.target.value ? Number(event.target.value) : undefined,
+                          })}
+                          placeholder="30"
+                        />
+                      </Form.Item>
+                      <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                        开启服务监测的模板会在发布后进入启动观察窗口。系统必须拿到 PID 才会认为接管成功，启动关键字只用于更精准地判断服务是否真正启动成功。
+                      </div>
+                    </>
+                  ) : null}
+                </Form>
+                {selectedTargetHost ? (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                    当前部署目标：{selectedTargetHost.name}
+                  </div>
+                ) : null}
               </Card>
             ) : null}
             {currentStep === 3 ? (

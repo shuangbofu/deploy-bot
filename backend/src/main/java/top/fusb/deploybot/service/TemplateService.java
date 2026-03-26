@@ -65,4 +65,11 @@ public class TemplateService {
         String trimmed = content.trim();
         return trimmed.isBlank() ? null : trimmed + "\n";
     }
+    private String normalizeText(String content) {
+        if (content == null) {
+            return null;
+        }
+        String trimmed = content.trim();
+        return trimmed.isBlank() ? null : trimmed;
+    }
 }

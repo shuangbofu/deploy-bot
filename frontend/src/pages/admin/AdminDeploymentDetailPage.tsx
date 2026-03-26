@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Col, Descriptions, Popconfirm, Progress, Row, Space, message } from 'antd';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { deploymentsApi } from '../../api/deployments';
 import LogViewer from '../../components/LogViewer';
 import PageHeaderBar from '../../components/PageHeaderBar';
@@ -17,6 +17,7 @@ import { getDeploymentProgress, getDeploymentProgressColor } from '../../utils/d
 export default function AdminDeploymentDetailPage() {
   const { deploymentId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [deployment, setDeployment] = useState<DeploymentSummary>();
   const [logContent, setLogContent] = useState('');
 
@@ -52,6 +53,7 @@ export default function AdminDeploymentDetailPage() {
       && deployment?.status
       && !ACTIVE_DEPLOYMENT_STATUSES.includes(deployment.status),
   );
+  const backPath = searchParams.get('from') === 'services' ? '/admin/services' : '/admin/deployments';
 
   return (
     <>
@@ -59,7 +61,9 @@ export default function AdminDeploymentDetailPage() {
         title={`部署详情 #${deploymentId}`}
         description="管理端查看部署记录时，应通过详情页追踪执行状态、日志和错误信息。"
         extra={[
-          <Button key="back" onClick={() => navigate('/admin/deployments')}>返回部署记录</Button>,
+          <Button key="back" onClick={() => navigate(backPath)}>
+            {backPath === '/admin/services' ? '返回服务管理' : '返回部署记录'}
+          </Button>,
           rollbackable ? (
             <Popconfirm
               key="rollback"

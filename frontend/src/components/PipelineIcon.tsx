@@ -52,6 +52,17 @@ export function getRequiredEnvironmentTypes(templateType) {
 }
 
 /**
+ * 根据模板类型推导目标主机运行阶段必须选择的环境。
+ */
+export function getRequiredRuntimeEnvironmentTypes(templateType) {
+  const normalized = templateType || 'generic';
+  if (normalized === 'springboot' || normalized === 'springboot_frontend') {
+    return ['JAVA'];
+  }
+  return [];
+}
+
+/**
  * 流水线或模板类型图标展示组件。
  */
 export default function PipelineIcon({ type = 'generic' }) {

@@ -12,9 +12,9 @@ const menuItems = [
   { key: '/admin/hosts', icon: <CloudServerOutlined />, label: '主机' },
   { key: '/admin/templates', icon: <FileTextOutlined />, label: '模板' },
   { key: '/admin/pipelines', icon: <DeploymentUnitOutlined />, label: '流水线' },
-  { key: '/admin/system-settings', icon: <SettingOutlined />, label: '系统设置' },
   { key: '/admin/deployments', icon: <ProfileOutlined />, label: '部署记录' },
   { key: '/admin/services', icon: <RadarChartOutlined />, label: '服务管理' },
+  { key: '/admin/system-settings', icon: <SettingOutlined />, label: '系统设置' },
 ];
 
 /**

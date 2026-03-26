@@ -59,4 +59,10 @@ public class ServiceEntity {
 
     /** 最后更新时间。 */
     private LocalDateTime updatedAt;
+
+    /** 当前这次运行开始被系统接管的时间。 */
+    private LocalDateTime activeSince;
+
+    /** 最近一次心跳确认仍然存活的时间。 */
+    private LocalDateTime lastHeartbeatAt;
 }

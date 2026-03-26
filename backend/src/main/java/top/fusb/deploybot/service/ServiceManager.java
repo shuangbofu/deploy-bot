@@ -8,6 +8,9 @@ import top.fusb.deploybot.model.HostType;
 import top.fusb.deploybot.model.ServiceEntity;
 import top.fusb.deploybot.model.ServiceStatus;
 import top.fusb.deploybot.repo.ServiceRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -16,6 +19,7 @@ import java.util.Map;
 
 @Service
 public class ServiceManager {
+    private static final Logger log = LoggerFactory.getLogger(ServiceManager.class);
 
     private final ServiceRepository serviceRepository;
     private final JsonMapper jsonMapper;
@@ -33,10 +37,53 @@ public class ServiceManager {
         return services;
     }
 
+    /**
+     * 定时刷新服务状态，给“服务管理”和控制台提供最近心跳时间。
+     */
+    @Scheduled(fixedDelay = 15000L)
+    public void heartbeatServices() {
+        List<ServiceEntity> services = serviceRepository.findAll();
+        if (services.isEmpty()) {
+            return;
+        }
+        log.info("开始执行服务心跳刷新，服务数量={}。", services.size());
+        services.forEach(service -> {
+            try {
+                refreshStatus(service);
+            } catch (Exception ex) {
+                log.warn("服务 {} 心跳刷新失败：{}", service.getId(), ex.getMessage());
+            }
+        });
+        log.info("服务心跳刷新完成。");
+    }
+
     public ServiceEntity findById(Long id) {
         ServiceEntity service = serviceRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorSubCode.SERVICE_NOT_FOUND));
         return refreshStatus(service);
+    }
+
+    /**
+     * 在新的部署启动前，优先停止当前流水线已经被系统接管的旧服务。
+     */
+    public ServiceEntity stopManagedServiceBeforeDeploy(Long pipelineId) {
+        ServiceEntity service = serviceRepository.findFirstByPipelineId(pipelineId).orElse(null);
+        if (service == null) {
+            log.info("流水线 {} 当前没有可接管的旧服务，无需在部署前停止。", pipelineId);
+            return null;
+        }
+        log.info("流水线 {} 在部署前检测到已受管服务：serviceId={}，pid={}，状态={}。", pipelineId, service.getId(), service.getCurrentPid(), service.getStatus());
+        if (service.getCurrentPid() != null) {
+            HostEntity targetHost = service.getPipeline() == null ? null : service.getPipeline().getTargetHost();
+            stopProcess(service.getCurrentPid(), targetHost);
+        }
+        service.setCurrentPid(null);
+        service.setStatus(ServiceStatus.STOPPED);
+        service.setActiveSince(null);
+        service.setUpdatedAt(LocalDateTime.now());
+        ServiceEntity saved = serviceRepository.save(service);
+        log.info("流水线 {} 部署前旧服务停止完成。serviceId={}。", pipelineId, saved.getId());
+        return saved;
     }
 
     public void updateFromDeployment(DeploymentEntity deployment, Long pid) {
@@ -48,9 +95,14 @@ public class ServiceManager {
         service.setLastDeployment(deployment);
         service.setServiceName(variables.getOrDefault("serviceName", deployment.getPipeline().getName()));
         service.setCurrentPid(pid);
-        service.setStatus(isAlive(pid, deployment.getPipeline().getTargetHost()) ? ServiceStatus.RUNNING : ServiceStatus.STOPPED);
+        boolean running = isAlive(pid, deployment.getPipeline().getTargetHost());
+        service.setStatus(running ? ServiceStatus.RUNNING : ServiceStatus.STOPPED);
         if (service.getCreatedAt() == null) {
             service.setCreatedAt(LocalDateTime.now());
+        }
+        if (running) {
+            service.setActiveSince(LocalDateTime.now());
+            service.setLastHeartbeatAt(LocalDateTime.now());
         }
         service.setUpdatedAt(LocalDateTime.now());
         serviceRepository.save(service);
@@ -65,6 +117,7 @@ public class ServiceManager {
         }
         service.setCurrentPid(null);
         service.setStatus(ServiceStatus.STOPPED);
+        service.setActiveSince(null);
         service.setUpdatedAt(LocalDateTime.now());
         return serviceRepository.save(service);
     }
@@ -73,8 +126,14 @@ public class ServiceManager {
         HostEntity targetHost = service.getPipeline() == null ? null : service.getPipeline().getTargetHost();
         boolean running = isAlive(service.getCurrentPid(), targetHost);
         service.setStatus(running ? ServiceStatus.RUNNING : ServiceStatus.STOPPED);
-        if (!running) {
-          service.setCurrentPid(null);
+        if (running) {
+            if (service.getActiveSince() == null) {
+                service.setActiveSince(LocalDateTime.now());
+            }
+            service.setLastHeartbeatAt(LocalDateTime.now());
+        } else {
+            service.setCurrentPid(null);
+            service.setActiveSince(null);
         }
         service.setUpdatedAt(LocalDateTime.now());
         return serviceRepository.save(service);

@@ -93,6 +93,16 @@ public class DeploymentService {
         PipelineEntity pipeline = pipelineRepository.findById(request.pipelineId())
                 .orElseThrow(() -> new BusinessException(ErrorSubCode.PIPELINE_NOT_FOUND));
         log.info("Creating deployment for pipeline {} with requested branch {}.", pipeline.getName(), request.branchName());
+        if (Boolean.TRUE.equals(pipeline.getTemplate().getMonitorProcess())) {
+            ServiceEntity stoppedService = serviceManager.stopManagedServiceBeforeDeploy(pipeline.getId());
+            if (stoppedService != null) {
+                log.info(
+                        "流水线 '{}' 在新部署前已由系统停止旧服务：serviceId={}。",
+                        pipeline.getName(),
+                        stoppedService.getId()
+                );
+            }
+        }
         List<DeploymentEntity> activeDeployments = deploymentRepository.findByPipelineIdAndStatusInOrderByCreatedAtDesc(
                 pipeline.getId(),
                 List.of(DeploymentStatus.PENDING, DeploymentStatus.RUNNING)
@@ -125,7 +135,16 @@ public class DeploymentService {
         variables.put("workspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
         variables.put("buildWorkspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
         variables.put("deployWorkspaceRoot", deployWorkspaceRoot.toAbsolutePath().normalize().toString());
-        applyRuntimeEnvironmentVariables(variables, pipeline);
+        applyBuildRuntimeEnvironmentVariables(variables, pipeline);
+        log.info(
+                "Resolved deployment {} context: buildWorkspaceRoot={}, deployWorkspaceRoot={}, targetHost={}, startupKeyword={}, startupTimeoutSeconds={}",
+                pipeline.getName(),
+                buildWorkspaceRoot.toAbsolutePath().normalize(),
+                deployWorkspaceRoot.toAbsolutePath().normalize(),
+                pipeline.getTargetHost() == null ? "本机" : pipeline.getTargetHost().getName(),
+                pipeline.getStartupKeyword(),
+                pipeline.getStartupTimeoutSeconds()
+        );
 
         DeploymentEntity entity = new DeploymentEntity();
         entity.setPipeline(pipeline);
@@ -138,7 +157,7 @@ public class DeploymentService {
 
         // 3. 补齐部署内置变量，并分别渲染构建脚本与发布脚本。
         variables.put("deploymentId", entity.getId().toString());
-        if (Boolean.TRUE.equals(pipeline.getTemplate().getMonitorProcess())) {
+        if (requiresPidFileMonitoring(pipeline)) {
             variables.put("pidFilePath", deployWorkspaceRoot.resolve(PID_DIR).resolve("service-" + entity.getId() + ".pid").toAbsolutePath().normalize().toString());
         }
         Path localArtifactDir = buildWorkspaceRoot.resolve(BUILD_ARTIFACT_DIR).resolve("deploy-" + entity.getId()).toAbsolutePath().normalize();
@@ -151,14 +170,22 @@ public class DeploymentService {
         Map<String, String> deployVariables = new LinkedHashMap<>(variables);
         deployVariables.put("artifactDir", targetArtifactDir.toString());
         deployVariables.put("workspaceRoot", deployWorkspaceRoot.toAbsolutePath().normalize().toString());
+        applyDeployRuntimeEnvironmentVariables(deployVariables, pipeline);
 
         String buildTemplate = resolveBuildScriptTemplate(pipeline);
         String deployTemplate = resolveDeployScriptTemplate(pipeline);
         String renderedBuildScript = scriptTemplateService.render(buildTemplate, buildVariables);
         String renderedDeployScript = deployTemplate == null ? null : scriptTemplateService.render(deployTemplate, deployVariables);
+        log.info(
+                "流水线 '{}' 的脚本渲染完成：存在构建脚本={}，存在发布脚本={}，启用服务监测={}",
+                pipeline.getName(),
+                renderedBuildScript != null && !renderedBuildScript.isBlank(),
+                renderedDeployScript != null && !renderedDeployScript.isBlank(),
+                pipeline.getTemplate().getMonitorProcess()
+        );
 
-        entity.setRenderedBuildScript(buildRuntimeEnvironmentPreamble(buildVariables, pipeline) + renderedBuildScript);
-        entity.setRenderedDeployScript(renderedDeployScript);
+        entity.setRenderedBuildScript(buildRuntimeEnvironmentPreamble(buildVariables, pipeline, true) + renderedBuildScript);
+        entity.setRenderedDeployScript(renderedDeployScript == null ? null : buildRuntimeEnvironmentPreamble(deployVariables, pipeline, false) + renderedDeployScript + buildDeployRuntimeDiagnostics(pipeline, deployVariables));
         entity.setVariablesJson(jsonMapper.write(buildVariables));
         entity = deploymentRepository.save(entity);
         log.info(
@@ -204,10 +231,14 @@ public class DeploymentService {
     /**
      * 流水线中选择的运行环境只注入到本机构建阶段，避免误把远端发布机当成构建机。
      */
-    private void applyRuntimeEnvironmentVariables(Map<String, String> variables, PipelineEntity pipeline) {
+    private void applyBuildRuntimeEnvironmentVariables(Map<String, String> variables, PipelineEntity pipeline) {
         putEnvironmentVariables(variables, "JAVA", pipeline.getJavaEnvironment(), "JAVA_HOME");
         putEnvironmentVariables(variables, "NODE", pipeline.getNodeEnvironment(), "NODE_HOME");
         putEnvironmentVariables(variables, "MAVEN", pipeline.getMavenEnvironment(), "MAVEN_HOME");
+    }
+
+    private void applyDeployRuntimeEnvironmentVariables(Map<String, String> variables, PipelineEntity pipeline) {
+        putEnvironmentVariables(variables, "JAVA", pipeline.getRuntimeJavaEnvironment(), "JAVA_HOME");
     }
 
     private void putEnvironmentVariables(Map<String, String> variables, String prefix, RuntimeEnvironmentEntity environment, String homeKey) {
@@ -246,26 +277,35 @@ public class DeploymentService {
         });
     }
 
-    private String buildRuntimeEnvironmentPreamble(Map<String, String> variables, PipelineEntity pipeline) {
+    private String buildRuntimeEnvironmentPreamble(Map<String, String> variables, PipelineEntity pipeline, boolean buildStage) {
         List<String> lines = new ArrayList<>();
         lines.add("# Runtime environment preamble generated by Deploy Bot");
-        lines.add("if [ -n \"" + valueOf(variables, "JAVA_HOME") + "\" ]; then");
-        lines.add("  export JAVA_HOME=\"" + escapeShell(valueOf(variables, "JAVA_HOME")) + "\"");
-        lines.add("fi");
-        lines.add("if [ -n \"" + valueOf(variables, "MAVEN_HOME") + "\" ]; then");
-        lines.add("  export MAVEN_HOME=\"" + escapeShell(valueOf(variables, "MAVEN_HOME")) + "\"");
-        lines.add("fi");
-        lines.add("if [ -n \"" + valueOf(variables, "NODE_HOME") + "\" ]; then");
-        lines.add("  export NODE_HOME=\"" + escapeShell(valueOf(variables, "NODE_HOME")) + "\"");
-        lines.add("fi");
-        appendActivationScript(lines, "JAVA", variables);
-        appendActivationScript(lines, "NODE", variables);
-        appendActivationScript(lines, "MAVEN", variables);
+        if (buildStage) {
+            lines.add("if [ -n \"" + valueOf(variables, "JAVA_HOME") + "\" ]; then");
+            lines.add("  export JAVA_HOME=\"" + escapeShell(valueOf(variables, "JAVA_HOME")) + "\"");
+            lines.add("fi");
+            lines.add("if [ -n \"" + valueOf(variables, "MAVEN_HOME") + "\" ]; then");
+            lines.add("  export MAVEN_HOME=\"" + escapeShell(valueOf(variables, "MAVEN_HOME")) + "\"");
+            lines.add("fi");
+            lines.add("if [ -n \"" + valueOf(variables, "NODE_HOME") + "\" ]; then");
+            lines.add("  export NODE_HOME=\"" + escapeShell(valueOf(variables, "NODE_HOME")) + "\"");
+            lines.add("fi");
+            appendActivationScript(lines, "JAVA", variables);
+            appendActivationScript(lines, "NODE", variables);
+            appendActivationScript(lines, "MAVEN", variables);
+        } else {
+            lines.add("if [ -n \"" + valueOf(variables, "JAVA_HOME") + "\" ]; then");
+            lines.add("  export JAVA_HOME=\"" + escapeShell(valueOf(variables, "JAVA_HOME")) + "\"");
+            lines.add("fi");
+            appendActivationScript(lines, "JAVA", variables);
+        }
 
         StringBuilder pathBuilder = new StringBuilder();
         appendPath(pathBuilder, valueOf(variables, "JAVA_BIN_PATH"));
-        appendPath(pathBuilder, valueOf(variables, "MAVEN_BIN_PATH"));
-        appendPath(pathBuilder, valueOf(variables, "NODE_BIN_PATH"));
+        if (buildStage) {
+            appendPath(pathBuilder, valueOf(variables, "MAVEN_BIN_PATH"));
+            appendPath(pathBuilder, valueOf(variables, "NODE_BIN_PATH"));
+        }
 
         for (Map.Entry<String, String> entry : variables.entrySet()) {
             String key = entry.getKey();
@@ -394,7 +434,7 @@ public class DeploymentService {
         variables.put("pipelineName", pipeline.getName());
         variables.put("workspaceRoot", workspaceRoot.toAbsolutePath().normalize().toString());
         variables.put("rollbackBackupPath", source.getBackupPath());
-        applyRuntimeEnvironmentVariables(variables, pipeline);
+        applyBuildRuntimeEnvironmentVariables(variables, pipeline);
 
         if (Boolean.TRUE.equals(pipeline.getTemplate().getMonitorProcess())) {
             serviceRepository.findFirstByPipelineId(pipeline.getId())
@@ -413,11 +453,11 @@ public class DeploymentService {
         deploymentRepository.save(entity);
 
         variables.put("deploymentId", entity.getId().toString());
-        if (Boolean.TRUE.equals(pipeline.getTemplate().getMonitorProcess())) {
+        if (requiresPidFileMonitoring(pipeline)) {
             variables.put("pidFilePath", workspaceRoot.resolve("pids").resolve("service-" + entity.getId() + ".pid").toAbsolutePath().normalize().toString());
         }
 
-        entity.setRenderedBuildScript(buildRuntimeEnvironmentPreamble(variables, pipeline) + buildRollbackScript(pipeline, variables));
+        entity.setRenderedBuildScript(buildRuntimeEnvironmentPreamble(variables, pipeline, true) + buildRollbackScript(pipeline, variables));
         entity.setRenderedDeployScript(null);
         entity.setVariablesJson(jsonMapper.write(variables));
         entity = deploymentRepository.save(entity);
@@ -498,7 +538,9 @@ public class DeploymentService {
         if (Boolean.TRUE.equals(pipeline.getTemplate().getMonitorProcess())) {
             lines.add("echo \"[回滚 3/4] 重新启动服务\"");
             lines.add("cd \"{{targetDir}}\"");
-            lines.add("rm -f \"{{pidFilePath}}\" || true");
+            if (requiresPidFileMonitoring(pipeline)) {
+                lines.add("rm -f \"{{pidFilePath}}\" || true");
+            }
             lines.add("{{startCommand}}");
             lines.add("");
         } else {
@@ -506,6 +548,55 @@ public class DeploymentService {
             lines.add("");
         }
         lines.add("echo \"[回滚 4/4] 回滚完成\"");
+        lines.add("");
+        return scriptTemplateService.render(String.join("\n", lines), variables);
+    }
+
+    private boolean requiresPidFileMonitoring(PipelineEntity pipeline) {
+        if (!Boolean.TRUE.equals(pipeline.getTemplate().getMonitorProcess())) {
+            return false;
+        }
+        String deployScript = pipeline.getTemplate().getDeployScriptContent();
+        return deployScript != null && deployScript.contains("{{pidFilePath}}");
+    }
+
+    /**
+     * 启动命令执行完成后，追加一段系统级诊断输出，方便直接在部署日志里确认：
+     * 1. 启动关键字是否命中
+     * 2. PID 文件是否生成
+     * 3. app.log 是否已经开始写入
+     */
+    private String buildDeployRuntimeDiagnostics(PipelineEntity pipeline, Map<String, String> variables) {
+        if (!Boolean.TRUE.equals(pipeline.getTemplate().getMonitorProcess())) {
+            return "";
+        }
+        List<String> lines = new ArrayList<>();
+        lines.add("");
+        lines.add("echo \"[系统] 启动命令已执行，开始进行服务自检。\"");
+        lines.add("sleep 1");
+        lines.add("echo \"[系统] 当前工作目录：$(pwd)\"");
+        String startupKeyword = pipeline.getStartupKeyword();
+        if (startupKeyword != null && !startupKeyword.isBlank()) {
+            lines.add("echo \"[系统] 启动关键字：" + escapeShell(startupKeyword) + "\"");
+            lines.add("pgrep -af \"" + escapeShell(startupKeyword) + "\" || true");
+        }
+        if (requiresPidFileMonitoring(pipeline)) {
+            lines.add("if [ -f \"{{pidFilePath}}\" ]; then");
+            lines.add("  echo \"[系统] PID 文件内容：$(cat \"{{pidFilePath}}\")\"");
+            lines.add("else");
+            lines.add("  echo \"[系统] PID 文件尚未生成：{{pidFilePath}}\"");
+            lines.add("fi");
+        }
+        String targetDir = variables.get("targetDir");
+        if (targetDir != null && !targetDir.isBlank()) {
+            lines.add("if [ -f \"" + escapeShell(targetDir) + "/app.log\" ]; then");
+            lines.add("  echo \"[系统] app.log 文件状态：$(ls -l \"" + escapeShell(targetDir) + "/app.log\")\"");
+            lines.add("  echo \"[系统] app.log 最新 20 行：\"");
+            lines.add("  tail -n 20 \"" + escapeShell(targetDir) + "/app.log\" || true");
+            lines.add("else");
+            lines.add("  echo \"[系统] app.log 尚未生成。\"");
+            lines.add("fi");
+        }
         lines.add("");
         return scriptTemplateService.render(String.join("\n", lines), variables);
     }
