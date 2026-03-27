@@ -132,9 +132,9 @@ public class DeploymentRunner {
             appendSystemLog(logFile, "部署任务已开始，日志文件：" + logFile.toAbsolutePath().normalize());
             log.info("Deployment {} log file initialized at {}.", deploymentId, logFile.toAbsolutePath().normalize());
 
-            // 2. 当前版本改为保留每次构建产物，重新发布历史版本时直接复用产物，不再依赖发布前目录备份。
-            appendSystemLog(logFile, "当前版本采用“保留构建产物并重新发布”的方式，不再执行发布前目录备份。");
-            log.info("部署 {} 跳过旧版发布前备份逻辑，当前改为保留构建产物供后续重新发布。", deploymentId);
+            // 2. 每次部署都会保留构建产物，后续重新发布历史版本时直接复用该产物。
+            appendSystemLog(logFile, "本次部署将保留构建产物，供后续重新发布。");
+            log.info("部署 {} 本次将保留构建产物，供后续重新发布使用。", deploymentId);
 
             appendSystemLog(logFile, "开始本机构建阶段。");
             log.info("部署 {} 构建阶段开始。", deploymentId);

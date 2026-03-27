@@ -113,24 +113,24 @@ export default function ProjectAdminPage() {
     message.success(editingId ? '项目已更新' : '项目已创建');
   };
 
-  const testConnection = async () => {
-    if (!form.gitUrl.trim()) {
+  const testConnectionWithPayload = async (payload: ProjectPayload) => {
+    if (!payload.gitUrl.trim()) {
       message.error('请先填写 Git 地址。');
       return;
     }
 
-    if (form.gitAuthType === 'BASIC' && !isHttpGitUrl(form.gitUrl)) {
+    if (payload.gitAuthType === 'BASIC' && !isHttpGitUrl(payload.gitUrl)) {
       message.error('账号密码模式只能测试 HTTP/HTTPS 仓库地址。');
       return;
     }
-    if (form.gitAuthType === 'SSH' && !isSshGitUrl(form.gitUrl)) {
+    if (payload.gitAuthType === 'SSH' && !isSshGitUrl(payload.gitUrl)) {
       message.error('密钥对模式只能测试 SSH 仓库地址。');
       return;
     }
 
     setTestingConnection(true);
     try {
-      const result = await projectsApi.testConnection(form);
+      const result = await projectsApi.testConnection(payload);
       Modal.success({
         title: '仓库连通性测试成功',
         width: 720,
@@ -150,6 +150,10 @@ export default function ProjectAdminPage() {
     } finally {
       setTestingConnection(false);
     }
+  };
+
+  const testConnection = async () => {
+    await testConnectionWithPayload(form);
   };
 
   const removeProject = async (id: number) => {
@@ -254,9 +258,23 @@ export default function ProjectAdminPage() {
               },
               {
                 title: '操作',
-                width: 180,
+                width: 280,
                 render: (_, record) => (
                   <Space>
+                    <Button
+                      size="small"
+                      loading={testingConnection}
+                      onClick={() => testConnectionWithPayload({
+                        name: record.name || '',
+                        description: record.description || '',
+                        gitUrl: record.gitUrl || '',
+                        gitAuthType: record.gitAuthType || 'NONE',
+                        gitUsername: '',
+                        gitPassword: '',
+                      }).catch(() => message.error('测试连通性失败'))}
+                    >
+                      测试连通性
+                    </Button>
                     <Button size="small" onClick={() => openEdit(record)}>编辑</Button>
                     <Popconfirm
                       title="确认删除这个项目吗？"

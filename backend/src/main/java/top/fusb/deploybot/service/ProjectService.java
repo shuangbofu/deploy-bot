@@ -7,6 +7,8 @@ import top.fusb.deploybot.exception.ErrorSubCode;
 import top.fusb.deploybot.model.GitAuthType;
 import top.fusb.deploybot.model.ProjectEntity;
 import top.fusb.deploybot.repo.ProjectRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.io.BufferedReader;
@@ -21,6 +23,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class ProjectService {
+
+    private static final Logger log = LoggerFactory.getLogger(ProjectService.class);
 
     private final ProjectRepository repository;
     private final GitCredentialService gitCredentialService;
@@ -73,10 +77,23 @@ public class ProjectService {
         project.setGitSshPublicKey(trimToNull(request.gitSshPublicKey()));
         project.setGitSshKnownHosts(trimToNull(request.gitSshKnownHosts()));
 
+        log.info(
+                "开始测试项目仓库连通性：project='{}', gitUrl='{}', gitAuthType='{}'.",
+                project.getName(),
+                project.getGitUrl(),
+                project.getGitAuthType()
+        );
+
         try {
             Path tempDir = Files.createTempDirectory("deploybot-git-test-");
             try {
                 GitCredentialService.GitProcessConfig processConfig = gitCredentialService.buildProcessConfig(project, tempDir);
+                log.info(
+                        "项目仓库连通性测试已生成 Git 进程配置：project='{}', resolvedGitUrl='{}', hasSshCommand={}.",
+                        project.getName(),
+                        processConfig.gitUrl(),
+                        processConfig.environment().containsKey("GIT_SSH_COMMAND")
+                );
                 ProcessBuilder processBuilder = new ProcessBuilder(
                         gitCredentialService.getGitExecutable(),
                         "ls-remote",
@@ -87,11 +104,18 @@ public class ProjectService {
                 processBuilder.redirectErrorStream(true);
                 processBuilder.environment().putAll(processConfig.environment());
                 processBuilder.environment().put("GIT_TERMINAL_PROMPT", "0");
+                log.info(
+                        "执行 Git 连通性测试命令：project='{}', command='{}', workdir='{}'.",
+                        project.getName(),
+                        String.join(" ", processBuilder.command()),
+                        tempDir.toAbsolutePath().normalize()
+                );
 
                 Process process = processBuilder.start();
                 boolean finished = process.waitFor(Duration.ofSeconds(20).toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
                 if (!finished) {
                     process.destroyForcibly();
+                    log.warn("项目仓库连通性测试超时：project='{}', timeoutSeconds=20。", project.getName());
                     throw new BusinessException(ErrorSubCode.PROJECT_GIT_CONNECTIVITY_FAILED, "连接 Git 仓库超时。");
                 }
 
@@ -101,6 +125,12 @@ public class ProjectService {
                 }
 
                 String summarizedOutput = summarizeOutput(output);
+                log.info(
+                        "项目仓库连通性测试结束：project='{}', exitCode={}, output='{}'.",
+                        project.getName(),
+                        process.exitValue(),
+                        summarizedOutput
+                );
                 if (process.exitValue() != 0) {
                     throw new BusinessException(ErrorSubCode.PROJECT_GIT_CONNECTIVITY_FAILED, summarizedOutput);
                 }
@@ -117,8 +147,20 @@ public class ProjectService {
                 deleteRecursively(tempDir);
             }
         } catch (BusinessException ex) {
+            log.warn(
+                    "项目仓库连通性测试失败：project='{}', gitUrl='{}', reason='{}'.",
+                    project.getName(),
+                    project.getGitUrl(),
+                    ex.getMessage()
+            );
             throw ex;
         } catch (Exception ex) {
+            log.error(
+                    "项目仓库连通性测试发生未预期异常：project='{}', gitUrl='{}'.",
+                    project.getName(),
+                    project.getGitUrl(),
+                    ex
+            );
             throw new BusinessException(ErrorSubCode.PROJECT_GIT_CONNECTIVITY_FAILED, ex.getMessage(), ex);
         }
     }
