@@ -18,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -183,6 +184,17 @@ public class ProjectService {
                 .trim();
     }
 
+    private String summarizeOutputTail(String output, int maxLines) {
+        if (output == null || output.isBlank()) {
+            return "";
+        }
+        String[] lines = output.lines().toArray(String[]::new);
+        int start = Math.max(0, lines.length - Math.max(1, maxLines));
+        return Arrays.stream(lines, start, lines.length)
+                .collect(Collectors.joining("\n"))
+                .trim();
+    }
+
     private void logGitSshDiagnosticsIfNecessary(ProjectEntity project, GitCredentialService.GitProcessConfig processConfig) {
         if (project.getGitAuthType() != GitAuthType.SSH) {
             return;
@@ -234,7 +246,7 @@ public class ProjectService {
                     "项目 '{}' Git SSH 诊断结束：exitCode={}, output='{}'.",
                     project.getName(),
                     process.exitValue(),
-                    summarizeOutput(output, 80)
+                    summarizeOutputTail(output, 120)
             );
         } catch (Exception ex) {
             log.warn("项目 '{}' Git SSH 诊断执行失败：{}", project.getName(), ex.getMessage(), ex);
