@@ -382,11 +382,23 @@ public class DeploymentService {
             lines.add("cat > \"{{workspaceRoot}}/ssh/git/known_hosts\" <<'__DEPLOYBOT_GIT_KNOWN_HOSTS__'");
             lines.add(knownHosts.strip());
             lines.add("__DEPLOYBOT_GIT_KNOWN_HOSTS__");
-            lines.add("export GIT_SSH_COMMAND=\"ssh -i \\\"{{workspaceRoot}}/ssh/git/id_deploybot\\\" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=\\\"{{workspaceRoot}}/ssh/git/known_hosts\\\"\"");
+            lines.add("cat > \"{{workspaceRoot}}/ssh/git/git-ssh-wrapper.sh\" <<'__DEPLOYBOT_GIT_SSH_WRAPPER__'");
+            lines.add("#!/usr/bin/env bash");
+            lines.add("set -e");
+            lines.add("exec ssh -i \"{{workspaceRoot}}/ssh/git/id_deploybot\" -o IdentitiesOnly=yes -o PreferredAuthentications=publickey -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no -o StrictHostKeyChecking=yes -o UserKnownHostsFile=\"{{workspaceRoot}}/ssh/git/known_hosts\" \"$@\"");
+            lines.add("__DEPLOYBOT_GIT_SSH_WRAPPER__");
         } else {
-            lines.add("export GIT_SSH_COMMAND=\"ssh -i \\\"{{workspaceRoot}}/ssh/git/id_deploybot\\\" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no\"");
+            lines.add("cat > \"{{workspaceRoot}}/ssh/git/git-ssh-wrapper.sh\" <<'__DEPLOYBOT_GIT_SSH_WRAPPER__'");
+            lines.add("#!/usr/bin/env bash");
+            lines.add("set -e");
+            lines.add("exec ssh -i \"{{workspaceRoot}}/ssh/git/id_deploybot\" -o IdentitiesOnly=yes -o PreferredAuthentications=publickey -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no -o StrictHostKeyChecking=no \"$@\"");
+            lines.add("__DEPLOYBOT_GIT_SSH_WRAPPER__");
         }
         lines.add("chmod 600 \"{{workspaceRoot}}/ssh/git/id_deploybot\" || true");
+        lines.add("chmod 700 \"{{workspaceRoot}}/ssh/git/git-ssh-wrapper.sh\" || true");
+        lines.add("export GIT_SSH=\"{{workspaceRoot}}/ssh/git/git-ssh-wrapper.sh\"");
+        lines.add("export GIT_TERMINAL_PROMPT=0");
+        lines.add("export GIT_ASKPASS=echo");
     }
 
     private String resolveBuildScriptTemplate(PipelineEntity pipeline) {

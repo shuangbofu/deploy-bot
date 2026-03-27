@@ -90,10 +90,10 @@ public class ProjectService {
             try {
                 GitCredentialService.GitProcessConfig processConfig = gitCredentialService.buildProcessConfig(project, tempDir);
                 log.info(
-                        "项目仓库连通性测试已生成 Git 进程配置：project='{}', resolvedGitUrl='{}', hasSshCommand={}.",
+                        "项目仓库连通性测试已生成 Git 进程配置：project='{}', resolvedGitUrl='{}', hasSshWrapper={}.",
                         project.getName(),
                         processConfig.gitUrl(),
-                        processConfig.environment().containsKey("GIT_SSH_COMMAND")
+                        processConfig.environment().containsKey("GIT_SSH")
                 );
                 ProcessBuilder processBuilder = new ProcessBuilder(
                         gitCredentialService.getGitExecutable(),
@@ -104,7 +104,6 @@ public class ProjectService {
                 processBuilder.directory(tempDir.toFile());
                 processBuilder.redirectErrorStream(true);
                 processBuilder.environment().putAll(processConfig.environment());
-                processBuilder.environment().put("GIT_TERMINAL_PROMPT", "0");
                 log.info(
                         "执行 Git 连通性测试命令：project='{}', command='{}', workdir='{}'.",
                         project.getName(),
@@ -199,9 +198,9 @@ public class ProjectService {
         if (project.getGitAuthType() != GitAuthType.SSH) {
             return;
         }
-        String sshCommand = processConfig.environment().get("GIT_SSH_COMMAND");
-        if (sshCommand == null || sshCommand.isBlank()) {
-            log.warn("项目 '{}' 使用 SSH 认证，但本次测试未生成 GIT_SSH_COMMAND。", project.getName());
+        String sshWrapper = processConfig.environment().get("GIT_SSH");
+        if (sshWrapper == null || sshWrapper.isBlank()) {
+            log.warn("项目 '{}' 使用 SSH 认证，但本次测试未生成 GIT_SSH wrapper。", project.getName());
             return;
         }
 
@@ -214,19 +213,20 @@ public class ProjectService {
         try {
             String remoteUser = sshTarget.username() == null || sshTarget.username().isBlank() ? "git" : sshTarget.username();
             String remoteHost = remoteUser + "@" + sshTarget.host();
-            String portArgument = sshTarget.port() == null ? "" : " -p " + sshTarget.port();
-            String diagnosticCommand = sshCommand + portArgument + " -vvv -T " + remoteHost;
+            String diagnosticCommand = "\"" + sshWrapper + "\""
+                    + (sshTarget.port() == null ? "" : " -p " + sshTarget.port())
+                    + " -vvv -T " + remoteHost;
             ProcessBuilder builder = new ProcessBuilder("/bin/bash", "-lc", diagnosticCommand);
             builder.redirectErrorStream(true);
             builder.environment().putAll(processConfig.environment());
-            builder.environment().put("GIT_TERMINAL_PROMPT", "0");
 
             log.info(
-                    "项目 '{}' Git SSH 诊断开始：sshHost='{}', sshPort='{}', sshUser='{}', command='{}'.",
+                    "项目 '{}' Git SSH 诊断开始：sshHost='{}', sshPort='{}', sshUser='{}', sshWrapper='{}', command='{}'.",
                     project.getName(),
                     sshTarget.host(),
                     sshTarget.port(),
                     remoteUser,
+                    sshWrapper,
                     diagnosticCommand
             );
 

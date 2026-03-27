@@ -14,6 +14,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -24,6 +25,8 @@ public class GitCredentialService {
 
     public record GitProcessConfig(String gitUrl, Map<String, String> environment) {
     }
+
+    private static final String GIT_SSH_WRAPPER_NAME = "git-ssh-wrapper.sh";
 
     private final SystemSettingsService systemSettingsService;
 
@@ -120,28 +123,62 @@ public class GitCredentialService {
 
         String sshCommand;
         if (Files.exists(knownHosts)) {
-            sshCommand = "ssh -i \"" + privateKey.toAbsolutePath() + "\" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=\"" + knownHosts.toAbsolutePath() + "\"";
+            sshCommand = "ssh -i \"" + privateKey.toAbsolutePath() + "\""
+                    + " -o IdentitiesOnly=yes"
+                    + " -o PreferredAuthentications=publickey"
+                    + " -o PasswordAuthentication=no"
+                    + " -o KbdInteractiveAuthentication=no"
+                    + " -o StrictHostKeyChecking=yes"
+                    + " -o UserKnownHostsFile=\"" + knownHosts.toAbsolutePath() + "\"";
         } else {
-            sshCommand = "ssh -i \"" + privateKey.toAbsolutePath() + "\" -o IdentitiesOnly=yes -o StrictHostKeyChecking=no";
+            sshCommand = "ssh -i \"" + privateKey.toAbsolutePath() + "\""
+                    + " -o IdentitiesOnly=yes"
+                    + " -o PreferredAuthentications=publickey"
+                    + " -o PasswordAuthentication=no"
+                    + " -o KbdInteractiveAuthentication=no"
+                    + " -o StrictHostKeyChecking=no";
         }
 
+        Path sshWrapper = tempDir.resolve(GIT_SSH_WRAPPER_NAME);
+        Files.writeString(
+                sshWrapper,
+                "#!/usr/bin/env bash\n"
+                        + "set -e\n"
+                        + "exec " + sshCommand + " \"$@\"\n",
+                StandardCharsets.UTF_8
+        );
+        ensureExecutablePermissions(sshWrapper);
+
         log.info(
-                "Git SSH 凭据准备完成：privateKeyExists={}, publicKeyExists={}, knownHostsExists={}, privateKeyPath='{}', publicKeyPath='{}', sshCommand='{}'.",
+                "Git SSH 凭据准备完成：privateKeyExists={}, publicKeyExists={}, knownHostsExists={}, privateKeyPath='{}', publicKeyPath='{}', sshWrapperPath='{}', sshCommand='{}'.",
                 Files.exists(privateKey),
                 Files.exists(publicKey),
                 Files.exists(knownHosts),
                 privateKey.toAbsolutePath().normalize(),
                 publicKey.toAbsolutePath().normalize(),
+                sshWrapper.toAbsolutePath().normalize(),
                 sshCommand
         );
 
-        return Map.of("GIT_SSH_COMMAND", sshCommand);
+        Map<String, String> environment = new LinkedHashMap<>();
+        environment.put("GIT_SSH", sshWrapper.toAbsolutePath().normalize().toString());
+        environment.put("GIT_TERMINAL_PROMPT", "0");
+        environment.put("GIT_ASKPASS", "echo");
+        return environment;
     }
 
     private void ensurePrivateKeyPermissions(Path privateKey) {
         try {
             Set<PosixFilePermission> permissions = PosixFilePermissions.fromString("rw-------");
             Files.setPosixFilePermissions(privateKey, permissions);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void ensureExecutablePermissions(Path script) {
+        try {
+            Set<PosixFilePermission> permissions = PosixFilePermissions.fromString("rwx------");
+            Files.setPosixFilePermissions(script, permissions);
         } catch (Exception ignored) {
         }
     }
