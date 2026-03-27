@@ -132,6 +132,7 @@ public class ProjectService {
                         summarizedOutput
                 );
                 if (process.exitValue() != 0) {
+                    logGitSshDiagnosticsIfNecessary(project, processConfig);
                     throw new BusinessException(ErrorSubCode.PROJECT_GIT_CONNECTIVITY_FAILED, summarizedOutput);
                 }
 
@@ -180,6 +181,80 @@ public class ProjectService {
                 .limit(12)
                 .collect(Collectors.joining("\n"))
                 .trim();
+    }
+
+    private void logGitSshDiagnosticsIfNecessary(ProjectEntity project, GitCredentialService.GitProcessConfig processConfig) {
+        if (project.getGitAuthType() != GitAuthType.SSH) {
+            return;
+        }
+        String sshCommand = processConfig.environment().get("GIT_SSH_COMMAND");
+        if (sshCommand == null || sshCommand.isBlank()) {
+            log.warn("项目 '{}' 使用 SSH 认证，但本次测试未生成 GIT_SSH_COMMAND。", project.getName());
+            return;
+        }
+
+        String sshHost = resolveSshHost(processConfig.gitUrl());
+        if (sshHost == null || sshHost.isBlank()) {
+            log.warn("项目 '{}' 无法从 Git 地址 '{}' 中解析 SSH 主机。", project.getName(), processConfig.gitUrl());
+            return;
+        }
+
+        try {
+            String diagnosticCommand = sshCommand + " -vvv -T git@" + sshHost;
+            ProcessBuilder builder = new ProcessBuilder("/bin/bash", "-lc", diagnosticCommand);
+            builder.redirectErrorStream(true);
+            builder.environment().putAll(processConfig.environment());
+            builder.environment().put("GIT_TERMINAL_PROMPT", "0");
+
+            log.info(
+                    "项目 '{}' Git SSH 诊断开始：sshHost='{}', command='{}'.",
+                    project.getName(),
+                    sshHost,
+                    diagnosticCommand
+            );
+
+            Process process = builder.start();
+            boolean finished = process.waitFor(Duration.ofSeconds(15).toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                log.warn("项目 '{}' Git SSH 诊断超时。", project.getName());
+                return;
+            }
+
+            String output;
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                output = reader.lines().collect(Collectors.joining("\n"));
+            }
+            log.info(
+                    "项目 '{}' Git SSH 诊断结束：exitCode={}, output='{}'.",
+                    project.getName(),
+                    process.exitValue(),
+                    summarizeOutput(output)
+            );
+        } catch (Exception ex) {
+            log.warn("项目 '{}' Git SSH 诊断执行失败：{}", project.getName(), ex.getMessage(), ex);
+        }
+    }
+
+    private String resolveSshHost(String gitUrl) {
+        if (gitUrl == null || gitUrl.isBlank()) {
+            return null;
+        }
+        if (gitUrl.startsWith("ssh://")) {
+            try {
+                return java.net.URI.create(gitUrl).getHost();
+            } catch (Exception ignored) {
+                return null;
+            }
+        }
+        if (gitUrl.startsWith("git@")) {
+            int atIndex = gitUrl.indexOf('@');
+            int colonIndex = gitUrl.indexOf(':', atIndex + 1);
+            if (colonIndex > atIndex) {
+                return gitUrl.substring(atIndex + 1, colonIndex);
+            }
+        }
+        return null;
     }
 
     private void deleteRecursively(Path path) {

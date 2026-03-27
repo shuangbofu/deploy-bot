@@ -271,7 +271,7 @@ export default function ProjectAdminPage() {
                         gitAuthType: record.gitAuthType || 'NONE',
                         gitUsername: '',
                         gitPassword: '',
-                      }).catch(() => message.error('测试连通性失败'))}
+                      }).catch(() => undefined)}
                     >
                       测试连通性
                     </Button>
@@ -296,7 +296,7 @@ export default function ProjectAdminPage() {
         okText="保存"
         cancelText="取消"
         footer={[
-          <Button key="test" loading={testingConnection} onClick={() => testConnection().catch(() => message.error('测试连通性失败'))}>
+          <Button key="test" loading={testingConnection} onClick={() => testConnection().catch(() => undefined)}>
             测试连通性
           </Button>,
           <Button key="cancel" onClick={() => setModalOpen(false)}>

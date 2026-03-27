@@ -34,20 +34,26 @@ import java.util.regex.Pattern;
 @ToString(exclude = {"pipeline", "renderedBuildScript", "renderedDeployScript"})
 public class DeploymentEntity {
     /**
-     * 用户脚本里统一约定使用“[步骤 x/y]”或“[回滚 x/y]”来暴露进度。
+     * 用户脚本里统一约定使用“[步骤 x/y]”或“[回滚 x/y]”来暴露构建/发布进度。
      */
     private static final Pattern STEP_PATTERN = Pattern.compile("\\[(?:步骤|回滚)\\s+(\\d+)/(\\d+)]");
+
+    /**
+     * 启动观察阶段由系统日志驱动，这里读取“第 n 次启动观察通过”来推进进度。
+     */
+    private static final Pattern STARTUP_OBSERVE_PATTERN = Pattern.compile("第\\s+(\\d+)\\s+次启动观察通过");
 
     /**
      * 系统阶段标记由执行器写入日志，实体读取日志时据此判断当前处于构建还是发布。
      */
     private static final String BUILD_STAGE_MARKER = "[系统] 开始本机构建阶段。";
     private static final String DEPLOY_STAGE_MARKER = "[系统] 本机构建完成，开始发布阶段。";
+    private static final String STARTUP_STAGE_MARKER = "[系统] 检测到候选进程 PID";
     private static final String ROLLBACK_STAGE_MARKER = "[回滚 ";
     private static final String BUILD_STAGE = "BUILD";
     private static final String DEPLOY_STAGE = "DEPLOY";
+    private static final String STARTUP_STAGE = "STARTUP";
     private static final String ROLLBACK_STAGE = "ROLLBACK";
-    private static final int BUILD_PROGRESS_WEIGHT = 50;
     private static final int MAX_RUNNING_PROGRESS = 99;
 
     @Id
@@ -127,38 +133,62 @@ public class DeploymentEntity {
         }
 
         ProgressSnapshot snapshot = readProgressSnapshot();
-        if (snapshot == null || snapshot.step() == null || snapshot.step().total <= 0) {
+        if (snapshot == null) {
             return status == DeploymentStatus.RUNNING ? 10 : 0;
         }
-        ProgressStep step = snapshot.step();
-        int percent;
-        if (DEPLOY_STAGE.equals(snapshot.stage())) {
-            percent = BUILD_PROGRESS_WEIGHT + Math.round((step.current * BUILD_PROGRESS_WEIGHT * 1.0f) / step.total);
+        if (ROLLBACK_STAGE.equals(snapshot.stage()) && snapshot.rollbackStep() != null && snapshot.rollbackStep().total > 0) {
+            int percent = Math.round((snapshot.rollbackStep().current * 100.0f) / snapshot.rollbackStep().total);
+            return Math.max(0, Math.min(percent, MAX_RUNNING_PROGRESS));
+        }
+
+        int buildTotal = snapshot.buildStep() == null ? 0 : snapshot.buildStep().total;
+        int deployTotal = snapshot.deployStep() == null ? 0 : snapshot.deployStep().total;
+        int startupTotal = snapshot.startupTotal();
+        int grandTotal = buildTotal + deployTotal + startupTotal;
+        if (grandTotal <= 0) {
+            return status == DeploymentStatus.RUNNING ? 10 : 0;
+        }
+
+        int completedUnits;
+        if (STARTUP_STAGE.equals(snapshot.stage())) {
+            completedUnits = buildTotal + deployTotal + snapshot.startupCurrent();
+        } else if (DEPLOY_STAGE.equals(snapshot.stage())) {
+            int deployCurrent = snapshot.deployStep() == null ? 0 : snapshot.deployStep().current;
+            completedUnits = buildTotal + deployCurrent;
         } else {
-            percent = Math.round((step.current * BUILD_PROGRESS_WEIGHT * 1.0f) / step.total);
+            int buildCurrent = snapshot.buildStep() == null ? 0 : snapshot.buildStep().current;
+            completedUnits = buildCurrent;
         }
-        if (ROLLBACK_STAGE.equals(snapshot.stage())) {
-            percent = Math.round((step.current * 100.0f) / step.total);
-        }
+
+        int percent = Math.round((completedUnits * 100.0f) / grandTotal);
         return Math.max(0, Math.min(percent, MAX_RUNNING_PROGRESS));
     }
 
     @Transient
     public String getProgressText() {
         ProgressSnapshot snapshot = readProgressSnapshot();
-        if (snapshot == null || snapshot.step() == null) {
+        if (snapshot == null) {
             return null;
         }
         String stageLabel = switch (snapshot.stage()) {
             case DEPLOY_STAGE -> "发布";
+            case STARTUP_STAGE -> "启动";
             case ROLLBACK_STAGE -> "回滚";
             default -> "构建";
         };
-        ProgressStep step = snapshot.step();
-        if (status == DeploymentStatus.SUCCESS) {
-            return stageLabel + " " + step.current + "/" + step.total;
+        if (ROLLBACK_STAGE.equals(snapshot.stage()) && snapshot.rollbackStep() != null) {
+            return stageLabel + " " + snapshot.rollbackStep().current + "/" + snapshot.rollbackStep().total;
         }
-        return stageLabel + " " + step.current + "/" + step.total;
+        if (STARTUP_STAGE.equals(snapshot.stage())) {
+            return stageLabel + " " + snapshot.startupCurrent() + "/" + snapshot.startupTotal();
+        }
+        if (DEPLOY_STAGE.equals(snapshot.stage()) && snapshot.deployStep() != null) {
+            return stageLabel + " " + snapshot.deployStep().current + "/" + snapshot.deployStep().total;
+        }
+        if (snapshot.buildStep() != null) {
+            return stageLabel + " " + snapshot.buildStep().current + "/" + snapshot.buildStep().total;
+        }
+        return null;
     }
 
     @Transient
@@ -178,28 +208,66 @@ public class DeploymentEntity {
         try {
             String content = Files.readString(path, StandardCharsets.UTF_8);
             Matcher matcher = STEP_PATTERN.matcher(content);
-            ProgressStep latest = null;
+            ProgressStep latestBuild = null;
+            ProgressStep latestDeploy = null;
+            ProgressStep latestRollback = null;
+            int deployMarkerIndex = content.indexOf(DEPLOY_STAGE_MARKER);
+            int rollbackMarkerIndex = content.indexOf(ROLLBACK_STAGE_MARKER);
             while (matcher.find()) {
-                latest = new ProgressStep(Integer.parseInt(matcher.group(1)), Integer.parseInt(matcher.group(2)));
+                ProgressStep step = new ProgressStep(Integer.parseInt(matcher.group(1)), Integer.parseInt(matcher.group(2)));
+                if (rollbackMarkerIndex >= 0 && matcher.start() >= rollbackMarkerIndex) {
+                    latestRollback = step;
+                } else if (deployMarkerIndex >= 0 && matcher.start() >= deployMarkerIndex) {
+                    latestDeploy = step;
+                } else {
+                    latestBuild = step;
+                }
             }
-            if (latest == null) {
+            Matcher startupMatcher = STARTUP_OBSERVE_PATTERN.matcher(content);
+            Integer startupAttempt = null;
+            while (startupMatcher.find()) {
+                startupAttempt = Integer.parseInt(startupMatcher.group(1));
+            }
+
+            if (latestBuild == null && latestDeploy == null && latestRollback == null && startupAttempt == null) {
                 return null;
             }
             String stage = BUILD_STAGE;
             if (content.contains(ROLLBACK_STAGE_MARKER)) {
                 stage = ROLLBACK_STAGE;
+            } else if (content.contains(STARTUP_STAGE_MARKER)) {
+                stage = STARTUP_STAGE;
             } else if (content.contains(DEPLOY_STAGE_MARKER)) {
                 stage = DEPLOY_STAGE;
             } else if (content.contains(BUILD_STAGE_MARKER)) {
                 stage = BUILD_STAGE;
             }
-            return new ProgressSnapshot(stage, latest);
+
+            int startupTotal = resolveStartupObservationTotal();
+            int startupCurrent = startupAttempt == null ? (STARTUP_STAGE.equals(stage) ? 1 : 0) : Math.min(startupAttempt, startupTotal);
+            return new ProgressSnapshot(stage, latestBuild, latestDeploy, latestRollback, startupCurrent, startupTotal);
         } catch (IOException ignored) {
             return null;
         }
     }
 
-    private record ProgressSnapshot(String stage, ProgressStep step) {
+    private int resolveStartupObservationTotal() {
+        Integer startupTimeoutSeconds = pipeline == null ? null : pipeline.getStartupTimeoutSeconds();
+        if (startupTimeoutSeconds == null || startupTimeoutSeconds <= 0) {
+            startupTimeoutSeconds = 30;
+        }
+        int total = Math.max(1, (int) Math.ceil(startupTimeoutSeconds / 2.0));
+        return total;
+    }
+
+    private record ProgressSnapshot(
+            String stage,
+            ProgressStep buildStep,
+            ProgressStep deployStep,
+            ProgressStep rollbackStep,
+            int startupCurrent,
+            int startupTotal
+    ) {
     }
 
     private record ProgressStep(int current, int total) {
