@@ -107,11 +107,11 @@ public class DeploymentEntity {
     /** 被监控的进程 PID。 */
     private Long monitoredPid;
 
-    /** 部署前备份目录。 */
+    /** 本次部署保留下来的构建产物目录，用于后续重新发布同一版本。 */
     @Column(length = 2000)
-    private String backupPath;
+    private String artifactPath;
 
-    /** 若这是回滚任务，则记录回滚来源部署 ID。 */
+    /** 若这是重新发布历史版本的任务，则记录来源部署 ID。 */
     private Long rollbackFromDeploymentId;
 
     @Transient

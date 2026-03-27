@@ -1,5 +1,6 @@
 package top.fusb.deploybot.controller;
 
+import top.fusb.deploybot.dto.ProjectConnectionTestResult;
 import top.fusb.deploybot.dto.ProjectRequest;
 import top.fusb.deploybot.model.ProjectEntity;
 import top.fusb.deploybot.service.ProjectService;
@@ -47,6 +48,14 @@ public class ProjectController {
     @PutMapping("/{id}")
     public ProjectEntity update(@PathVariable Long id, @Valid @RequestBody ProjectRequest request) {
         return service.save(request, id);
+    }
+
+    /**
+     * 测试当前项目仓库是否可连通。
+     */
+    @PostMapping("/test-connection")
+    public ProjectConnectionTestResult testConnection(@Valid @RequestBody ProjectRequest request) {
+        return service.testConnection(request);
     }
 
     /**

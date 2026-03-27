@@ -39,11 +39,11 @@ public class SystemSettingsService {
         entity.setGitAuthType(request.gitAuthType() == null ? GitAuthType.NONE : request.gitAuthType());
         entity.setGitUsername(trimToNull(request.gitUsername()));
         entity.setGitPassword(trimToNull(request.gitPassword()));
-        entity.setGitSshPrivateKey(trimToNull(request.gitSshPrivateKey()));
-        entity.setGitSshPublicKey(trimToNull(request.gitSshPublicKey()));
-        entity.setGitSshKnownHosts(trimToNull(request.gitSshKnownHosts()));
-        entity.setHostSshPrivateKey(trimToNull(request.hostSshPrivateKey()));
-        entity.setHostSshPublicKey(trimToNull(request.hostSshPublicKey()));
+        entity.setGitSshPrivateKey(mergeOptionalSecret(entity.getGitSshPrivateKey(), request.gitSshPrivateKey()));
+        entity.setGitSshPublicKey(mergeOptionalSecret(entity.getGitSshPublicKey(), request.gitSshPublicKey()));
+        entity.setGitSshKnownHosts(mergeOptionalSecret(entity.getGitSshKnownHosts(), request.gitSshKnownHosts()));
+        entity.setHostSshPrivateKey(mergeOptionalSecret(entity.getHostSshPrivateKey(), request.hostSshPrivateKey()));
+        entity.setHostSshPublicKey(mergeOptionalSecret(entity.getHostSshPublicKey(), request.hostSshPublicKey()));
         return saveEntity(entity);
     }
 
@@ -57,5 +57,16 @@ public class SystemSettingsService {
 
     private String trimToNull(String value) {
         return isBlank(value) ? null : value.trim();
+    }
+
+    /**
+     * 系统设置页当前不会把私钥等敏感字段回传回来，空值表示“保持现状”，
+     * 只有显式传入非空内容时才覆盖已有值。
+     */
+    private String mergeOptionalSecret(String currentValue, String requestValue) {
+        if (requestValue == null) {
+            return currentValue;
+        }
+        return trimToNull(requestValue);
     }
 }

@@ -184,6 +184,7 @@ public class DeploymentService {
                 pipeline.getTemplate().getMonitorProcess()
         );
 
+        entity.setArtifactPath(localArtifactDir.toString());
         entity.setRenderedBuildScript(buildRuntimeEnvironmentPreamble(buildVariables, pipeline, true) + renderedBuildScript);
         entity.setRenderedDeployScript(renderedDeployScript == null ? null : buildRuntimeEnvironmentPreamble(deployVariables, pipeline, false) + renderedDeployScript + buildDeployRuntimeDiagnostics(pipeline, deployVariables));
         entity.setVariablesJson(jsonMapper.write(buildVariables));
@@ -419,21 +420,24 @@ public class DeploymentService {
         if (source.getStatus() == DeploymentStatus.PENDING || source.getStatus() == DeploymentStatus.RUNNING) {
             throw new BusinessException(ErrorSubCode.RUNNING_DEPLOYMENT_CANNOT_ROLLBACK);
         }
-        if (source.getBackupPath() == null || source.getBackupPath().isBlank()) {
-            throw new BusinessException(ErrorSubCode.DEPLOYMENT_BACKUP_MISSING);
+        if (source.getArtifactPath() == null || source.getArtifactPath().isBlank()) {
+            throw new BusinessException(ErrorSubCode.DEPLOYMENT_ARTIFACT_MISSING);
         }
 
         PipelineEntity pipeline = source.getPipeline();
         Map<String, String> variables = new LinkedHashMap<>(jsonMapper.toStringMap(source.getVariablesJson()));
-        Path workspaceRoot = resolveBuildWorkspaceRoot();
+        Path buildWorkspaceRoot = resolveBuildWorkspaceRoot();
+        Path deployWorkspaceRoot = resolveDeployWorkspaceRoot(pipeline.getTargetHost(), buildWorkspaceRoot);
 
         variables.put("branch", source.getBranchName());
         variables.put("gitUrl", gitCredentialService.resolveGitUrl(pipeline.getProject()));
         variables.put("gitRepositoryUrl", pipeline.getProject().getGitUrl());
         variables.put("projectName", pipeline.getProject().getName());
         variables.put("pipelineName", pipeline.getName());
-        variables.put("workspaceRoot", workspaceRoot.toAbsolutePath().normalize().toString());
-        variables.put("rollbackBackupPath", source.getBackupPath());
+        variables.put("workspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
+        variables.put("buildWorkspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
+        variables.put("deployWorkspaceRoot", deployWorkspaceRoot.toAbsolutePath().normalize().toString());
+        variables.put("sourceArtifactPath", source.getArtifactPath());
         applyBuildRuntimeEnvironmentVariables(variables, pipeline);
 
         if (Boolean.TRUE.equals(pipeline.getTemplate().getMonitorProcess())) {
@@ -453,13 +457,27 @@ public class DeploymentService {
         deploymentRepository.save(entity);
 
         variables.put("deploymentId", entity.getId().toString());
+        Path localArtifactDir = buildWorkspaceRoot.resolve(BUILD_ARTIFACT_DIR).resolve("deploy-" + entity.getId()).toAbsolutePath().normalize();
+        Path targetArtifactDir = deployWorkspaceRoot.resolve(BUILD_ARTIFACT_DIR).resolve("deploy-" + entity.getId()).toAbsolutePath().normalize();
         if (requiresPidFileMonitoring(pipeline)) {
-            variables.put("pidFilePath", workspaceRoot.resolve("pids").resolve("service-" + entity.getId() + ".pid").toAbsolutePath().normalize().toString());
+            variables.put("pidFilePath", deployWorkspaceRoot.resolve(PID_DIR).resolve("service-" + entity.getId() + ".pid").toAbsolutePath().normalize().toString());
         }
+        Map<String, String> buildVariables = new LinkedHashMap<>(variables);
+        buildVariables.put("artifactDir", localArtifactDir.toString());
+        buildVariables.put("workspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
 
-        entity.setRenderedBuildScript(buildRuntimeEnvironmentPreamble(variables, pipeline, true) + buildRollbackScript(pipeline, variables));
-        entity.setRenderedDeployScript(null);
-        entity.setVariablesJson(jsonMapper.write(variables));
+        Map<String, String> deployVariables = new LinkedHashMap<>(variables);
+        deployVariables.put("artifactDir", targetArtifactDir.toString());
+        deployVariables.put("workspaceRoot", deployWorkspaceRoot.toAbsolutePath().normalize().toString());
+        applyDeployRuntimeEnvironmentVariables(deployVariables, pipeline);
+
+        String deployTemplate = resolveDeployScriptTemplate(pipeline);
+        String renderedDeployScript = deployTemplate == null ? null : scriptTemplateService.render(deployTemplate, deployVariables);
+
+        entity.setArtifactPath(localArtifactDir.toString());
+        entity.setRenderedBuildScript(buildRuntimeEnvironmentPreamble(buildVariables, pipeline, true) + buildReplayScript(buildVariables));
+        entity.setRenderedDeployScript(renderedDeployScript == null ? null : buildRuntimeEnvironmentPreamble(deployVariables, pipeline, false) + renderedDeployScript + buildDeployRuntimeDiagnostics(pipeline, deployVariables));
+        entity.setVariablesJson(jsonMapper.write(buildVariables));
         entity = deploymentRepository.save(entity);
 
         Long deploymentId = entity.getId();
@@ -522,32 +540,24 @@ public class DeploymentService {
         return Files.readString(path, StandardCharsets.UTF_8);
     }
 
-    private String buildRollbackScript(PipelineEntity pipeline, Map<String, String> variables) {
+    private String buildReplayScript(Map<String, String> variables) {
         List<String> lines = new ArrayList<>();
         lines.add("#!/usr/bin/env bash");
         lines.add("set -e");
         lines.add("export PS4='+ $(date \"+%Y-%m-%d %H:%M:%S\") '");
         lines.add("set -x");
         lines.add("");
-        lines.add("echo \"[回滚 1/4] 准备发布目录\"");
-        lines.add("mkdir -p \"{{targetDir}}\"");
+        lines.add("echo \"[回滚 1/3] 准备历史产物目录\"");
+        lines.add("if [ ! -d \"{{sourceArtifactPath}}\" ]; then");
+        lines.add("  echo \"历史构建产物不存在：{{sourceArtifactPath}}\"");
+        lines.add("  exit 1");
+        lines.add("fi");
         lines.add("");
-        lines.add("echo \"[回滚 2/4] 从备份恢复发布目录\"");
-        lines.add("rsync -av --delete \"{{rollbackBackupPath}}/\" \"{{targetDir}}/\"");
+        lines.add("echo \"[回滚 2/3] 复制历史构建产物到本次发布包\"");
+        lines.add("mkdir -p \"{{artifactDir}}\"");
+        lines.add("rsync -a \"{{sourceArtifactPath}}/\" \"{{artifactDir}}/\"");
         lines.add("");
-        if (Boolean.TRUE.equals(pipeline.getTemplate().getMonitorProcess())) {
-            lines.add("echo \"[回滚 3/4] 重新启动服务\"");
-            lines.add("cd \"{{targetDir}}\"");
-            if (requiresPidFileMonitoring(pipeline)) {
-                lines.add("rm -f \"{{pidFilePath}}\" || true");
-            }
-            lines.add("{{startCommand}}");
-            lines.add("");
-        } else {
-            lines.add("echo \"[回滚 3/4] 当前模板无需重启进程\"");
-            lines.add("");
-        }
-        lines.add("echo \"[回滚 4/4] 回滚完成\"");
+        lines.add("echo \"[回滚 3/3] 历史构建产物已就绪，开始重新发布\"");
         lines.add("");
         return scriptTemplateService.render(String.join("\n", lines), variables);
     }

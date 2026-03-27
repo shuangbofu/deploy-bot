@@ -49,7 +49,7 @@ export default function AdminDeploymentDetailPage() {
   const progress = useMemo(() => getDeploymentProgress(deployment), [deployment]);
   const stoppable = Boolean(deployment?.status && ACTIVE_DEPLOYMENT_STATUSES.includes(deployment.status));
   const rollbackable = Boolean(
-    deployment?.backupPath
+    deployment?.artifactPath
       && deployment?.status
       && !ACTIVE_DEPLOYMENT_STATUSES.includes(deployment.status),
   );
@@ -67,16 +67,16 @@ export default function AdminDeploymentDetailPage() {
           rollbackable ? (
             <Popconfirm
               key="rollback"
-              title="确认回滚"
-              description="会先备份当前发布目录，再把发布目录恢复到这次部署执行前的状态。"
-              okText="确认回滚"
+              title="确认重新发布"
+              description="会直接复用这次部署保留下来的构建产物重新发布，不会重新执行构建流程。"
+              okText="确认重新发布"
               cancelText="取消"
               onConfirm={() => deploymentsApi.rollback(String(deploymentId)).then((response) => {
-                message.success('回滚任务已创建');
+                message.success('重新发布任务已创建');
                 navigate(`/admin/deployments/${response.id}`);
               }).catch(() => message.error('创建回滚任务失败'))}
             >
-              <Button>回滚到部署前版本</Button>
+              <Button>重新发布此版本</Button>
             </Popconfirm>
           ) : null,
           stoppable ? (
@@ -114,8 +114,14 @@ export default function AdminDeploymentDetailPage() {
               <Descriptions.Item label="创建时间">{formatDateTime(deployment?.createdAt)}</Descriptions.Item>
               <Descriptions.Item label="开始时间">{formatDateTime(deployment?.startedAt)}</Descriptions.Item>
               <Descriptions.Item label="结束时间">{formatDateTime(deployment?.finishedAt)}</Descriptions.Item>
-              <Descriptions.Item label="备份目录">{deployment?.backupPath || '-'}</Descriptions.Item>
-              <Descriptions.Item label="回滚来源">{deployment?.rollbackFromDeploymentId ? `#${deployment.rollbackFromDeploymentId}` : '-'}</Descriptions.Item>
+              <Descriptions.Item label="产物目录">{deployment?.artifactPath || '-'}</Descriptions.Item>
+              <Descriptions.Item label="重发来源">
+                {deployment?.rollbackFromDeploymentId ? (
+                  <Button type="link" className="!px-0" onClick={() => navigate(`/admin/deployments/${deployment.rollbackFromDeploymentId}`)}>
+                    #{deployment.rollbackFromDeploymentId}
+                  </Button>
+                ) : '-'}
+              </Descriptions.Item>
               <Descriptions.Item label="监控 PID">{deployment?.monitoredPid || '-'}</Descriptions.Item>
               <Descriptions.Item label="错误信息">{deployment?.errorMessage || '-'}</Descriptions.Item>
             </Descriptions>

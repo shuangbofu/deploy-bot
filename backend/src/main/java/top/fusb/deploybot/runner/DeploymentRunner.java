@@ -42,7 +42,6 @@ public class DeploymentRunner {
     private static final Logger log = LoggerFactory.getLogger(DeploymentRunner.class);
     private static final String LOG_DIR = "logs";
     private static final String SCRIPT_DIR = "scripts";
-    private static final String BACKUP_DIR = "backups";
     private static final String SSH_DIR = "ssh";
     private static final String ARTIFACT_DIR = "artifacts";
     private static final String PID_DIR = "pids";
@@ -107,12 +106,10 @@ public class DeploymentRunner {
             Files.createDirectories(buildWorkspaceRoot);
             Path logsDir = buildWorkspaceRoot.resolve(LOG_DIR);
             Path scriptsDir = buildWorkspaceRoot.resolve(SCRIPT_DIR);
-            Path backupsDir = buildWorkspaceRoot.resolve(BACKUP_DIR);
             Path sshDir = buildWorkspaceRoot.resolve(SSH_DIR).resolve("deploy-" + deploymentId);
             Path artifactsDir = buildWorkspaceRoot.resolve(ARTIFACT_DIR).resolve("deploy-" + deploymentId);
             Files.createDirectories(logsDir);
             Files.createDirectories(scriptsDir);
-            Files.createDirectories(backupsDir);
             Files.createDirectories(sshDir);
             Files.createDirectories(artifactsDir);
 
@@ -135,10 +132,9 @@ public class DeploymentRunner {
             appendSystemLog(logFile, "部署任务已开始，日志文件：" + logFile.toAbsolutePath().normalize());
             log.info("Deployment {} log file initialized at {}.", deploymentId, logFile.toAbsolutePath().normalize());
 
-            // 2. 本地部署会先备份现有目录；远程部署则由发布脚本自己控制目标目录。
-            log.info("部署 {} 备份阶段开始。", deploymentId);
-            createBackupIfNeeded(deployment, backupsDir, logFile, targetHost);
-            log.info("部署 {} 备份阶段结束。", deploymentId);
+            // 2. 当前版本改为保留每次构建产物，重新发布历史版本时直接复用产物，不再依赖发布前目录备份。
+            appendSystemLog(logFile, "当前版本采用“保留构建产物并重新发布”的方式，不再执行发布前目录备份。");
+            log.info("部署 {} 跳过旧版发布前备份逻辑，当前改为保留构建产物供后续重新发布。", deploymentId);
 
             appendSystemLog(logFile, "开始本机构建阶段。");
             log.info("部署 {} 构建阶段开始。", deploymentId);
@@ -364,34 +360,6 @@ public class DeploymentRunner {
             return Path.of(targetHost.getWorkspaceRoot().trim());
         }
         return localWorkspaceRoot;
-    }
-
-    private void createBackupIfNeeded(DeploymentEntity deployment, Path backupsDir, Path logFile, HostEntity targetHost) throws Exception {
-        if (targetHost != null && targetHost.getType() == HostType.SSH) {
-            appendSystemLog(logFile, "当前部署目标为远程主机，本地预备份已跳过，将由远端脚本自行处理发布目录。");
-            return;
-        }
-        Map<String, String> variables = jsonMapper.toStringMap(deployment.getVariablesJson());
-        String targetDir = variables.get("targetDir");
-        if (targetDir == null || targetDir.isBlank()) {
-            appendSystemLog(logFile, "未检测到 targetDir，本次部署跳过发布目录备份。");
-            return;
-        }
-
-        Path targetPath = Path.of(targetDir.trim()).toAbsolutePath().normalize();
-        if (!Files.exists(targetPath)) {
-            appendSystemLog(logFile, "发布目录不存在，跳过备份：" + targetPath);
-            return;
-        }
-
-        Path backupPath = backupsDir
-                .resolve("pipeline-" + deployment.getPipeline().getId())
-                .resolve("deploy-" + deployment.getId());
-        appendSystemLog(logFile, "开始备份发布目录：" + targetPath);
-        deploymentBackupService.snapshotDirectory(targetPath, backupPath);
-        deployment.setBackupPath(backupPath.toAbsolutePath().toString());
-        deploymentRepository.save(deployment);
-        appendSystemLog(logFile, "备份完成，备份目录：" + backupPath.toAbsolutePath().normalize());
     }
 
     private ProcessBuilder buildLocalBuildProcessBuilder(DeploymentEntity deployment, Path workspaceRoot, Path scriptFile, Path sshDir) throws Exception {

@@ -209,10 +209,6 @@ body {
 
 .log-line-system {
   color: #93c5fd;
-  background: rgba(30, 64, 175, 0.18);
-  border-left: 3px solid rgba(96, 165, 250, 0.9);
-  border-radius: 8px;
-  padding: 0 8px;
 }
 
 .log-line-error {

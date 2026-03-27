@@ -91,11 +91,18 @@ const getLocalBuildEnvironmentOptions = (
   type: RuntimeEnvironmentSummary['type'],
   localHostId?: number,
 ) => {
-  if (!localHostId) {
-    return [];
-  }
-
-  const candidates = items.filter((item) => item?.type === type && item.enabled !== false && (item.host?.id === localHostId || item.host == null));
+  const candidates = items.filter((item) => {
+    if (item?.type !== type || item.enabled === false) {
+      return false;
+    }
+    if (item.host == null) {
+      return true;
+    }
+    if (localHostId && item.host.id === localHostId) {
+      return true;
+    }
+    return item.host.type === 'LOCAL' || item.host.builtIn === true;
+  });
   const deduped = new Map();
 
   candidates.forEach((item) => {
@@ -105,8 +112,8 @@ const getLocalBuildEnvironmentOptions = (
       deduped.set(key, item);
       return;
     }
-    const currentIsLocal = item.host?.id === localHostId;
-    const existingIsLocal = existing.host?.id === localHostId;
+    const currentIsLocal = item.host?.id === localHostId || item.host?.type === 'LOCAL' || item.host?.builtIn === true;
+    const existingIsLocal = existing.host?.id === localHostId || existing.host?.type === 'LOCAL' || existing.host?.builtIn === true;
     if (currentIsLocal && !existingIsLocal) {
       deduped.set(key, item);
     }
@@ -547,6 +554,7 @@ export default function PipelineAdminPage() {
                         options={nodeOptions}
                         onChange={(value) => setForm({ ...form, nodeEnvironmentId: value })}
                         placeholder="请选择本机构建用的 Node 环境"
+                        notFoundContent="当前没有可用的本机 Node 环境，请先到主机管理 -> 本机 -> 环境管理里配置。"
                       />
                     </Form.Item>
                   ) : null}

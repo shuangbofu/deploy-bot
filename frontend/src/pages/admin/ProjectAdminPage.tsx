@@ -18,6 +18,7 @@ const emptyProject: ProjectPayload = {
 export default function ProjectAdminPage() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [loading, setLoading] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
   const [form, setForm] = useState<ProjectPayload>(emptyProject);
   const [editingId, setEditingId] = useState<number>();
   const [modalOpen, setModalOpen] = useState(false);
@@ -110,6 +111,45 @@ export default function ProjectAdminPage() {
     setModalOpen(false);
     await loadProjects();
     message.success(editingId ? '项目已更新' : '项目已创建');
+  };
+
+  const testConnection = async () => {
+    if (!form.gitUrl.trim()) {
+      message.error('请先填写 Git 地址。');
+      return;
+    }
+
+    if (form.gitAuthType === 'BASIC' && !isHttpGitUrl(form.gitUrl)) {
+      message.error('账号密码模式只能测试 HTTP/HTTPS 仓库地址。');
+      return;
+    }
+    if (form.gitAuthType === 'SSH' && !isSshGitUrl(form.gitUrl)) {
+      message.error('密钥对模式只能测试 SSH 仓库地址。');
+      return;
+    }
+
+    setTestingConnection(true);
+    try {
+      const result = await projectsApi.testConnection(form);
+      Modal.success({
+        title: '仓库连通性测试成功',
+        width: 720,
+        content: (
+          <div className="space-y-3">
+            <div>认证方式：{result.gitAuthType}</div>
+            <div>仓库地址：{result.gitUrl}</div>
+            <div>{result.message}</div>
+            {result.output ? (
+              <pre className="max-h-72 overflow-auto rounded-xl bg-slate-950 p-4 text-xs leading-6 text-slate-100">
+                {result.output}
+              </pre>
+            ) : null}
+          </div>
+        ),
+      });
+    } finally {
+      setTestingConnection(false);
+    }
   };
 
   const removeProject = async (id: number) => {
@@ -237,8 +277,18 @@ export default function ProjectAdminPage() {
         open={modalOpen}
         okText="保存"
         cancelText="取消"
+        footer={[
+          <Button key="test" loading={testingConnection} onClick={() => testConnection().catch(() => message.error('测试连通性失败'))}>
+            测试连通性
+          </Button>,
+          <Button key="cancel" onClick={() => setModalOpen(false)}>
+            取消
+          </Button>,
+          <Button key="save" type="primary" onClick={() => saveProject().catch(() => message.error(editingId ? '更新项目失败' : '创建项目失败'))}>
+            保存
+          </Button>,
+        ]}
         onCancel={() => setModalOpen(false)}
-        onOk={() => saveProject().catch(() => message.error(editingId ? '更新项目失败' : '创建项目失败'))}
         destroyOnClose
       >
         <Form layout="vertical">

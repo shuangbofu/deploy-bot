@@ -41,6 +41,19 @@ export interface ProjectSummary {
   gitAuthType?: GitAuthType;
 }
 
+export interface ProjectConnectionTestResult {
+  /** 测试是否成功。 */
+  success: boolean;
+  /** 测试说明。 */
+  message: string;
+  /** 实际使用的 Git 地址。 */
+  gitUrl: string;
+  /** 实际使用的认证方式。 */
+  gitAuthType: GitAuthType;
+  /** Git 命令输出摘要。 */
+  output?: string;
+}
+
 export interface HostSummary {
   /** 主机主键。 */
   id: number;
@@ -175,9 +188,9 @@ export interface DeploymentSummary {
   progressStage?: string | null;
   /** 关联流水线。 */
   pipeline?: PipelineSummary | null;
-  /** 备份目录，用于回滚。 */
-  backupPath?: string | null;
-  /** 回滚来源部署 ID。 */
+  /** 本次部署保留下来的构建产物目录，可用于重新发布同一版本。 */
+  artifactPath?: string | null;
+  /** 若这是重新发布历史版本的任务，则记录来源部署 ID。 */
   rollbackFromDeploymentId?: number | null;
   /** 被监控的进程 PID。 */
   monitoredPid?: number | null;
