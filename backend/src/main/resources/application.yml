@@ -1,5 +1,10 @@
 server:
   port: 8080
+  servlet:
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
 
 spring:
   datasource:
@@ -26,6 +31,9 @@ deploybot:
 logging:
   file:
     name: ./runtime/logs/deploy-bot-app.log
+  charset:
+    console: UTF-8
+    file: UTF-8
   level:
     root: INFO
     top.fusb.deploybot: INFO

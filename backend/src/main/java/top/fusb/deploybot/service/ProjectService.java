@@ -193,23 +193,28 @@ public class ProjectService {
             return;
         }
 
-        String sshHost = resolveSshHost(processConfig.gitUrl());
-        if (sshHost == null || sshHost.isBlank()) {
-            log.warn("项目 '{}' 无法从 Git 地址 '{}' 中解析 SSH 主机。", project.getName(), processConfig.gitUrl());
+        SshTarget sshTarget = resolveSshTarget(processConfig.gitUrl());
+        if (sshTarget == null || sshTarget.host() == null || sshTarget.host().isBlank()) {
+            log.warn("项目 '{}' 无法从 Git 地址 '{}' 中解析 SSH 目标。", project.getName(), processConfig.gitUrl());
             return;
         }
 
         try {
-            String diagnosticCommand = sshCommand + " -vvv -T git@" + sshHost;
+            String remoteUser = sshTarget.username() == null || sshTarget.username().isBlank() ? "git" : sshTarget.username();
+            String remoteHost = remoteUser + "@" + sshTarget.host();
+            String portArgument = sshTarget.port() == null ? "" : " -p " + sshTarget.port();
+            String diagnosticCommand = sshCommand + portArgument + " -vvv -T " + remoteHost;
             ProcessBuilder builder = new ProcessBuilder("/bin/bash", "-lc", diagnosticCommand);
             builder.redirectErrorStream(true);
             builder.environment().putAll(processConfig.environment());
             builder.environment().put("GIT_TERMINAL_PROMPT", "0");
 
             log.info(
-                    "项目 '{}' Git SSH 诊断开始：sshHost='{}', command='{}'.",
+                    "项目 '{}' Git SSH 诊断开始：sshHost='{}', sshPort='{}', sshUser='{}', command='{}'.",
                     project.getName(),
-                    sshHost,
+                    sshTarget.host(),
+                    sshTarget.port(),
+                    remoteUser,
                     diagnosticCommand
             );
 
@@ -236,13 +241,14 @@ public class ProjectService {
         }
     }
 
-    private String resolveSshHost(String gitUrl) {
+    private SshTarget resolveSshTarget(String gitUrl) {
         if (gitUrl == null || gitUrl.isBlank()) {
             return null;
         }
         if (gitUrl.startsWith("ssh://")) {
             try {
-                return java.net.URI.create(gitUrl).getHost();
+                java.net.URI uri = java.net.URI.create(gitUrl);
+                return new SshTarget(uri.getHost(), uri.getPort() > 0 ? uri.getPort() : null, uri.getUserInfo());
             } catch (Exception ignored) {
                 return null;
             }
@@ -251,10 +257,13 @@ public class ProjectService {
             int atIndex = gitUrl.indexOf('@');
             int colonIndex = gitUrl.indexOf(':', atIndex + 1);
             if (colonIndex > atIndex) {
-                return gitUrl.substring(atIndex + 1, colonIndex);
+                return new SshTarget(gitUrl.substring(atIndex + 1, colonIndex), null, gitUrl.substring(0, atIndex));
             }
         }
         return null;
+    }
+
+    private record SshTarget(String host, Integer port, String username) {
     }
 
     private void deleteRecursively(Path path) {

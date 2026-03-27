@@ -143,15 +143,15 @@ public class DeploymentEntity {
 
         int buildTotal = snapshot.buildStep() == null ? 0 : snapshot.buildStep().total;
         int deployTotal = snapshot.deployStep() == null ? 0 : snapshot.deployStep().total;
-        int startupTotal = snapshot.startupTotal();
-        int grandTotal = buildTotal + deployTotal + startupTotal;
+        int startupStageWeight = snapshot.hasStartupStage() ? 1 : 0;
+        int grandTotal = buildTotal + deployTotal + startupStageWeight;
         if (grandTotal <= 0) {
             return status == DeploymentStatus.RUNNING ? 10 : 0;
         }
 
-        int completedUnits;
+        float completedUnits;
         if (STARTUP_STAGE.equals(snapshot.stage())) {
-            completedUnits = buildTotal + deployTotal + snapshot.startupCurrent();
+            completedUnits = buildTotal + deployTotal + snapshot.startupProgressRatio();
         } else if (DEPLOY_STAGE.equals(snapshot.stage())) {
             int deployCurrent = snapshot.deployStep() == null ? 0 : snapshot.deployStep().current;
             completedUnits = buildTotal + deployCurrent;
@@ -180,7 +180,7 @@ public class DeploymentEntity {
             return stageLabel + " " + snapshot.rollbackStep().current + "/" + snapshot.rollbackStep().total;
         }
         if (STARTUP_STAGE.equals(snapshot.stage())) {
-            return stageLabel + " " + snapshot.startupCurrent() + "/" + snapshot.startupTotal();
+            return "等待启动完成";
         }
         if (DEPLOY_STAGE.equals(snapshot.stage()) && snapshot.deployStep() != null) {
             return stageLabel + " " + snapshot.deployStep().current + "/" + snapshot.deployStep().total;
@@ -243,15 +243,15 @@ public class DeploymentEntity {
                 stage = BUILD_STAGE;
             }
 
-            int startupTotal = resolveStartupObservationTotal();
-            int startupCurrent = startupAttempt == null ? (STARTUP_STAGE.equals(stage) ? 1 : 0) : Math.min(startupAttempt, startupTotal);
-            return new ProgressSnapshot(stage, latestBuild, latestDeploy, latestRollback, startupCurrent, startupTotal);
+            int startupAttemptTotal = resolveStartupObservationAttemptTotal();
+            int startupAttemptCurrent = startupAttempt == null ? (STARTUP_STAGE.equals(stage) ? 1 : 0) : Math.min(startupAttempt, startupAttemptTotal);
+            return new ProgressSnapshot(stage, latestBuild, latestDeploy, latestRollback, startupAttemptCurrent, startupAttemptTotal);
         } catch (IOException ignored) {
             return null;
         }
     }
 
-    private int resolveStartupObservationTotal() {
+    private int resolveStartupObservationAttemptTotal() {
         Integer startupTimeoutSeconds = pipeline == null ? null : pipeline.getStartupTimeoutSeconds();
         if (startupTimeoutSeconds == null || startupTimeoutSeconds <= 0) {
             startupTimeoutSeconds = 30;
@@ -265,9 +265,22 @@ public class DeploymentEntity {
             ProgressStep buildStep,
             ProgressStep deployStep,
             ProgressStep rollbackStep,
-            int startupCurrent,
-            int startupTotal
+            int startupAttemptCurrent,
+            int startupAttemptTotal
     ) {
+        private boolean hasStartupStage() {
+            return STARTUP_STAGE.equals(stage) || startupAttemptCurrent > 0;
+        }
+
+        private float startupProgressRatio() {
+            if (!hasStartupStage()) {
+                return 0;
+            }
+            if (startupAttemptTotal <= 0) {
+                return 0.5f;
+            }
+            return Math.max(0.05f, Math.min(startupAttemptCurrent * 1.0f / startupAttemptTotal, 0.99f));
+        }
     }
 
     private record ProgressStep(int current, int total) {
