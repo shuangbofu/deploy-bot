@@ -207,7 +207,7 @@ curl -X POST http://<backend-host>:<backend-port>/api/pipelines \
     "targetHostId": <host-id>,
     "defaultBranch": "<branch>",
     "variablesJson": "{}",
-    "tagsJson": "[\"sit\",\"frontend\"]"
+    "tagsJson": "[\"test\",\"frontend\"]"
   }'
 ```
 

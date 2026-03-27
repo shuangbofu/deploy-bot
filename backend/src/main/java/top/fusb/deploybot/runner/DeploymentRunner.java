@@ -913,19 +913,25 @@ public class DeploymentRunner {
 
     private String loadFilteredRuntimeLog(DeploymentEntity deployment, HostEntity targetHost) {
         try {
-            String targetDir = jsonMapper.toStringMap(deployment.getVariablesJson()).get("targetDir");
+            Map<String, String> variables = jsonMapper.toStringMap(deployment.getVariablesJson());
+            String targetDir = variables.get("targetDir");
             if (targetDir == null || targetDir.isBlank()) {
                 return null;
             }
+            String applicationName = variables.get("applicationName");
+            if (applicationName == null || applicationName.isBlank()) {
+                applicationName = "application";
+            }
+            String runtimeLogPath = targetDir + "/" + applicationName + ".log";
             String runtimeLog;
             if (targetHost != null && targetHost.getType() == HostType.SSH) {
                 runtimeLog = hostService.executeRemoteScript(
                         targetHost.getId(),
-                        "if [ -f \"" + targetDir.replace("\"", "\\\"") + "/app.log\" ]; then tail -n 200 \"" + targetDir.replace("\"", "\\\"") + "/app.log\"; fi\n",
+                        "if [ -f \"" + runtimeLogPath.replace("\"", "\\\"") + "\" ]; then tail -n 200 \"" + runtimeLogPath.replace("\"", "\\\"") + "\"; fi\n",
                         8
                 );
             } else {
-                Path appLog = Path.of(targetDir, "app.log");
+                Path appLog = Path.of(runtimeLogPath);
                 if (!Files.exists(appLog)) {
                     return null;
                 }

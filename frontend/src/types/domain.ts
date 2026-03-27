@@ -154,6 +154,12 @@ export interface PipelineSummary {
   mavenEnvironment?: RuntimeEnvironmentSummary | null;
   /** 目标主机运行 Java 环境。 */
   runtimeJavaEnvironment?: RuntimeEnvironmentSummary | null;
+  /** 开启发布监控时用于生成唯一产物名的应用名。 */
+  applicationName?: string | null;
+  /** Spring Boot 运行时激活的 profile。 */
+  springProfile?: string | null;
+  /** Spring Boot 运行时附加 YAML 配置。 */
+  runtimeConfigYaml?: string | null;
   /** 启用服务监测时的启动关键字。 */
   startupKeyword?: string | null;
   /** 启用服务监测时的启动观察窗口，单位秒。 */

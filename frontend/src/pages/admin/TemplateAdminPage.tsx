@@ -64,12 +64,17 @@ const reservedVariables = [
   'gitRepositoryUrl',
   'projectName',
   'pipelineName',
+  'applicationName',
+  'springProfile',
+  'runtimeConfigYaml',
+  'runtimeConfigYamlBase64',
+  'runtimeConfigFilePath',
+  'springBootArgs',
   'workspaceRoot',
   'buildWorkspaceRoot',
   'deployWorkspaceRoot',
   'deploymentId',
   'artifactDir',
-  'pidFilePath',
 ];
 
 const phaseLabelMap = {

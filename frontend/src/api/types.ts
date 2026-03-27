@@ -66,6 +66,9 @@ export interface PipelinePayload {
   nodeEnvironmentId?: number;
   mavenEnvironmentId?: number;
   runtimeJavaEnvironmentId?: number;
+  applicationName?: string;
+  springProfile?: string;
+  runtimeConfigYaml?: string;
   startupKeyword?: string;
   startupTimeoutSeconds?: number;
 }

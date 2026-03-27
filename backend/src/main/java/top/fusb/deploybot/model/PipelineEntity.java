@@ -7,6 +7,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.Lob;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import lombok.Data;
@@ -83,6 +84,19 @@ public class PipelineEntity {
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "runtime_java_environment_id")
     private RuntimeEnvironmentEntity runtimeJavaEnvironment;
+
+    /** 开启发布监控时用于生成唯一产物名的应用名。 */
+    @Column(name = "application_name", length = 255)
+    private String applicationName;
+
+    /** Spring Boot 运行时激活的 profile。 */
+    @Column(name = "spring_profile", length = 255)
+    private String springProfile;
+
+    /** Spring Boot 运行时附加 YAML 配置。 */
+    @Lob
+    @Column(name = "runtime_config_yaml")
+    private String runtimeConfigYaml;
 
     /** 启用服务监测时使用的启动关键字，用于更精准判断业务是否真正启动成功。 */
     @Column(name = "process_keyword", length = 500)

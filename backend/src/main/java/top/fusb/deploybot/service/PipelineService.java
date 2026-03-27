@@ -76,6 +76,9 @@ public class PipelineService {
         entity.setNodeEnvironment(resolveEnvironment(request.nodeEnvironmentId()));
         entity.setMavenEnvironment(resolveEnvironment(request.mavenEnvironmentId()));
         entity.setRuntimeJavaEnvironment(resolveRuntimeJavaEnvironment(request.runtimeJavaEnvironmentId(), targetHost));
+        entity.setApplicationName(normalizeText(request.applicationName()));
+        entity.setSpringProfile(normalizeText(request.springProfile()));
+        entity.setRuntimeConfigYaml(normalizeMultilineText(request.runtimeConfigYaml()));
         entity.setStartupKeyword(normalizeText(request.startupKeyword()));
         entity.setStartupTimeoutSeconds(normalizeStartupTimeout(request.startupTimeoutSeconds()));
         return pipelineRepository.save(entity);
@@ -128,6 +131,14 @@ public class PipelineService {
         }
         String trimmed = content.trim();
         return trimmed.isBlank() ? null : trimmed;
+    }
+
+    private String normalizeMultilineText(String content) {
+        if (content == null) {
+            return null;
+        }
+        String normalized = content.replace("\r\n", "\n").trim();
+        return normalized.isBlank() ? null : normalized;
     }
 
     private Integer normalizeStartupTimeout(Integer startupTimeoutSeconds) {

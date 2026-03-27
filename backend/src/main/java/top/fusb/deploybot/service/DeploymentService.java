@@ -31,17 +31,20 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class DeploymentService {
     private static final Logger log = LoggerFactory.getLogger(DeploymentService.class);
     private static final String DEFAULT_TRIGGER_USER = "anonymous";
     private static final String BUILD_ARTIFACT_DIR = "artifacts";
-    private static final String PID_DIR = "pids";
+    private static final Pattern REDIRECTION_PATTERN = Pattern.compile("\\s(?:\\d?>>?|>>?)");
 
     private final DeploymentRepository deploymentRepository;
     private final PipelineRepository pipelineRepository;
@@ -141,6 +144,10 @@ public class DeploymentService {
         variables.put("gitRepositoryUrl", pipeline.getProject().getGitUrl());
         variables.put("projectName", pipeline.getProject().getName());
         variables.put("pipelineName", pipeline.getName());
+        variables.put("applicationName", resolveApplicationName(pipeline));
+        variables.put("springProfile", pipeline.getSpringProfile() == null ? "" : pipeline.getSpringProfile());
+        variables.put("runtimeConfigYaml", pipeline.getRuntimeConfigYaml() == null ? "" : pipeline.getRuntimeConfigYaml());
+        variables.put("runtimeConfigYamlBase64", encodeRuntimeConfigYaml(pipeline.getRuntimeConfigYaml()));
         variables.put("workspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
         variables.put("buildWorkspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
         variables.put("deployWorkspaceRoot", deployWorkspaceRoot.toAbsolutePath().normalize().toString());
@@ -167,9 +174,6 @@ public class DeploymentService {
 
         // 3. 补齐部署内置变量，并分别渲染构建脚本与发布脚本。
         variables.put("deploymentId", entity.getId().toString());
-        if (requiresPidFileMonitoring(pipeline)) {
-            variables.put("pidFilePath", deployWorkspaceRoot.resolve(PID_DIR).resolve("service-" + entity.getId() + ".pid").toAbsolutePath().normalize().toString());
-        }
         Path localArtifactDir = buildWorkspaceRoot.resolve(BUILD_ARTIFACT_DIR).resolve("deploy-" + entity.getId()).toAbsolutePath().normalize();
         Path targetArtifactDir = deployWorkspaceRoot.resolve(BUILD_ARTIFACT_DIR).resolve("deploy-" + entity.getId()).toAbsolutePath().normalize();
 
@@ -180,7 +184,9 @@ public class DeploymentService {
         Map<String, String> deployVariables = new LinkedHashMap<>(variables);
         deployVariables.put("artifactDir", targetArtifactDir.toString());
         deployVariables.put("workspaceRoot", deployWorkspaceRoot.toAbsolutePath().normalize().toString());
+        deployVariables.put("runtimeConfigFilePath", deployWorkspaceRoot.resolve("config").resolve("deploy-" + entity.getId() + ".yml").toAbsolutePath().normalize().toString());
         applyDeployRuntimeEnvironmentVariables(deployVariables, pipeline);
+        augmentStartCommand(deployVariables);
 
         String buildTemplate = resolveBuildScriptTemplate(pipeline);
         String deployTemplate = resolveDeployScriptTemplate(pipeline);
@@ -458,6 +464,10 @@ public class DeploymentService {
         variables.put("gitRepositoryUrl", pipeline.getProject().getGitUrl());
         variables.put("projectName", pipeline.getProject().getName());
         variables.put("pipelineName", pipeline.getName());
+        variables.put("applicationName", resolveApplicationName(pipeline));
+        variables.put("springProfile", pipeline.getSpringProfile() == null ? "" : pipeline.getSpringProfile());
+        variables.put("runtimeConfigYaml", pipeline.getRuntimeConfigYaml() == null ? "" : pipeline.getRuntimeConfigYaml());
+        variables.put("runtimeConfigYamlBase64", encodeRuntimeConfigYaml(pipeline.getRuntimeConfigYaml()));
         variables.put("workspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
         variables.put("buildWorkspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
         variables.put("deployWorkspaceRoot", deployWorkspaceRoot.toAbsolutePath().normalize().toString());
@@ -483,9 +493,6 @@ public class DeploymentService {
         variables.put("deploymentId", entity.getId().toString());
         Path localArtifactDir = buildWorkspaceRoot.resolve(BUILD_ARTIFACT_DIR).resolve("deploy-" + entity.getId()).toAbsolutePath().normalize();
         Path targetArtifactDir = deployWorkspaceRoot.resolve(BUILD_ARTIFACT_DIR).resolve("deploy-" + entity.getId()).toAbsolutePath().normalize();
-        if (requiresPidFileMonitoring(pipeline)) {
-            variables.put("pidFilePath", deployWorkspaceRoot.resolve(PID_DIR).resolve("service-" + entity.getId() + ".pid").toAbsolutePath().normalize().toString());
-        }
         Map<String, String> buildVariables = new LinkedHashMap<>(variables);
         buildVariables.put("artifactDir", localArtifactDir.toString());
         buildVariables.put("workspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
@@ -493,7 +500,9 @@ public class DeploymentService {
         Map<String, String> deployVariables = new LinkedHashMap<>(variables);
         deployVariables.put("artifactDir", targetArtifactDir.toString());
         deployVariables.put("workspaceRoot", deployWorkspaceRoot.toAbsolutePath().normalize().toString());
+        deployVariables.put("runtimeConfigFilePath", deployWorkspaceRoot.resolve("config").resolve("deploy-" + entity.getId() + ".yml").toAbsolutePath().normalize().toString());
         applyDeployRuntimeEnvironmentVariables(deployVariables, pipeline);
+        augmentStartCommand(deployVariables);
 
         String deployTemplate = resolveDeployScriptTemplate(pipeline);
         String renderedDeployScript = deployTemplate == null ? null : scriptTemplateService.render(deployTemplate, deployVariables);
@@ -524,7 +533,21 @@ public class DeploymentService {
         }
 
         Map<String, String> sourceVariables = new LinkedHashMap<>(jsonMapper.toStringMap(source.getVariablesJson()));
-        List<String> builtInKeys = List.of("branch", "gitUrl", "projectName", "pipelineName", "workspaceRoot", "deploymentId", "pidFilePath", "gitRepositoryUrl", "rollbackBackupPath");
+        List<String> builtInKeys = List.of(
+                "branch",
+                "gitUrl",
+                "projectName",
+                "pipelineName",
+                "applicationName",
+                "springProfile",
+                "runtimeConfigYaml",
+                "runtimeConfigYamlBase64",
+                "runtimeConfigFilePath",
+                "workspaceRoot",
+                "deploymentId",
+                "gitRepositoryUrl",
+                "rollbackBackupPath"
+        );
         Map<String, String> overrides = new LinkedHashMap<>();
         sourceVariables.forEach((key, value) -> {
             if (!builtInKeys.contains(key)) {
@@ -630,19 +653,10 @@ public class DeploymentService {
         return scriptTemplateService.render(String.join("\n", lines), variables);
     }
 
-    private boolean requiresPidFileMonitoring(PipelineEntity pipeline) {
-        if (!Boolean.TRUE.equals(pipeline.getTemplate().getMonitorProcess())) {
-            return false;
-        }
-        String deployScript = pipeline.getTemplate().getDeployScriptContent();
-        return deployScript != null && deployScript.contains("{{pidFilePath}}");
-    }
-
     /**
      * 启动命令执行完成后，追加一段系统级诊断输出，方便直接在部署日志里确认：
      * 1. 启动关键字是否命中
-     * 2. PID 文件是否生成
-     * 3. app.log 是否已经开始写入
+     * 2. 应用日志是否已经开始写入
      */
     private String buildDeployRuntimeDiagnostics(PipelineEntity pipeline, Map<String, String> variables) {
         if (!Boolean.TRUE.equals(pipeline.getTemplate().getMonitorProcess())) {
@@ -656,26 +670,93 @@ public class DeploymentService {
         String startupKeyword = pipeline.getStartupKeyword();
         if (startupKeyword != null && !startupKeyword.isBlank()) {
             lines.add("echo \"[系统] 启动关键字：" + escapeShell(startupKeyword) + "\"");
-            lines.add("pgrep -af \"" + escapeShell(startupKeyword) + "\" || true");
-        }
-        if (requiresPidFileMonitoring(pipeline)) {
-            lines.add("if [ -f \"{{pidFilePath}}\" ]; then");
-            lines.add("  echo \"[系统] PID 文件内容：$(cat \"{{pidFilePath}}\")\"");
-            lines.add("else");
-            lines.add("  echo \"[系统] PID 文件尚未生成：{{pidFilePath}}\"");
-            lines.add("fi");
         }
         String targetDir = variables.get("targetDir");
         if (targetDir != null && !targetDir.isBlank()) {
-            lines.add("if [ -f \"" + escapeShell(targetDir) + "/app.log\" ]; then");
-            lines.add("  echo \"[系统] app.log 文件状态：$(ls -l \"" + escapeShell(targetDir) + "/app.log\")\"");
-            lines.add("  echo \"[系统] app.log 最新 20 行：\"");
-            lines.add("  tail -n 20 \"" + escapeShell(targetDir) + "/app.log\" || true");
+            String logPath = escapeShell(targetDir + "/" + variables.getOrDefault("applicationName", "application") + ".log");
+            lines.add("if [ -f \"" + logPath + "\" ]; then");
+            lines.add("  echo \"[系统] 应用日志文件状态：$(ls -l \"" + logPath + "\")\"");
+            lines.add("  echo \"[系统] 应用日志最新 20 行：\"");
+            lines.add("  tail -n 20 \"" + logPath + "\" || true");
             lines.add("else");
-            lines.add("  echo \"[系统] app.log 尚未生成。\"");
+            lines.add("  echo \"[系统] 应用日志尚未生成：" + logPath + "\"");
             lines.add("fi");
         }
         lines.add("");
         return scriptTemplateService.render(String.join("\n", lines), variables);
+    }
+
+    private String resolveApplicationName(PipelineEntity pipeline) {
+        String configured = pipeline.getApplicationName();
+        if (configured != null && !configured.isBlank()) {
+            return configured.trim();
+        }
+        String fallback = pipeline.getName();
+        if (fallback == null || fallback.isBlank()) {
+            return "application";
+        }
+        return fallback.trim()
+                .replaceAll("[^A-Za-z0-9._-]+", "-")
+                .replaceAll("^-+", "")
+                .replaceAll("-+$", "");
+    }
+
+    private String encodeRuntimeConfigYaml(String runtimeConfigYaml) {
+        if (runtimeConfigYaml == null || runtimeConfigYaml.isBlank()) {
+            return "";
+        }
+        return Base64.getEncoder().encodeToString(runtimeConfigYaml.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private void augmentStartCommand(Map<String, String> variables) {
+        String startCommand = variables.get("startCommand");
+        if (startCommand == null || startCommand.isBlank()) {
+            return;
+        }
+        List<String> springArguments = new ArrayList<>();
+        String springProfile = variables.get("springProfile");
+        if (springProfile != null && !springProfile.isBlank()) {
+            springArguments.add("--spring.profiles.active=" + springProfile.trim());
+        }
+        String runtimeConfigYamlBase64 = variables.get("runtimeConfigYamlBase64");
+        String runtimeConfigFilePath = variables.get("runtimeConfigFilePath");
+        if (runtimeConfigYamlBase64 != null && !runtimeConfigYamlBase64.isBlank()
+                && runtimeConfigFilePath != null && !runtimeConfigFilePath.isBlank()) {
+            springArguments.add("--spring.config.additional-location=file:" + runtimeConfigFilePath.trim());
+        }
+        if (springArguments.isEmpty()) {
+            variables.put("springBootArgs", "");
+            return;
+        }
+        String joinedArguments = String.join(" ", springArguments);
+        variables.put("springBootArgs", joinedArguments);
+        String trimmedCommand = startCommand.trim();
+        if (trimmedCommand.contains("{{springBootArgs}}")) {
+            return;
+        }
+        variables.put("startCommand", injectSpringArguments(trimmedCommand, joinedArguments));
+    }
+
+    private String injectSpringArguments(String startCommand, String joinedArguments) {
+        if (joinedArguments == null || joinedArguments.isBlank()) {
+            return startCommand;
+        }
+
+        String trimmedCommand = startCommand.trim();
+        String backgroundSuffix = "";
+        if (trimmedCommand.endsWith("&")) {
+            trimmedCommand = trimmedCommand.substring(0, trimmedCommand.length() - 1).trim();
+            backgroundSuffix = " &";
+        }
+
+        Matcher redirectionMatcher = REDIRECTION_PATTERN.matcher(trimmedCommand);
+        if (redirectionMatcher.find()) {
+            int splitIndex = redirectionMatcher.start();
+            String commandPart = trimmedCommand.substring(0, splitIndex).trim();
+            String redirectPart = trimmedCommand.substring(splitIndex);
+            return commandPart + " " + joinedArguments + redirectPart + backgroundSuffix;
+        }
+
+        return trimmedCommand + " " + joinedArguments + backgroundSuffix;
     }
 }

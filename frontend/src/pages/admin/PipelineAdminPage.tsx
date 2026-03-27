@@ -31,6 +31,9 @@ interface PipelineFormState {
   nodeEnvironmentId?: number;
   mavenEnvironmentId?: number;
   runtimeJavaEnvironmentId?: number;
+  applicationName: string;
+  springProfile: string;
+  runtimeConfigYaml: string;
   startupKeyword: string;
   startupTimeoutSeconds?: number;
 }
@@ -48,6 +51,9 @@ const emptyPipeline: PipelineFormState = {
   nodeEnvironmentId: undefined,
   mavenEnvironmentId: undefined,
   runtimeJavaEnvironmentId: undefined,
+  applicationName: '',
+  springProfile: '',
+  runtimeConfigYaml: '',
   startupKeyword: '',
   startupTimeoutSeconds: 30,
 };
@@ -217,6 +223,9 @@ export default function PipelineAdminPage() {
       nodeEnvironmentId: record.nodeEnvironment?.id || undefined,
       mavenEnvironmentId: record.mavenEnvironment?.id || undefined,
       runtimeJavaEnvironmentId: record.runtimeJavaEnvironment?.id || undefined,
+      applicationName: record.applicationName || '',
+      springProfile: record.springProfile || '',
+      runtimeConfigYaml: record.runtimeConfigYaml || '',
       startupKeyword: record.startupKeyword || '',
       startupTimeoutSeconds: record.startupTimeoutSeconds || 30,
     });
@@ -266,6 +275,10 @@ export default function PipelineAdminPage() {
 
   const selectedTemplateVariables = useMemo(
     () => parseVariablesSchema(selectedTemplate?.variablesSchema),
+    [selectedTemplate],
+  );
+  const isSpringBootTemplate = useMemo(
+    () => ['springboot', 'springboot_frontend'].includes(selectedTemplate?.templateType || ''),
     [selectedTemplate],
   );
 
@@ -464,6 +477,8 @@ export default function PipelineAdminPage() {
               { title: '构建 Node', render: (_, row) => row.nodeEnvironment?.name || '-' },
               { title: '构建 Maven', render: (_, row) => row.mavenEnvironment?.name || '-' },
               { title: '运行 Java', render: (_, row) => row.runtimeJavaEnvironment?.name || '-' },
+              { title: '应用名', render: (_, row) => row.applicationName || '-' },
+              { title: 'Spring Profile', render: (_, row) => row.springProfile || '-' },
               { title: '启动关键字', render: (_, row) => row.startupKeyword || '-' },
               { title: '启动超时(秒)', width: 120, render: (_, row) => row.startupTimeoutSeconds || '-' },
               { title: '默认分支', dataIndex: 'defaultBranch', width: 120 },
@@ -519,16 +534,15 @@ export default function PipelineAdminPage() {
               {currentStep > 0 ? (
                 <Button onClick={() => setCurrentStep((value) => value - 1)}>上一步</Button>
               ) : null}
-              {currentStep < 3 ? (
-                <Button type="primary" onClick={() => setCurrentStep((value) => value + 1)}>下一步</Button>
-              ) : (
-                <Button
-                  type="primary"
-                  onClick={() => savePipeline().catch(() => message.error(editingId ? '更新流水线失败' : '创建流水线失败'))}
-                >
-                  保存
-                </Button>
-              )}
+              <Button
+                type="primary"
+                onClick={() => savePipeline().catch(() => undefined)}
+              >
+                保存
+              </Button>
+              {currentStep < 4 ? (
+                <Button onClick={() => setCurrentStep((value) => value + 1)}>下一步</Button>
+              ) : null}
             </Space>
           </div>
         )}
@@ -548,6 +562,7 @@ export default function PipelineAdminPage() {
                 { title: '基础信息', description: '名称、项目、模板、分支' },
                 { title: '构建环境', description: '选择本机构建用环境' },
                 { title: '目标主机', description: '选择发布到哪台主机' },
+                { title: '运行配置', description: 'Profile / YAML 覆盖' },
                 { title: '默认变量', description: '按阶段填写默认值' },
               ]}
             />
@@ -589,6 +604,9 @@ export default function PipelineAdminPage() {
                         nodeEnvironmentId: undefined,
                         mavenEnvironmentId: undefined,
                         runtimeJavaEnvironmentId: undefined,
+                        applicationName: '',
+                        springProfile: '',
+                        runtimeConfigYaml: '',
                         startupKeyword: '',
                         startupTimeoutSeconds: 30,
                       })}
@@ -672,11 +690,18 @@ export default function PipelineAdminPage() {
                   ) : null}
                   {selectedTemplate?.monitorProcess ? (
                     <>
+                      <Form.Item label="应用名">
+                        <Input
+                          value={form.applicationName}
+                          onChange={(event) => setForm({ ...form, applicationName: event.target.value })}
+                          placeholder="例如：deploy-bot-backend"
+                        />
+                      </Form.Item>
                       <Form.Item label="启动关键字">
                         <Input
                           value={form.startupKeyword}
                           onChange={(event) => setForm({ ...form, startupKeyword: event.target.value })}
-                          placeholder="例如：app.jar、deploy-bot-backend"
+                          placeholder="例如：Started DeployBotApplication in"
                         />
                       </Form.Item>
                       <Form.Item label="启动超时（秒）">
@@ -692,7 +717,7 @@ export default function PipelineAdminPage() {
                         />
                       </Form.Item>
                       <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                        开启服务监测的模板会在发布后进入启动观察窗口。系统必须拿到 PID 才会认为接管成功，启动关键字只用于更精准地判断服务是否真正启动成功。
+                        开启服务监测的模板会在发布后进入启动观察窗口。应用名会作为系统内置变量注入模板，用于生成唯一产物名；启动关键字只用于判断服务是否真正完成启动。
                       </div>
                     </>
                   ) : null}
@@ -705,7 +730,38 @@ export default function PipelineAdminPage() {
               </Card>
             ) : null}
             {currentStep === 3 ? (
-              <Card size="small" title="步骤 4 · 默认变量">
+              <Card size="small" title="步骤 4 · 运行配置">
+                {isSpringBootTemplate ? (
+                  <Form layout="vertical">
+                    <Form.Item label="Spring Profile">
+                      <Input
+                        value={form.springProfile}
+                        onChange={(event) => setForm({ ...form, springProfile: event.target.value })}
+                        placeholder="例如：prod / test / dev / local"
+                      />
+                    </Form.Item>
+                    <Form.Item label="运行配置 YAML">
+                      <Input.TextArea
+                        rows={14}
+                        value={form.runtimeConfigYaml}
+                        onChange={(event) => setForm({ ...form, runtimeConfigYaml: event.target.value })}
+                        placeholder={'例如：\nspring:\n  datasource:\n    url: jdbc:mysql://...'}
+                        className="font-mono"
+                      />
+                    </Form.Item>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                      这份 YAML 会在发布阶段写入目标主机，并通过附加配置参数自动生效；如果只填 Profile，系统会自动把它加到启动参数里。
+                    </div>
+                  </Form>
+                ) : (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                    当前模板不是 Spring Boot 类型，不需要额外运行配置。
+                  </div>
+                )}
+              </Card>
+            ) : null}
+            {currentStep === 4 ? (
+              <Card size="small" title="步骤 5 · 默认变量">
                 <PipelineVariablesEditor
                   variables={selectedTemplateVariables}
                   values={form.variablesJson}
