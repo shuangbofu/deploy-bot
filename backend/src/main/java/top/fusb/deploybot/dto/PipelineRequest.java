@@ -21,6 +21,8 @@ public record PipelineRequest(
         @NotBlank String defaultBranch,
         /** 默认变量 JSON。 */
         String variablesJson,
+        /** 自定义标签 JSON。 */
+        String tagsJson,
         /** 本机构建 Java 环境 ID。 */
         Long javaEnvironmentId,
         /** 本机构建 Node 环境 ID。 */

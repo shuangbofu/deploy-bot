@@ -1,6 +1,7 @@
-import { AppstoreOutlined, ProfileOutlined, RocketOutlined, DeploymentUnitOutlined } from '@ant-design/icons';
-import { Button, Layout, Menu, Space, Typography } from 'antd';
+import { AppstoreOutlined, ProfileOutlined, RocketOutlined, DeploymentUnitOutlined, LogoutOutlined } from '@ant-design/icons';
+import { Button, Dropdown, Layout, Menu, Space, Typography } from 'antd';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../auth/AuthContext';
 
 /**
  * 用户端菜单只保留用户真实需要的三个入口，避免出现配置感。
@@ -18,6 +19,7 @@ const menuItems = [
 export default function UserLayout() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user, isAdmin, logout } = useAuth();
   const selectedKey = menuItems.find((item) => location.pathname.startsWith(item.key))?.key || '/user/dashboard';
 
   return (
@@ -45,9 +47,29 @@ export default function UserLayout() {
           className="admin-nav"
         />
         <Space>
-          <Link to="/admin/dashboard">
-            <Button type="primary">进入管理端</Button>
-          </Link>
+          {isAdmin ? (
+            <Link to="/admin/dashboard">
+              <Button>管理端</Button>
+            </Link>
+          ) : null}
+          <Dropdown
+            menu={{
+              items: [
+                {
+                  key: 'logout',
+                  icon: <LogoutOutlined />,
+                  label: '退出登录',
+                  onClick: () => {
+                    logout().finally(() => navigate('/login', { replace: true }));
+                  },
+                },
+              ],
+            }}
+          >
+            <Button type="primary">
+              {user?.displayName || user?.username || '用户'}
+            </Button>
+          </Dropdown>
         </Space>
       </Layout.Header>
       <Layout.Content className="px-6 py-6">

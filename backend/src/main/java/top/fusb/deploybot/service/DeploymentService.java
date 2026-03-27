@@ -14,6 +14,8 @@ import top.fusb.deploybot.runner.DeploymentRunner;
 import top.fusb.deploybot.repo.DeploymentRepository;
 import top.fusb.deploybot.repo.PipelineRepository;
 import top.fusb.deploybot.repo.ServiceRepository;
+import top.fusb.deploybot.security.AuthContextHolder;
+import top.fusb.deploybot.security.AuthenticatedUser;
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -79,12 +81,15 @@ public class DeploymentService {
     }
 
     public List<DeploymentEntity> findAll() {
+        requireCurrentUser();
         return deploymentRepository.findAllByOrderByCreatedAtDesc();
     }
 
     public DeploymentEntity findById(Long id) {
-        return deploymentRepository.findById(id)
+        DeploymentEntity entity = deploymentRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorSubCode.DEPLOYMENT_NOT_FOUND));
+        ensureDeploymentReadable(entity);
+        return entity;
     }
 
     @Transactional
@@ -150,7 +155,8 @@ public class DeploymentService {
         entity.setPipeline(pipeline);
         entity.setBranchName(branch);
         entity.setVariablesJson(jsonMapper.write(variables));
-        entity.setTriggeredBy(request.triggeredBy() == null || request.triggeredBy().isBlank() ? DEFAULT_TRIGGER_USER : request.triggeredBy());
+        AuthenticatedUser currentUser = requireCurrentUser();
+        entity.setTriggeredBy(currentUser.username() == null || currentUser.username().isBlank() ? DEFAULT_TRIGGER_USER : currentUser.username());
         entity.setStatus(DeploymentStatus.PENDING);
         entity.setCreatedAt(LocalDateTime.now());
         deploymentRepository.save(entity);
@@ -421,6 +427,7 @@ public class DeploymentService {
     public DeploymentEntity stop(Long id) {
         DeploymentEntity entity = deploymentRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorSubCode.DEPLOYMENT_NOT_FOUND));
+        ensureDeploymentManageable(entity);
         deploymentRunner.stop(id);
         return deploymentRepository.findById(id).orElse(entity);
     }
@@ -429,6 +436,7 @@ public class DeploymentService {
     public DeploymentEntity rollback(Long id) {
         DeploymentEntity source = deploymentRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorSubCode.DEPLOYMENT_NOT_FOUND));
+        ensureDeploymentManageable(source);
         if (source.getStatus() == DeploymentStatus.PENDING || source.getStatus() == DeploymentStatus.RUNNING) {
             throw new BusinessException(ErrorSubCode.RUNNING_DEPLOYMENT_CANNOT_ROLLBACK);
         }
@@ -461,7 +469,7 @@ public class DeploymentService {
         DeploymentEntity entity = new DeploymentEntity();
         entity.setPipeline(pipeline);
         entity.setBranchName(source.getBranchName());
-        entity.setTriggeredBy("rollback");
+        entity.setTriggeredBy(requireCurrentUser().username());
         entity.setStatus(DeploymentStatus.PENDING);
         entity.setCreatedAt(LocalDateTime.now());
         entity.setRollbackFromDeploymentId(source.getId());
@@ -532,6 +540,7 @@ public class DeploymentService {
     public String readLog(Long id) throws IOException {
         DeploymentEntity entity = deploymentRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorSubCode.DEPLOYMENT_NOT_FOUND));
+        ensureDeploymentReadable(entity);
         log.debug("Reading deployment log for deployment {}.", id);
         if (entity.getLogPath() == null) {
             if (entity.getStatus() == DeploymentStatus.PENDING) {
@@ -550,6 +559,28 @@ public class DeploymentService {
             return "日志文件尚未生成，请稍后刷新。";
         }
         return Files.readString(path, StandardCharsets.UTF_8);
+    }
+
+    private AuthenticatedUser requireCurrentUser() {
+        AuthenticatedUser currentUser = AuthContextHolder.get();
+        if (currentUser == null) {
+            throw new BusinessException(ErrorSubCode.AUTH_REQUIRED);
+        }
+        return currentUser;
+    }
+
+    private void ensureDeploymentReadable(DeploymentEntity entity) {
+        requireCurrentUser();
+    }
+
+    private void ensureDeploymentManageable(DeploymentEntity entity) {
+        AuthenticatedUser currentUser = requireCurrentUser();
+        if (currentUser.isAdmin()) {
+            return;
+        }
+        if (!currentUser.username().equals(entity.getTriggeredBy())) {
+            throw new BusinessException(ErrorSubCode.AUTH_ADMIN_REQUIRED);
+        }
     }
 
     private String buildReplayScript(Map<String, String> variables) {

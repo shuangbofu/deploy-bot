@@ -2,6 +2,7 @@ package top.fusb.deploybot.controller;
 
 import top.fusb.deploybot.dto.TemplateRequest;
 import top.fusb.deploybot.model.TemplateEntity;
+import top.fusb.deploybot.security.AdminOnly;
 import top.fusb.deploybot.service.TemplateService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
+@AdminOnly
 @RestController
 @RequestMapping("/api/templates")
 public class TemplateController {

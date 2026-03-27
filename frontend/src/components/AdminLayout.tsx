@@ -1,6 +1,7 @@
-import { AppstoreOutlined, DeploymentUnitOutlined, FileTextOutlined, FolderOpenOutlined, ProfileOutlined, RadarChartOutlined, RocketOutlined, SettingOutlined, CloudServerOutlined } from '@ant-design/icons';
-import { Button, Layout, Menu, Space, Typography } from 'antd';
+import { AppstoreOutlined, DeploymentUnitOutlined, FileTextOutlined, FolderOpenOutlined, ProfileOutlined, RadarChartOutlined, RocketOutlined, SettingOutlined, CloudServerOutlined, TeamOutlined, LogoutOutlined } from '@ant-design/icons';
+import { Button, Dropdown, Layout, Menu, Space, Typography } from 'antd';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../auth/AuthContext';
 
 /**
  * 管理端一级菜单配置。
@@ -12,6 +13,7 @@ const menuItems = [
   { key: '/admin/hosts', icon: <CloudServerOutlined />, label: '主机' },
   { key: '/admin/templates', icon: <FileTextOutlined />, label: '模板' },
   { key: '/admin/pipelines', icon: <DeploymentUnitOutlined />, label: '流水线' },
+  { key: '/admin/users', icon: <TeamOutlined />, label: '用户管理' },
   { key: '/admin/deployments', icon: <ProfileOutlined />, label: '部署记录' },
   { key: '/admin/services', icon: <RadarChartOutlined />, label: '服务管理' },
   { key: '/admin/system-settings', icon: <SettingOutlined />, label: '系统设置' },
@@ -24,6 +26,7 @@ const menuItems = [
 export default function AdminLayout() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
 
   return (
     <Layout className="min-h-screen bg-app">
@@ -50,9 +53,27 @@ export default function AdminLayout() {
           className="admin-nav"
         />
         <Space>
-          <Link to="/user">
-            <Button type="primary">进入用户端</Button>
+          <Link to="/user/dashboard">
+            <Button>用户视角</Button>
           </Link>
+          <Dropdown
+            menu={{
+              items: [
+                {
+                  key: 'logout',
+                  icon: <LogoutOutlined />,
+                  label: '退出登录',
+                  onClick: () => {
+                    logout().finally(() => navigate('/login', { replace: true }));
+                  },
+                },
+              ],
+            }}
+          >
+            <Button type="primary">
+              {user?.displayName || user?.username || '管理员'}
+            </Button>
+          </Dropdown>
         </Space>
       </Layout.Header>
       <Layout.Content className="px-6 py-6">

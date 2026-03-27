@@ -1,3 +1,5 @@
+import { useLayoutEffect, useRef } from 'react';
+
 type LogViewerProps = {
   /** 原始日志内容。 */
   content: string;
@@ -10,10 +12,20 @@ type LogViewerProps = {
  * 负责高亮错误行，并把页面滚动限制在日志容器内部。
  */
 export default function LogViewer({ content, maxHeight = 360 }: LogViewerProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const lines = (content || '暂无日志输出。').split('\n');
+
+  // 日志页默认服务于排查场景，因此首次进入和自动刷新后都直接跟到最底部。
+  useLayoutEffect(() => {
+    if (!containerRef.current) {
+      return;
+    }
+    containerRef.current.scrollTop = containerRef.current.scrollHeight;
+  }, [content]);
 
   return (
     <div
+      ref={containerRef}
       className="log-viewer"
       style={{ maxHeight }}
     >

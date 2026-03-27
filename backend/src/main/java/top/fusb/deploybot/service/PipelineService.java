@@ -71,6 +71,7 @@ public class PipelineService {
         entity.setTargetHost(targetHost);
         entity.setDefaultBranch(request.defaultBranch());
         entity.setVariablesJson(request.variablesJson());
+        entity.setTagsJson(request.tagsJson());
         entity.setJavaEnvironment(resolveEnvironment(request.javaEnvironmentId()));
         entity.setNodeEnvironment(resolveEnvironment(request.nodeEnvironmentId()));
         entity.setMavenEnvironment(resolveEnvironment(request.mavenEnvironmentId()));

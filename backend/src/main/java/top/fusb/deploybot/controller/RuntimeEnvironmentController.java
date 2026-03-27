@@ -6,6 +6,7 @@ import top.fusb.deploybot.dto.RuntimeEnvironmentPreset;
 import top.fusb.deploybot.dto.RuntimeEnvironmentRequest;
 import top.fusb.deploybot.model.RuntimeEnvironmentEntity;
 import top.fusb.deploybot.model.RuntimeEnvironmentType;
+import top.fusb.deploybot.security.AdminOnly;
 import top.fusb.deploybot.service.RuntimeEnvironmentService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.io.IOException;
 import java.util.List;
 
+@AdminOnly
 @RestController
 @RequestMapping("/api/runtime-environments")
 public class RuntimeEnvironmentController {

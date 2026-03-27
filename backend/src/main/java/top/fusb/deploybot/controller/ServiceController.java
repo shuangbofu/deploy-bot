@@ -2,6 +2,7 @@ package top.fusb.deploybot.controller;
 
 import top.fusb.deploybot.model.DeploymentEntity;
 import top.fusb.deploybot.model.ServiceEntity;
+import top.fusb.deploybot.security.AdminOnly;
 import top.fusb.deploybot.service.DeploymentService;
 import top.fusb.deploybot.service.ServiceManager;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
+@AdminOnly
 @RestController
 @RequestMapping("/api/services")
 public class ServiceController {

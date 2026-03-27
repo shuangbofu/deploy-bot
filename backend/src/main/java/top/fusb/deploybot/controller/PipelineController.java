@@ -2,6 +2,7 @@ package top.fusb.deploybot.controller;
 
 import top.fusb.deploybot.dto.PipelineRequest;
 import top.fusb.deploybot.model.PipelineEntity;
+import top.fusb.deploybot.security.AdminOnly;
 import top.fusb.deploybot.service.GitBranchService;
 import top.fusb.deploybot.service.PipelineService;
 import jakarta.validation.Valid;
@@ -47,6 +48,7 @@ public class PipelineController {
     /**
      * 新建流水线时只保存配置，不会立即触发部署。
      */
+    @AdminOnly
     @PostMapping
     public PipelineEntity create(@Valid @RequestBody PipelineRequest request) {
         return service.save(request, null);
@@ -55,6 +57,7 @@ public class PipelineController {
     /**
      * 更新流水线配置后，后续部署会自动使用最新配置。
      */
+    @AdminOnly
     @PutMapping("/{id}")
     public PipelineEntity update(@PathVariable Long id, @Valid @RequestBody PipelineRequest request) {
         return service.save(request, id);
@@ -63,6 +66,7 @@ public class PipelineController {
     /**
      * 删除前应保证没有业务仍依赖这条流水线。
      */
+    @AdminOnly
     @DeleteMapping("/{id}")
     public void delete(@PathVariable Long id) {
         service.delete(id);

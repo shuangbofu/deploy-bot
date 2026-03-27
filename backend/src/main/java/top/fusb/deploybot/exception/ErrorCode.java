@@ -5,6 +5,7 @@ package top.fusb.deploybot.exception;
  */
 public enum ErrorCode {
     VALIDATION_ERROR("VALIDATION_ERROR", "请求参数不合法"),
+    AUTH_ERROR("AUTH_ERROR", "登录态校验失败"),
     RESOURCE_NOT_FOUND("RESOURCE_NOT_FOUND", "请求的资源不存在"),
     OPERATION_NOT_ALLOWED("OPERATION_NOT_ALLOWED", "当前操作不被允许"),
     CONFLICT("CONFLICT", "当前资源状态冲突，无法完成操作"),

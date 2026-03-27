@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Col, Modal, Progress, Row, Select, Space, Typography, message } from 'antd';
+import { Button, Card, Col, Input, Modal, Progress, Row, Select, Space, Tag, Typography, message } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { deploymentsApi } from '../../api/deployments';
 import { pipelinesApi } from '../../api/pipelines';
@@ -27,7 +27,24 @@ export default function UserPipelinesPage() {
   const [selectedBranch, setSelectedBranch] = useState<string>();
   const [branchesLoading, setBranchesLoading] = useState(false);
   const [tick, setTick] = useState(() => Date.now());
+  const [keyword, setKeyword] = useState('');
+  const [tagFilter, setTagFilter] = useState<string[]>();
   const navigate = useNavigate();
+
+  const parseTagsJson = (content: unknown): string[] => {
+    if (!content) {
+      return [];
+    }
+    if (Array.isArray(content)) {
+      return content.filter(Boolean).map((item) => String(item).trim()).filter(Boolean);
+    }
+    try {
+      const parsed = JSON.parse(String(content));
+      return Array.isArray(parsed) ? parsed.filter(Boolean).map((item) => String(item).trim()).filter(Boolean) : [];
+    } catch {
+      return [];
+    }
+  };
 
   /** 同步加载流水线列表和最新部署记录，用于拼装大厅卡片。 */
   const loadData = async () => {
@@ -53,6 +70,28 @@ export default function UserPipelinesPage() {
     pipeline,
     latestDeployment: deployments.find((item) => item.pipeline?.id === pipeline.id),
   })), [pipelines, deployments]);
+
+  const availableTags = useMemo(
+    () => Array.from(new Set(pipelines.flatMap((item) => parseTagsJson(item.tagsJson)))).sort((left, right) => left.localeCompare(right, 'zh-CN')),
+    [pipelines],
+  );
+
+  const filteredPipelineCards = useMemo(() => pipelineCards.filter(({ pipeline }) => {
+    const tags = parseTagsJson(pipeline.tagsJson);
+    const normalizedKeyword = keyword.trim().toLowerCase();
+    if (normalizedKeyword) {
+      const matched = [pipeline.name, pipeline.description, pipeline.project?.name, pipeline.defaultBranch, ...tags]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(normalizedKeyword));
+      if (!matched) {
+        return false;
+      }
+    }
+    if (tagFilter && tagFilter.length > 0 && !tagFilter.every((tag) => tags.includes(tag))) {
+      return false;
+    }
+    return true;
+  }), [pipelineCards, keyword, tagFilter]);
 
   /** 打开部署弹窗时顺便拉取可选分支。 */
   const openDeployModal = async (pipeline: PipelineSummary) => {
@@ -114,14 +153,58 @@ export default function UserPipelinesPage() {
           <EmptyPane description="当前没有可部署流水线，请先到管理端创建。" />
         </Card>
       ) : (
-        <Row gutter={[16, 16]}>
-          {pipelineCards.map(({ pipeline, latestDeployment }) => (
-            <Col xs={24} md={12} xl={8} key={pipeline.id}>
+        <>
+          <Card className="app-card !mb-4">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_320px_auto]">
+              <Input
+                value={keyword}
+                placeholder="搜索流水线名称 / 项目 / 分支 / 标签"
+                onChange={(event) => setKeyword(event.target.value)}
+              />
+              <div className="flex items-center">
+                <Button
+                  onClick={() => {
+                    setKeyword('');
+                    setTagFilter(undefined);
+                  }}
+                >
+                  重置条件
+                </Button>
+              </div>
+            </div>
+            {availableTags.length > 0 ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {availableTags.map((tag) => {
+                  const active = Boolean(tagFilter?.includes(tag));
+                  return (
+                    <Tag
+                      key={tag}
+                      color={active ? 'blue' : 'default'}
+                      className="cursor-pointer select-none !px-3 !py-1"
+                      onClick={() => setTagFilter((previous) => {
+                        const next = previous?.includes(tag)
+                          ? previous.filter((item) => item !== tag)
+                          : [...(previous || []), tag];
+                        return next.length > 0 ? next : undefined;
+                      })}
+                    >
+                      {tag}
+                    </Tag>
+                  );
+                })}
+              </div>
+            ) : null}
+          </Card>
+          <Row gutter={[16, 16]}>
+            {filteredPipelineCards.map(({ pipeline, latestDeployment }) => {
+              const tags = parseTagsJson(pipeline.tagsJson);
+              return (
+            <Col xs={24} md={12} xl={8} xxl={6} key={pipeline.id}>
               <Card className="pipeline-card" bordered={false}>
-                <div className="mb-4 flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3">
+                <div className="pipeline-card-header">
+                  <div className="pipeline-card-content">
                     <PipelineIcon type={pipeline.template?.templateType} />
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <Typography.Text className="block text-[11px] uppercase tracking-[0.24em] text-slate-400">
                         {pipeline.project?.name || 'Project'}
                       </Typography.Text>
@@ -131,9 +214,16 @@ export default function UserPipelinesPage() {
                       <Typography.Paragraph className="!mb-0 text-slate-600">
                         {pipeline.description || '已配置完成，可直接部署。'}
                       </Typography.Paragraph>
+                      {tags.length > 0 ? (
+                        <Space className="!mt-3" wrap>
+                          {tags.map((tag) => <Tag key={tag}>{tag}</Tag>)}
+                        </Space>
+                      ) : null}
                     </div>
                   </div>
-                  <StatusTag status={latestDeployment?.status} />
+                  <div className="pipeline-card-status">
+                    <StatusTag status={latestDeployment?.status} />
+                  </div>
                 </div>
                 <div className="pipeline-meta-panel">
                   <div className="pipeline-meta-row">
@@ -189,8 +279,10 @@ export default function UserPipelinesPage() {
                 </Space>
               </Card>
             </Col>
-          ))}
-        </Row>
+              );
+            })}
+          </Row>
+        </>
       )}
       <Modal
         title={deployingPipeline ? `部署 ${deployingPipeline.name}` : '部署流水线'}

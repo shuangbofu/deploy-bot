@@ -4,6 +4,16 @@ package top.fusb.deploybot.exception;
  * 细分业务错误枚举，负责具体场景编号与展示文案。
  */
 public enum ErrorSubCode {
+    AUTH_REQUIRED("AUTH-001", "当前请求未登录。", ErrorCode.AUTH_ERROR),
+    AUTH_LOGIN_FAILED("AUTH-002", "用户名或密码错误。", ErrorCode.AUTH_ERROR),
+    AUTH_TOKEN_INVALID("AUTH-003", "登录态已失效，请重新登录。", ErrorCode.AUTH_ERROR),
+    AUTH_ADMIN_REQUIRED("AUTH-004", "当前账号没有管理员权限。", ErrorCode.AUTH_ERROR),
+    AUTH_USER_DISABLED("AUTH-005", "当前账号已被停用。", ErrorCode.AUTH_ERROR),
+    USER_NOT_FOUND("RES-USER-001", "用户不存在。", ErrorCode.RESOURCE_NOT_FOUND),
+    USERNAME_ALREADY_EXISTS("CONFLICT-USER-001", "用户名已存在。", ErrorCode.CONFLICT),
+    USER_PASSWORD_REQUIRED("VAL-USER-001", "新建用户时密码不能为空。", ErrorCode.VALIDATION_ERROR),
+    LAST_ADMIN_DELETE_FORBIDDEN("BIZ-USER-001", "至少需要保留一个管理员账号。", ErrorCode.OPERATION_NOT_ALLOWED),
+
     PROJECT_NOT_FOUND("RES-PROJECT-001", "项目不存在。", ErrorCode.RESOURCE_NOT_FOUND),
     TEMPLATE_NOT_FOUND("RES-TEMPLATE-001", "模板不存在。", ErrorCode.RESOURCE_NOT_FOUND),
     PIPELINE_NOT_FOUND("RES-PIPELINE-001", "流水线不存在。", ErrorCode.RESOURCE_NOT_FOUND),

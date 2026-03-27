@@ -21,6 +21,7 @@ import type {
 interface PipelineFormState {
   name: string;
   description: string;
+  tags: string[];
   projectId?: number;
   templateId?: number;
   targetHostId?: number;
@@ -37,6 +38,7 @@ interface PipelineFormState {
 const emptyPipeline: PipelineFormState = {
   name: '',
   description: '',
+  tags: [],
   projectId: undefined,
   templateId: undefined,
   targetHostId: undefined,
@@ -83,6 +85,24 @@ const parseVariablesJson = (content: unknown): Record<string, string> => {
     return parsed && typeof parsed === 'object' ? parsed : {};
   } catch {
     return {};
+  }
+};
+
+/**
+ * 标签字段在接口里以 JSON 字符串存储，这里统一转成字符串数组。
+ */
+const parseTagsJson = (content: unknown): string[] => {
+  if (!content) {
+    return [];
+  }
+  if (Array.isArray(content)) {
+    return content.filter(Boolean).map((item) => String(item).trim()).filter(Boolean);
+  }
+  try {
+    const parsed = JSON.parse(String(content));
+    return Array.isArray(parsed) ? parsed.filter(Boolean).map((item) => String(item).trim()).filter(Boolean) : [];
+  } catch {
+    return [];
   }
 };
 
@@ -148,6 +168,7 @@ export default function PipelineAdminPage() {
   const [projectFilter, setProjectFilter] = useState<number>();
   const [templateFilter, setTemplateFilter] = useState<number>();
   const [hostFilter, setHostFilter] = useState<number>();
+  const [tagFilter, setTagFilter] = useState<string[]>();
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
 
   const loadData = async () => {
@@ -186,6 +207,7 @@ export default function PipelineAdminPage() {
     setForm({
       name: record.name || '',
       description: record.description || '',
+      tags: parseTagsJson(record.tagsJson),
       projectId: record.project?.id || undefined,
       templateId: record.template?.id || undefined,
       targetHostId: record.targetHost?.id || undefined,
@@ -206,6 +228,7 @@ export default function PipelineAdminPage() {
     const payload: PipelinePayload = {
       ...form,
       variablesJson: JSON.stringify(form.variablesJson || {}, null, 2),
+      tagsJson: JSON.stringify(form.tags || [], null, 2),
     };
     if (editingId) {
       await pipelinesApi.update(editingId, payload);
@@ -259,6 +282,7 @@ export default function PipelineAdminPage() {
     ...item,
     parsedVariablesJson: parseVariablesJson(item.variablesJson),
     parsedTemplateVariables: parseVariablesSchema(item.template?.variablesSchema),
+    parsedTags: parseTagsJson(item.tagsJson),
   })), [pipelines]);
 
   const filteredPipelines = useMemo(() => tableData.filter((item) => {
@@ -280,8 +304,16 @@ export default function PipelineAdminPage() {
     if (hostFilter && item.targetHost?.id !== hostFilter) {
       return false;
     }
+    if (tagFilter && tagFilter.length > 0 && !tagFilter.every((tag) => item.parsedTags.includes(tag))) {
+      return false;
+    }
     return true;
-  }), [tableData, keyword, projectFilter, templateFilter, hostFilter]);
+  }), [tableData, keyword, projectFilter, templateFilter, hostFilter, tagFilter]);
+
+  const availableTags = useMemo(
+    () => Array.from(new Set(tableData.flatMap((item) => item.parsedTags))).sort((left, right) => left.localeCompare(right, 'zh-CN')),
+    [tableData],
+  );
 
   const javaOptions = useMemo(
     () => getLocalBuildEnvironmentOptions(runtimeEnvironments, 'JAVA', localHost?.id),
@@ -356,6 +388,31 @@ export default function PipelineAdminPage() {
             }}
           />
         </div>
+        {availableTags.length > 0 ? (
+          <div className="mb-4 flex flex-wrap gap-2">
+            {availableTags.map((tag) => {
+              const active = Boolean(tagFilter?.includes(tag));
+              return (
+                <Tag
+                  key={tag}
+                  color={active ? 'blue' : 'default'}
+                  className="cursor-pointer select-none !px-3 !py-1"
+                  onClick={() => {
+                    setTagFilter((previous) => {
+                      const next = previous?.includes(tag)
+                        ? previous.filter((item) => item !== tag)
+                        : [...(previous || []), tag];
+                      setPagination((current) => ({ ...current, current: 1 }));
+                      return next.length > 0 ? next : undefined;
+                    });
+                  }}
+                >
+                  {tag}
+                </Tag>
+              );
+            })}
+          </div>
+        ) : null}
         <div className="mb-4">
           <div className="flex items-center">
             <Button
@@ -364,6 +421,7 @@ export default function PipelineAdminPage() {
                 setProjectFilter(undefined);
                 setTemplateFilter(undefined);
                 setHostFilter(undefined);
+                setTagFilter(undefined);
                 setPagination((previous) => ({ ...previous, current: 1 }));
               }}
             >
@@ -395,6 +453,13 @@ export default function PipelineAdminPage() {
               { title: '项目', render: (_, row) => row.project?.name },
               { title: '目标主机', render: (_, row) => row.targetHost?.name || '-' },
               { title: '模板', render: (_, row) => row.template?.name },
+              {
+                title: '标签',
+                width: 180,
+                render: (_, row) => row.parsedTags.length > 0
+                  ? <Space wrap>{row.parsedTags.map((tag: string) => <Tag key={tag}>{tag}</Tag>)}</Space>
+                  : '-',
+              },
               { title: '构建 Java', render: (_, row) => row.javaEnvironment?.name || '-' },
               { title: '构建 Node', render: (_, row) => row.nodeEnvironment?.name || '-' },
               { title: '构建 Maven', render: (_, row) => row.mavenEnvironment?.name || '-' },
@@ -496,6 +561,14 @@ export default function PipelineAdminPage() {
                   </Form.Item>
                   <Form.Item label="描述">
                     <Input.TextArea rows={3} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
+                  </Form.Item>
+                  <Form.Item label="标签">
+                    <Select
+                      mode="tags"
+                      value={form.tags}
+                      placeholder="输入后回车，可用于业务线、端别、环境等筛选"
+                      onChange={(value) => setForm({ ...form, tags: value })}
+                    />
                   </Form.Item>
                   <Form.Item label="项目">
                     <Select

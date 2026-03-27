@@ -1,5 +1,5 @@
 import { CheckCircleOutlined, ClockCircleOutlined, FieldTimeOutlined, FireOutlined } from '@ant-design/icons';
-import { Card, Col, Empty, Progress, Row, Statistic, message } from 'antd';
+import { Card, Col, Empty, Progress, Row, Statistic, Tooltip, message } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { deploymentsApi } from '../../api/deployments';
 import { hostsApi } from '../../api/hosts';
@@ -11,7 +11,7 @@ import PageHeaderBar from '../../components/PageHeaderBar';
 import StatusTag from '../../components/StatusTag';
 import { ACTIVE_DEPLOYMENT_STATUSES, FINISHED_DEPLOYMENT_STATUSES } from '../../constants/deployment';
 import type { DeploymentSummary, HostResourceSnapshot, HostSummary, PipelineSummary, ProjectSummary, ServiceSummary, TemplateSummary } from '../../types/domain';
-import { buildSevenDayTrend } from '../../utils/dashboard';
+import { buildSevenDayTrend, buildTrendAreaPath, buildTrendPoints, buildTrendSmoothPath } from '../../utils/dashboard';
 import { formatDateTime } from '../../utils/datetime';
 
 interface DashboardData {
@@ -108,7 +108,13 @@ export default function AdminDashboardPage() {
 
   /** 最近 7 天趋势图数据。 */
   const trend = useMemo(() => buildSevenDayTrend(data.deployments), [data.deployments]);
-  const maxTrendValue = Math.max(...trend.map((item) => item.total), 1);
+  const trendAxisMax = useMemo(() => Math.max(...trend.map((item) => item.total), 1), [trend]);
+  const totalTrendPoints = useMemo(() => buildTrendPoints(trend.map((item) => item.total), 560, 220, 18, trendAxisMax), [trend, trendAxisMax]);
+  const successTrendPoints = useMemo(() => buildTrendPoints(trend.map((item) => item.success), 560, 220, 18, trendAxisMax), [trend, trendAxisMax]);
+  const totalTrendPath = useMemo(() => buildTrendSmoothPath(totalTrendPoints), [totalTrendPoints]);
+  const successTrendPath = useMemo(() => buildTrendSmoothPath(successTrendPoints), [successTrendPoints]);
+  const totalTrendArea = useMemo(() => buildTrendAreaPath(totalTrendPoints, 220), [totalTrendPoints]);
+  const successTrendArea = useMemo(() => buildTrendAreaPath(successTrendPoints, 220), [successTrendPoints]);
   /** 最近发生的部署记录。 */
   const latestDeployments = data.deployments.slice(0, 5);
   /** 需要管理员优先处理的部署，例如失败或仍在执行中的任务。 */
@@ -248,24 +254,86 @@ export default function AdminDashboardPage() {
           </Card>
         </Col>
         <Col xs={24} xl={16}>
-          <Card className="app-card" title="近 7 天部署趋势" loading={loading}>
-            <div className="dashboard-bar-chart">
-              {trend.map((item) => (
-                <div key={item.key} className="dashboard-bar-item">
-                  <div className="dashboard-bar-stack">
-                    <div
-                      className="dashboard-bar-fill"
-                      style={{ height: `${Math.max(10, (item.total / maxTrendValue) * 100)}%` }}
-                    />
-                    <div
-                      className="dashboard-bar-success"
-                      style={{ height: item.total ? `${(item.success / item.total) * 100}%` : '0%' }}
-                    />
+          <Card
+            className="app-card"
+            title="近 7 天部署趋势"
+            extra={(
+              <div className="dashboard-line-legend dashboard-line-legend--header">
+                <span><i className="dashboard-line-legend-dot dashboard-line-legend-dot--total" />总部署</span>
+                <span><i className="dashboard-line-legend-dot dashboard-line-legend-dot--success" />成功部署</span>
+              </div>
+            )}
+            loading={loading}
+          >
+            <div className="dashboard-line-chart">
+              <svg viewBox="0 0 560 220" className="dashboard-line-svg" preserveAspectRatio="xMidYMid meet">
+                <defs>
+                  <linearGradient id="admin-total-area" x1="0" x2="0" y1="0" y2="1">
+                    <stop offset="0%" stopColor="#2563eb" stopOpacity="0.24" />
+                    <stop offset="100%" stopColor="#2563eb" stopOpacity="0.02" />
+                  </linearGradient>
+                  <linearGradient id="admin-success-area" x1="0" x2="0" y1="0" y2="1">
+                    <stop offset="0%" stopColor="#16a34a" stopOpacity="0.22" />
+                    <stop offset="100%" stopColor="#16a34a" stopOpacity="0.02" />
+                  </linearGradient>
+                </defs>
+                {[48, 96, 144, 192].map((y) => (
+                  <line key={y} className="dashboard-grid-line" x1="18" x2="542" y1={y} y2={y} />
+                ))}
+                <path className="dashboard-area" fill="url(#admin-total-area)" d={totalTrendArea} />
+                <path className="dashboard-area" fill="url(#admin-success-area)" d={successTrendArea} />
+                <path className="dashboard-line dashboard-line--total" d={totalTrendPath} />
+                <path className="dashboard-line dashboard-line--success" d={successTrendPath} />
+                {trend.map((item, index) => {
+                  const totalPoint = totalTrendPoints[index];
+                  const successPoint = successTrendPoints[index];
+                  if (!totalPoint) {
+                    return null;
+                  }
+                  return (
+                    <g key={item.key}>
+                      <circle className="dashboard-line-dot-svg dashboard-line-dot-svg--total" cx={totalPoint.x} cy={totalPoint.y} r="4" />
+                      {successPoint ? (
+                        <circle className="dashboard-line-dot-svg dashboard-line-dot-svg--success" cx={successPoint.x} cy={successPoint.y} r="4" />
+                      ) : null}
+                      <text
+                        className="dashboard-line-value-svg"
+                        x={totalPoint.x}
+                        y={Math.max(totalPoint.y - 12, 14)}
+                        textAnchor="middle"
+                      >
+                        {item.total}
+                      </text>
+                    </g>
+                  );
+                })}
+              </svg>
+              <div className="dashboard-line-overlay">
+                {trend.map((item, index) => {
+                  const totalPoint = totalTrendPoints[index];
+                  return (
+                    <Tooltip
+                      key={item.key}
+                      title={`${item.label}｜总部署 ${item.total} 次｜成功 ${item.success} 次`}
+                      placement="top"
+                    >
+                      <button
+                        type="button"
+                        className="dashboard-line-hotspot"
+                        style={{ left: `calc(${((totalPoint?.x || 0) / 560) * 100}% - 20px)` }}
+                        aria-label={`${item.label} 总部署 ${item.total} 次，成功 ${item.success} 次`}
+                      />
+                    </Tooltip>
+                  );
+                })}
+              </div>
+              <div className="dashboard-line-labels">
+                {trend.map((item) => (
+                  <div key={item.key} className="dashboard-line-label-item">
+                    <div className="dashboard-line-label">{item.label}</div>
                   </div>
-                  <div className="dashboard-bar-label">{item.label}</div>
-                  <div className="dashboard-bar-value">{item.total}</div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           </Card>
         </Col>

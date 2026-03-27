@@ -4,6 +4,7 @@ import { HashRouter } from 'react-router-dom';
 import { ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import App from './App';
+import { AuthProvider } from './auth/AuthContext';
 import './index.css';
 
 /**
@@ -24,9 +25,11 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
         },
       }}
     >
-      <HashRouter>
-        <App />
-      </HashRouter>
+      <AuthProvider>
+        <HashRouter>
+          <App />
+        </HashRouter>
+      </AuthProvider>
     </ConfigProvider>
   </React.StrictMode>,
 );

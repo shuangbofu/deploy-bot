@@ -60,6 +60,10 @@ public class PipelineEntity {
     @Column(length = 4000)
     private String variablesJson;
 
+    /** 自定义标签 JSON，用于大厅分组和快速筛选。 */
+    @Column(length = 2000)
+    private String tagsJson;
+
     /** 本机构建 Java 环境。 */
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "java_environment_id")

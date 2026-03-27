@@ -4,6 +4,7 @@ import top.fusb.deploybot.dto.HostRequest;
 import top.fusb.deploybot.dto.HostConnectionTestResult;
 import top.fusb.deploybot.dto.HostResourceSnapshot;
 import top.fusb.deploybot.model.HostEntity;
+import top.fusb.deploybot.security.AdminOnly;
 import top.fusb.deploybot.service.HostService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
+@AdminOnly
 @RestController
 @RequestMapping("/api/hosts")
 public class HostController {

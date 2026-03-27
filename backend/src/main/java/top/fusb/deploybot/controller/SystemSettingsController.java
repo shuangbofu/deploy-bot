@@ -2,6 +2,7 @@ package top.fusb.deploybot.controller;
 
 import top.fusb.deploybot.dto.SystemSettingsRequest;
 import top.fusb.deploybot.model.SystemSettingsEntity;
+import top.fusb.deploybot.security.AdminOnly;
 import top.fusb.deploybot.service.SystemSshKeyService;
 import top.fusb.deploybot.service.SystemSettingsService;
 import java.io.IOException;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+@AdminOnly
 @RestController
 @RequestMapping("/api/system-settings")
 public class SystemSettingsController {

@@ -9,6 +9,7 @@ import type {
   RuntimeEnvironmentSummary,
   ServiceSummary,
   TemplateSummary,
+  UserSummary,
 } from '../types/domain';
 
 /**
@@ -60,12 +61,31 @@ export interface PipelinePayload {
   targetHostId?: number;
   defaultBranch: string;
   variablesJson: string;
+  tagsJson: string;
   javaEnvironmentId?: number;
   nodeEnvironmentId?: number;
   mavenEnvironmentId?: number;
   runtimeJavaEnvironmentId?: number;
   startupKeyword?: string;
   startupTimeoutSeconds?: number;
+}
+
+export interface LoginPayload {
+  username: string;
+  password: string;
+}
+
+export interface LoginResponse {
+  token: string;
+  user: UserSummary;
+}
+
+export interface UserPayload {
+  username: string;
+  displayName: string;
+  password?: string;
+  role: 'ADMIN' | 'USER';
+  enabled: boolean;
 }
 
 /**
@@ -168,4 +188,5 @@ export type {
   RuntimeEnvironmentSummary,
   ServiceSummary,
   TemplateSummary,
+  UserSummary,
 };

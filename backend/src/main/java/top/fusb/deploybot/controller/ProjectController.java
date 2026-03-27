@@ -3,6 +3,7 @@ package top.fusb.deploybot.controller;
 import top.fusb.deploybot.dto.ProjectConnectionTestResult;
 import top.fusb.deploybot.dto.ProjectRequest;
 import top.fusb.deploybot.model.ProjectEntity;
+import top.fusb.deploybot.security.AdminOnly;
 import top.fusb.deploybot.service.ProjectService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
+@AdminOnly
 @RestController
 @RequestMapping("/api/projects")
 public class ProjectController {

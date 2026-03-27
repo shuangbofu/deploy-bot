@@ -22,6 +22,7 @@ export type HostSshAuthType = 'PASSWORD' | 'PRIVATE_KEY' | 'SYSTEM_KEY_PAIR';
  * 运行环境类型用于约束 Java、Node、Maven 等工具链。
  */
 export type RuntimeEnvironmentType = 'JAVA' | 'NODE' | 'MAVEN';
+export type UserRole = 'ADMIN' | 'USER';
 
 /**
  * 模板变量按照构建、发布、共用三个阶段分组展示。
@@ -159,6 +160,21 @@ export interface PipelineSummary {
   startupTimeoutSeconds?: number | null;
   /** 流水线默认变量，可能是 JSON 字符串或对象。 */
   variablesJson?: string | Record<string, string>;
+  /** 自定义标签，可能是 JSON 字符串或字符串数组。 */
+  tagsJson?: string | string[];
+}
+
+export interface UserSummary {
+  /** 用户主键。 */
+  id: number;
+  /** 登录用户名。 */
+  username: string;
+  /** 展示名称。 */
+  displayName: string;
+  /** 用户角色。 */
+  role: UserRole;
+  /** 是否启用。 */
+  enabled: boolean;
 }
 
 export interface DeploymentSummary {
