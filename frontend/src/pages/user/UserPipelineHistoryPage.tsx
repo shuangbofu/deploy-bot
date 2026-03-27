@@ -66,7 +66,8 @@ export default function UserPipelineHistoryPage() {
     if (filters.status && item.status !== filters.status) {
       return false;
     }
-    if (filters.triggeredBy && !(item.triggeredBy || '').toLowerCase().includes(filters.triggeredBy.toLowerCase())) {
+    const triggeredBy = item.triggeredByDisplayName || item.triggeredBy || '';
+    if (filters.triggeredBy && !triggeredBy.toLowerCase().includes(filters.triggeredBy.toLowerCase())) {
       return false;
     }
     if (filters.timeRange?.length === 2) {
@@ -171,7 +172,7 @@ export default function UserPipelineHistoryPage() {
               { title: '项目', render: (_, row) => row.pipeline?.project?.name || '-' },
               { title: '流水线', render: (_, row) => row.pipeline?.name || '-' },
               { title: '分支', dataIndex: 'branchName' },
-              { title: '触发人', dataIndex: 'triggeredBy' },
+              { title: '触发人', render: (_, record) => record.triggeredByDisplayName || record.triggeredBy || '-' },
               { title: '状态', render: (_, row) => <StatusTag status={row.status} /> },
               { title: '创建时间', render: (_, row) => formatDateTime(row.createdAt) },
               { title: '开始时间', render: (_, row) => formatDateTime(row.startedAt) },

@@ -184,6 +184,8 @@ export interface DeploymentSummary {
   branchName?: string;
   /** 触发人。 */
   triggeredBy?: string;
+  /** 触发人展示名称。 */
+  triggeredByDisplayName?: string;
   /** 部署状态。 */
   status?: DeploymentStatus;
   /** 创建时间。 */

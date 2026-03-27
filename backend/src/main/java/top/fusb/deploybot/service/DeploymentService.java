@@ -14,6 +14,7 @@ import top.fusb.deploybot.runner.DeploymentRunner;
 import top.fusb.deploybot.repo.DeploymentRepository;
 import top.fusb.deploybot.repo.PipelineRepository;
 import top.fusb.deploybot.repo.ServiceRepository;
+import top.fusb.deploybot.repo.UserRepository;
 import top.fusb.deploybot.security.AuthContextHolder;
 import top.fusb.deploybot.security.AuthenticatedUser;
 import jakarta.transaction.Transactional;
@@ -52,6 +53,7 @@ public class DeploymentService {
     private final GitCredentialService gitCredentialService;
     private final ServiceManager serviceManager;
     private final HostService hostService;
+    private final UserRepository userRepository;
     private final Path defaultWorkspaceRoot;
 
     public DeploymentService(
@@ -65,6 +67,7 @@ public class DeploymentService {
             GitCredentialService gitCredentialService,
             ServiceManager serviceManager,
             HostService hostService,
+            UserRepository userRepository,
             @Value("${deploybot.workspace-root:./runtime}") String workspaceRoot
     ) {
         this.deploymentRepository = deploymentRepository;
@@ -77,19 +80,20 @@ public class DeploymentService {
         this.gitCredentialService = gitCredentialService;
         this.serviceManager = serviceManager;
         this.hostService = hostService;
+        this.userRepository = userRepository;
         this.defaultWorkspaceRoot = Path.of(workspaceRoot);
     }
 
     public List<DeploymentEntity> findAll() {
         requireCurrentUser();
-        return deploymentRepository.findAllByOrderByCreatedAtDesc();
+        return enrichTriggeredByDisplayNames(deploymentRepository.findAllByOrderByCreatedAtDesc());
     }
 
     public DeploymentEntity findById(Long id) {
         DeploymentEntity entity = deploymentRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorSubCode.DEPLOYMENT_NOT_FOUND));
         ensureDeploymentReadable(entity);
-        return entity;
+        return enrichTriggeredByDisplayName(entity);
     }
 
     @Transactional
@@ -559,6 +563,27 @@ public class DeploymentService {
             return "日志文件尚未生成，请稍后刷新。";
         }
         return Files.readString(path, StandardCharsets.UTF_8);
+    }
+
+    private List<DeploymentEntity> enrichTriggeredByDisplayNames(List<DeploymentEntity> deployments) {
+        deployments.forEach(this::enrichTriggeredByDisplayName);
+        return deployments;
+    }
+
+    private DeploymentEntity enrichTriggeredByDisplayName(DeploymentEntity entity) {
+        if (entity == null) {
+            return null;
+        }
+        String username = entity.getTriggeredBy();
+        if (username == null || username.isBlank()) {
+            entity.setTriggeredByDisplayName(null);
+            return entity;
+        }
+        String displayName = userRepository.findByUsername(username)
+                .map(user -> user.getDisplayName() == null || user.getDisplayName().isBlank() ? user.getUsername() : user.getDisplayName())
+                .orElse(username);
+        entity.setTriggeredByDisplayName(displayName);
+        return entity;
     }
 
     private AuthenticatedUser requireCurrentUser() {

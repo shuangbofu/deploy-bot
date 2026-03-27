@@ -84,6 +84,10 @@ public class DeploymentEntity {
     @Column(length = 1000)
     private String triggeredBy;
 
+    /** 触发人展示名称。 */
+    @Transient
+    private String triggeredByDisplayName;
+
     /** 创建时间。 */
     @Column(nullable = false)
     private LocalDateTime createdAt;

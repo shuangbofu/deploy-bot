@@ -110,7 +110,7 @@ export default function AdminDeploymentDetailPage() {
               <Descriptions.Item label="流水线">{deployment?.pipeline?.name || '-'}</Descriptions.Item>
               <Descriptions.Item label="项目">{deployment?.pipeline?.project?.name || '-'}</Descriptions.Item>
               <Descriptions.Item label="分支">{deployment?.branchName || '-'}</Descriptions.Item>
-              <Descriptions.Item label="触发人">{deployment?.triggeredBy || '-'}</Descriptions.Item>
+              <Descriptions.Item label="触发人">{deployment?.triggeredByDisplayName || deployment?.triggeredBy || '-'}</Descriptions.Item>
               <Descriptions.Item label="创建时间">{formatDateTime(deployment?.createdAt)}</Descriptions.Item>
               <Descriptions.Item label="开始时间">{formatDateTime(deployment?.startedAt)}</Descriptions.Item>
               <Descriptions.Item label="结束时间">{formatDateTime(deployment?.finishedAt)}</Descriptions.Item>

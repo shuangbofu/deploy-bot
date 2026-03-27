@@ -240,7 +240,7 @@ export default function UserPipelinesPage() {
                   </div>
                   <div className="pipeline-meta-row">
                     <span>部署人</span>
-                    <span>{latestDeployment?.triggeredBy || '-'}</span>
+                    <span>{latestDeployment?.triggeredByDisplayName || latestDeployment?.triggeredBy || '-'}</span>
                   </div>
                   <div className="pipeline-meta-row">
                     <span>部署时间</span>

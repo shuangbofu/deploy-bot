@@ -238,7 +238,7 @@ export default function UserDashboardPage() {
                         <StatusTag status={item.status} />
                       </div>
                       <div className="dashboard-recent-meta">
-                        {item.pipeline?.project?.name || '-'} · {item.branchName || '-'} · {item.triggeredBy || '-'}
+                        {item.pipeline?.project?.name || '-'} · {item.branchName || '-'} · {item.triggeredByDisplayName || item.triggeredBy || '-'}
                       </div>
                     </div>
                     <div className="dashboard-recent-side">
