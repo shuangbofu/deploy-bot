@@ -124,7 +124,7 @@ public class ProjectService {
                     output = reader.lines().collect(Collectors.joining("\n"));
                 }
 
-                String summarizedOutput = summarizeOutput(output);
+                String summarizedOutput = summarizeOutput(output, 20);
                 log.info(
                         "项目仓库连通性测试结束：project='{}', exitCode={}, output='{}'.",
                         project.getName(),
@@ -173,12 +173,12 @@ public class ProjectService {
         return value == null || value.isBlank() ? null : value.trim();
     }
 
-    private String summarizeOutput(String output) {
+    private String summarizeOutput(String output, int maxLines) {
         if (output == null || output.isBlank()) {
             return "";
         }
         return output.lines()
-                .limit(12)
+                .limit(Math.max(1, maxLines))
                 .collect(Collectors.joining("\n"))
                 .trim();
     }
@@ -234,7 +234,7 @@ public class ProjectService {
                     "项目 '{}' Git SSH 诊断结束：exitCode={}, output='{}'.",
                     project.getName(),
                     process.exitValue(),
-                    summarizeOutput(output)
+                    summarizeOutput(output, 80)
             );
         } catch (Exception ex) {
             log.warn("项目 '{}' Git SSH 诊断执行失败：{}", project.getName(), ex.getMessage(), ex);

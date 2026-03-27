@@ -143,7 +143,7 @@ public class DeploymentEntity {
 
         int buildTotal = snapshot.buildStep() == null ? 0 : snapshot.buildStep().total;
         int deployTotal = snapshot.deployStep() == null ? 0 : snapshot.deployStep().total;
-        int startupStageWeight = snapshot.hasStartupStage() ? 1 : 0;
+        int startupStageWeight = requiresStartupObservation() ? 1 : 0;
         int grandTotal = buildTotal + deployTotal + startupStageWeight;
         if (grandTotal <= 0) {
             return status == DeploymentStatus.RUNNING ? 10 : 0;
@@ -251,6 +251,12 @@ public class DeploymentEntity {
         }
     }
 
+    private boolean requiresStartupObservation() {
+        return pipeline != null
+                && pipeline.getTemplate() != null
+                && Boolean.TRUE.equals(pipeline.getTemplate().getMonitorProcess());
+    }
+
     private int resolveStartupObservationAttemptTotal() {
         Integer startupTimeoutSeconds = pipeline == null ? null : pipeline.getStartupTimeoutSeconds();
         if (startupTimeoutSeconds == null || startupTimeoutSeconds <= 0) {
@@ -268,14 +274,7 @@ public class DeploymentEntity {
             int startupAttemptCurrent,
             int startupAttemptTotal
     ) {
-        private boolean hasStartupStage() {
-            return STARTUP_STAGE.equals(stage) || startupAttemptCurrent > 0;
-        }
-
         private float startupProgressRatio() {
-            if (!hasStartupStage()) {
-                return 0;
-            }
             if (startupAttemptTotal <= 0) {
                 return 0.5f;
             }
