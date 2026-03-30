@@ -4,6 +4,14 @@
 <h1 align="center">Deploy Bot</h1>
 
 <p align="center">
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-0f766e.svg" alt="MIT License" /></a>
+  <img src="https://img.shields.io/badge/java-17-f59e0b.svg" alt="Java 17" />
+  <img src="https://img.shields.io/badge/backend-Spring%20Boot%203.3.5-111827.svg" alt="Spring Boot 3.3.5" />
+  <img src="https://img.shields.io/badge/frontend-React%2018.3-2563eb.svg" alt="React 18.3" />
+  <img src="https://img.shields.io/badge/bundler-Vite%205-059669.svg" alt="Vite 5" />
+</p>
+
+<p align="center">
   一个面向小团队和内部平台场景的轻量部署系统。
 </p>
 

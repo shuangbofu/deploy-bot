@@ -243,12 +243,14 @@ export default function RuntimeEnvironmentsPage() {
   const installPreset = async (presetId: string) => {
     setInstallingPresetId(presetId);
     try {
-      await runtimeEnvironmentsApi.installPreset({
+      const result = await runtimeEnvironmentsApi.installPreset({
         presetId,
         hostId: currentHost?.id || hosts.find((item) => item.builtIn)?.id,
       });
-      await loadEnvironments();
-      message.success('预置环境已下载安装');
+      message.success(result.message || '预置环境已开始后台下载安装，请稍后刷新查看结果');
+      window.setTimeout(() => {
+        loadEnvironments().catch(() => undefined);
+      }, 3000);
     } finally {
       setInstallingPresetId(undefined);
     }

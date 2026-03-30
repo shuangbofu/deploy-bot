@@ -534,12 +534,22 @@ export default function PipelineAdminPage() {
               {currentStep > 0 ? (
                 <Button onClick={() => setCurrentStep((value) => value - 1)}>上一步</Button>
               ) : null}
-              <Button
-                type="primary"
-                onClick={() => savePipeline().catch(() => undefined)}
-              >
-                保存
-              </Button>
+              {editingId ? (
+                <Button
+                  type="primary"
+                  onClick={() => savePipeline().catch(() => undefined)}
+                >
+                  保存
+                </Button>
+              ) : null}
+              {!editingId && currentStep === 4 ? (
+                <Button
+                  type="primary"
+                  onClick={() => savePipeline().catch(() => undefined)}
+                >
+                  创建
+                </Button>
+              ) : null}
               {currentStep < 4 ? (
                 <Button onClick={() => setCurrentStep((value) => value + 1)}>下一步</Button>
               ) : null}
@@ -558,6 +568,7 @@ export default function PipelineAdminPage() {
               size="small"
               responsive
               current={currentStep}
+              onChange={(value) => setCurrentStep(value)}
               items={[
                 { title: '基础信息', description: '名称、项目、模板、分支' },
                 { title: '构建环境', description: '选择本机构建用环境' },

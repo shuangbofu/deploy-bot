@@ -2,6 +2,7 @@ import client from './client';
 import type {
   DetectionItem,
   PresetItem,
+  RuntimeEnvironmentInstallAccepted,
   RuntimeEnvironmentInstallPayload,
   RuntimeEnvironmentPayload,
   RuntimeEnvironmentSummary,
@@ -24,6 +25,6 @@ export const runtimeEnvironmentsApi = {
     params: hostId ? { hostId } : undefined,
   })).data,
   installPreset: async (payload: RuntimeEnvironmentInstallPayload) => (
-    await client.post<RuntimeEnvironmentSummary>('/runtime-environments/install', payload)
+    await client.post<RuntimeEnvironmentInstallAccepted>('/runtime-environments/install', payload)
   ).data,
 };

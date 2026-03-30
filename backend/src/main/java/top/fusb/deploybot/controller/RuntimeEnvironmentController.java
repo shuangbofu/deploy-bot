@@ -1,6 +1,7 @@
 package top.fusb.deploybot.controller;
 
 import top.fusb.deploybot.dto.RuntimeEnvironmentDetection;
+import top.fusb.deploybot.dto.RuntimeEnvironmentInstallAccepted;
 import top.fusb.deploybot.dto.RuntimeEnvironmentInstallRequest;
 import top.fusb.deploybot.dto.RuntimeEnvironmentPreset;
 import top.fusb.deploybot.dto.RuntimeEnvironmentRequest;
@@ -61,8 +62,9 @@ public class RuntimeEnvironmentController {
      * 下载并安装某个预置运行环境。
      */
     @PostMapping("/install")
-    public RuntimeEnvironmentEntity install(@Valid @RequestBody RuntimeEnvironmentInstallRequest request) throws IOException, InterruptedException {
-        return service.installPreset(request);
+    public RuntimeEnvironmentInstallAccepted install(@Valid @RequestBody RuntimeEnvironmentInstallRequest request) {
+        service.installPresetAsync(request);
+        return new RuntimeEnvironmentInstallAccepted(true, "预置环境已开始后台下载安装，请稍后刷新查看结果。");
     }
 
     /**

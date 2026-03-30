@@ -18,6 +18,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.io.BufferedReader;
@@ -248,6 +249,16 @@ public class RuntimeEnvironmentService {
         return entity;
     }
 
+    @Async
+    public void installPresetAsync(RuntimeEnvironmentInstallRequest request) {
+        try {
+            installPreset(request);
+        } catch (Exception ex) {
+            log.warn("Preset install failed in background: presetId={}, hostId={}, reason={}",
+                    request.presetId(), request.hostId(), ex.getMessage(), ex);
+        }
+    }
+
     private RuntimeEnvironmentEntity installPresetOnRemoteHost(HostEntity host, RuntimeEnvironmentPreset preset) {
         try {
             log.info("Installing preset {} on remote host {} via SSH", preset.name(), host.getName());
@@ -452,17 +463,25 @@ public class RuntimeEnvironmentService {
         try {
             Process process = new ProcessBuilder("tar", "-tf", archiveFile.toAbsolutePath().toString())
                     .redirectErrorStream(true)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                     .start();
-            String output;
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                output = reader.lines().limit(20).reduce("", (left, right) -> left + right + "\n");
-            }
             int exitCode = process.waitFor();
             if (exitCode != 0) {
-                throw new BusinessException(ErrorSubCode.PRESET_ARCHIVE_INVALID, "返回内容预览：\n" + output);
+                throw new BusinessException(
+                        ErrorSubCode.PRESET_ARCHIVE_INVALID,
+                        "返回内容预览：\n" + previewDownloadedFile(archiveFile)
+                );
             }
         } catch (IOException | InterruptedException ex) {
             throw new BusinessException(ErrorSubCode.PRESET_ARCHIVE_VALIDATE_FAILED, ex.getMessage(), ex);
+        }
+    }
+
+    private String previewDownloadedFile(Path archiveFile) {
+        try (BufferedReader reader = Files.newBufferedReader(archiveFile, StandardCharsets.UTF_8)) {
+            return reader.lines().limit(20).reduce("", (left, right) -> left + right + "\n");
+        } catch (IOException ex) {
+            return "无法读取下载内容预览：" + ex.getMessage();
         }
     }
 

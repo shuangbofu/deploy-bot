@@ -173,6 +173,11 @@ export interface RuntimeEnvironmentInstallPayload {
   hostId: number;
 }
 
+export interface RuntimeEnvironmentInstallAccepted {
+  accepted: boolean;
+  message: string;
+}
+
 export interface SystemSettingsResponse {
   gitExecutable?: string;
   gitSshPublicKey?: string;
@@ -189,6 +194,7 @@ export type {
   ProjectConnectionTestResult,
   ProjectSummary,
   RuntimeEnvironmentSummary,
+  RuntimeEnvironmentInstallAccepted,
   ServiceSummary,
   TemplateSummary,
   UserSummary,
