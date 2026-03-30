@@ -73,7 +73,7 @@ body {
 }
 
 .page-header {
-  margin-bottom: 20px;
+  margin-bottom: 10px;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -108,20 +108,30 @@ body {
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
 }
 
+.pipeline-card .ant-card-body {
+  padding: 18px;
+}
+
 .pipeline-card-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  margin-bottom: 8px;
   gap: 12px;
-  margin-bottom: 16px;
 }
 
 .pipeline-card-content {
   display: flex;
-  min-width: 0;
-  flex: 1;
-  align-items: flex-start;
   gap: 12px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.pipeline-card-title-block {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 .pipeline-card-status {
@@ -130,10 +140,9 @@ body {
 }
 
 .pipeline-meta-panel {
-  margin-bottom: 18px;
+  margin-bottom: 4px;
   border-radius: 18px;
-  background: #f6f8fb;
-  padding: 16px;
+  padding: 16px 4px;
 }
 
 .pipeline-meta-row {
@@ -143,6 +152,11 @@ body {
   padding: 4px 0;
   color: #64748b;
   font-size: 14px;
+}
+
+.pipeline-meta-row > span:nth-child(1) {
+    color: #555;
+    font-weight: 500;
 }
 
 .pipeline-icon {

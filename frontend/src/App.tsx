@@ -71,7 +71,7 @@ function DefaultRedirect() {
   if (!user) {
     return <Navigate to="/login" replace />;
   }
-  return <Navigate to={isAdmin ? '/admin/dashboard' : '/user/dashboard'} replace />;
+  return <Navigate to={isAdmin ? '/admin/dashboard' : '/user/pipelines'} replace />;
 }
 
 export default function App() {
@@ -97,7 +97,7 @@ export default function App() {
       </Route>
       <Route element={<RequireAuth />}>
         <Route path="/user" element={<UserLayout />}>
-          <Route index element={<Navigate to="dashboard" replace />} />
+          <Route index element={<Navigate to="pipelines" replace />} />
           <Route path="dashboard" element={<UserDashboardPage />} />
           <Route path="pipelines" element={<UserPipelinesPage />} />
           <Route path="deployments" element={<UserDeploymentRecordsPage />} />

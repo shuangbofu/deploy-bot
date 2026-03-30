@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Col, Input, Modal, Progress, Row, Select, Space, Tag, Typography, message } from 'antd';
+import { Button, Card, Col, Input, Modal, Progress, Row, Select, Skeleton, Space, Tag, Typography, message } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { deploymentsApi } from '../../api/deployments';
 import { pipelinesApi } from '../../api/pipelines';
@@ -20,6 +20,7 @@ import { getDeploymentProgress, getDeploymentProgressColor } from '../../utils/d
 export default function UserPipelinesPage() {
   const [pipelines, setPipelines] = useState<PipelineSummary[]>([]);
   const [deployments, setDeployments] = useState<DeploymentSummary[]>([]);
+  const [loading, setLoading] = useState(false);
   const [submittingId, setSubmittingId] = useState<number>();
   const [deployModalOpen, setDeployModalOpen] = useState(false);
   const [deployingPipeline, setDeployingPipeline] = useState<PipelineSummary>();
@@ -46,14 +47,28 @@ export default function UserPipelinesPage() {
     }
   };
 
+  const tagPalette = ['#0f766e', '#1d4ed8', '#b45309', '#be123c', '#6d28d9', '#0f172a', '#0369a1', '#166534', '#9a3412', '#4338ca'];
+  const getTagColor = (tag: string) => {
+    let hash = 0;
+    for (let index = 0; index < tag.length; index += 1) {
+      hash = (hash * 31 + tag.charCodeAt(index)) >>> 0;
+    }
+    return tagPalette[hash % tagPalette.length];
+  };
+
   /** 同步加载流水线列表和最新部署记录，用于拼装大厅卡片。 */
   const loadData = async () => {
-    const [nextPipelines, nextDeployments] = await Promise.all([
-      pipelinesApi.list(),
-      deploymentsApi.list(),
-    ]);
-    setPipelines(nextPipelines);
-    setDeployments(nextDeployments);
+    setLoading(true);
+    try {
+      const [nextPipelines, nextDeployments] = await Promise.all([
+        pipelinesApi.list(),
+        deploymentsApi.list(),
+      ]);
+      setPipelines(nextPipelines);
+      setDeployments(nextDeployments);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -66,6 +81,32 @@ export default function UserPipelinesPage() {
   }, []);
 
   /** 把流水线和它的最近一次部署拼成卡片展示结构。 */
+  const pipelineDeploymentOrders = useMemo(() => {
+    const grouped = new Map<number, DeploymentSummary[]>();
+    deployments.forEach((item) => {
+      const pipelineId = item.pipeline?.id;
+      if (!pipelineId) {
+        return;
+      }
+      const bucket = grouped.get(pipelineId) || [];
+      bucket.push(item);
+      grouped.set(pipelineId, bucket);
+    });
+    const result = new Map<number, Map<number, number>>();
+    grouped.forEach((items, pipelineId) => {
+      const sorted = [...items].sort((left, right) => {
+        const leftTime = new Date(left.createdAt || 0).getTime();
+        const rightTime = new Date(right.createdAt || 0).getTime();
+        return leftTime - rightTime;
+      });
+      result.set(
+        pipelineId,
+        new Map(sorted.map((item, index) => [item.id, index + 1])),
+      );
+    });
+    return result;
+  }, [deployments]);
+
   const pipelineCards = useMemo(() => pipelines.map((pipeline) => ({
     pipeline,
     latestDeployment: deployments.find((item) => item.pipeline?.id === pipeline.id),
@@ -147,21 +188,81 @@ export default function UserPipelinesPage() {
       <PageHeaderBar
         title="流水线大厅"
         description="这里只展示已经由管理端准备好的流水线。用户只做部署和查看执行过程，不承担任何配置动作。"
+        extra={<Button onClick={() => loadData().catch(() => message.error('加载流水线失败'))}>刷新</Button>}
       />
-      {pipelineCards.length === 0 ? (
+      {loading ? (
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
+          <Card className="app-card h-fit">
+            <div className="space-y-3">
+              <Skeleton.Input active block style={{ height: 40 }} />
+              <Skeleton.Button active block style={{ height: 32 }} />
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {Array.from({ length: 8 }).map((_, index) => (
+                <Skeleton.Button key={index} active size="small" style={{ width: 64, height: 28 }} />
+              ))}
+            </div>
+          </Card>
+          <Row gutter={[16, 16]}>
+            {Array.from({ length: 8 }).map((_, index) => (
+              <Col xs={24} md={12} xl={8} xxl={6} key={index}>
+                <Card className="pipeline-card" bordered={false}>
+                  <div className="pipeline-card-header">
+                    <div className="pipeline-card-content">
+                      <Skeleton.Avatar active shape="square" size={44} />
+                      <div className="min-w-0 flex-1">
+                        <Skeleton.Input active style={{ width: 88, height: 14 }} />
+                        <div className="mt-2">
+                          <Skeleton.Input active style={{ width: '70%', height: 24 }} />
+                        </div>
+                        <div className="mt-3 space-y-2">
+                          <Skeleton.Input active block style={{ height: 14 }} />
+                          <Skeleton.Input active style={{ width: '82%', height: 14 }} />
+                        </div>
+                      </div>
+                    </div>
+                    <Skeleton.Button active size="small" style={{ width: 70, height: 24 }} />
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {Array.from({ length: 3 }).map((__, tagIndex) => (
+                      <Skeleton.Button key={tagIndex} active size="small" style={{ width: 56, height: 24 }} />
+                    ))}
+                  </div>
+                  <div className="pipeline-meta-panel mt-4">
+                    {Array.from({ length: 6 }).map((__, rowIndex) => (
+                      <div className="pipeline-meta-row" key={rowIndex}>
+                        <Skeleton.Input active style={{ width: 64, height: 14 }} />
+                        <Skeleton.Input active style={{ width: 96, height: 14 }} />
+                      </div>
+                    ))}
+                    <div className="pt-2">
+                      <Skeleton.Input active block style={{ height: 16 }} />
+                    </div>
+                  </div>
+                  <Space>
+                    <Skeleton.Button active style={{ width: 72, height: 32 }} />
+                    <Skeleton.Button active style={{ width: 88, height: 32 }} />
+                    <Skeleton.Button active style={{ width: 88, height: 32 }} />
+                  </Space>
+                </Card>
+              </Col>
+            ))}
+          </Row>
+        </div>
+      ) : pipelineCards.length === 0 ? (
         <Card className="app-card">
           <EmptyPane description="当前没有可部署流水线，请先到管理端创建。" />
         </Card>
       ) : (
         <>
-          <Card className="app-card !mb-4">
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_320px_auto]">
-              <Input
-                value={keyword}
-                placeholder="搜索流水线名称 / 项目 / 分支 / 标签"
-                onChange={(event) => setKeyword(event.target.value)}
-              />
-              <div className="flex items-center">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
+            <Card className="app-card h-fit">
+              <div className="space-y-3">
+                <Input
+                  value={keyword}
+                  placeholder="搜索名称 / 项目 / 分支"
+                  onChange={(event) => setKeyword(event.target.value)}
+                />
                 <Button
                   onClick={() => {
                     setKeyword('');
@@ -171,117 +272,137 @@ export default function UserPipelinesPage() {
                   重置条件
                 </Button>
               </div>
-            </div>
-            {availableTags.length > 0 ? (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {availableTags.map((tag) => {
-                  const active = Boolean(tagFilter?.includes(tag));
-                  return (
-                    <Tag
-                      key={tag}
-                      color={active ? 'blue' : 'default'}
-                      className="cursor-pointer select-none !px-3 !py-1"
-                      onClick={() => setTagFilter((previous) => {
-                        const next = previous?.includes(tag)
-                          ? previous.filter((item) => item !== tag)
-                          : [...(previous || []), tag];
-                        return next.length > 0 ? next : undefined;
-                      })}
-                    >
-                      {tag}
-                    </Tag>
-                  );
-                })}
-              </div>
-            ) : null}
-          </Card>
-          <Row gutter={[16, 16]}>
-            {filteredPipelineCards.map(({ pipeline, latestDeployment }) => {
+              {availableTags.length > 0 ? (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {availableTags.map((tag) => {
+                    const active = Boolean(tagFilter?.includes(tag));
+                    return (
+                      <Tag
+                        key={tag}
+                        style={{
+                          backgroundColor: getTagColor(tag),
+                          color: '#fff',
+                          borderColor: 'transparent',
+                          opacity: active ? 1 : 0.55,
+                        }}
+                        className="cursor-pointer select-none !border-0 !px-3 !py-1"
+                        onClick={() => setTagFilter((previous) => {
+                          const next = previous?.includes(tag)
+                            ? previous.filter((item) => item !== tag)
+                            : [...(previous || []), tag];
+                          return next.length > 0 ? next : undefined;
+                        })}
+                      >
+                        {tag}
+                      </Tag>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </Card>
+            <Row gutter={[16, 16]}>
+              {filteredPipelineCards.map(({ pipeline, latestDeployment }) => {
               const tags = parseTagsJson(pipeline.tagsJson);
+              const latestOrder = latestDeployment && pipelineDeploymentOrders.get(pipeline.id)?.get(latestDeployment.id);
               return (
-            <Col xs={24} md={12} xl={8} xxl={6} key={pipeline.id}>
-              <Card className="pipeline-card" bordered={false}>
-                <div className="pipeline-card-header">
-                  <div className="pipeline-card-content">
-                    <PipelineIcon type={pipeline.template?.templateType} />
-                    <div className="min-w-0 flex-1">
-                      <Typography.Text className="block text-[11px] uppercase tracking-[0.24em] text-slate-400">
-                        {pipeline.project?.name || 'Project'}
-                      </Typography.Text>
-                      <Typography.Title level={4} className="!mb-1 !mt-2">
-                        {pipeline.name}
-                      </Typography.Title>
-                      <Typography.Paragraph className="!mb-0 text-slate-600">
-                        {pipeline.description || '已配置完成，可直接部署。'}
-                      </Typography.Paragraph>
-                      {tags.length > 0 ? (
-                        <Space className="!mt-3" wrap>
-                          {tags.map((tag) => <Tag key={tag}>{tag}</Tag>)}
-                        </Space>
-                      ) : null}
+                <Col xs={24} md={12} xl={8} xxl={6} key={pipeline.id}>
+                  <Card className="pipeline-card" bordered={false}>
+                    <div className="pipeline-card-header">
+                      <div className="pipeline-card-content">
+                        <PipelineIcon type={pipeline.template?.templateType} />
+                        <div className="min-w-0 flex-1 pipeline-card-title-block">
+                          <Typography.Text className="block text-[11px] uppercase tracking-[0.24em] text-slate-400">
+                            {pipeline.project?.name || 'Project'}
+                          </Typography.Text>
+                          <Typography.Title level={4} className="!mb-1 !mt-0">
+                            {pipeline.name}
+                          </Typography.Title>
+                        </div>
+                      </div>
+                      <div className="pipeline-card-status">
+                        <StatusTag status={latestDeployment?.status} />
+                      </div>
                     </div>
-                  </div>
-                  <div className="pipeline-card-status">
-                    <StatusTag status={latestDeployment?.status} />
-                  </div>
-                </div>
-                <div className="pipeline-meta-panel">
-                  <div className="pipeline-meta-row">
-                    <span>默认分支</span>
-                    <span>{pipeline.defaultBranch}</span>
-                  </div>
-                  <div className="pipeline-meta-row">
-                    <span>模板</span>
-                    <span>{pipeline.template?.name || '-'}</span>
-                  </div>
-                  <div className="pipeline-meta-row">
-                    <span>最近部署</span>
-                    <span>{latestDeployment ? `#${latestDeployment.id}` : '-'}</span>
-                  </div>
-                  <div className="pipeline-meta-row">
-                    <span>部署人</span>
-                    <span>{latestDeployment?.triggeredByDisplayName || latestDeployment?.triggeredBy || '-'}</span>
-                  </div>
-                  <div className="pipeline-meta-row">
-                    <span>部署时间</span>
-                    <span>{formatDateTime(latestDeployment?.createdAt)}</span>
-                  </div>
-                  <div className="pipeline-meta-row">
-                    <span>当前耗时</span>
-                    <span>{formatDeploymentElapsed(latestDeployment, tick)}</span>
-                  </div>
-                  <Progress
-                    percent={getDeploymentProgress(latestDeployment)}
-                    format={() => latestDeployment?.progressText || `${getDeploymentProgress(latestDeployment)}%`}
-                    strokeColor={getDeploymentProgressColor(latestDeployment?.status)}
-                    trailColor="#d9e2f1"
-                  />
-                </div>
-                <Space>
-                  <Button
-                    type="primary"
-                    loading={submittingId === pipeline.id}
-                    onClick={() => openDeployModal(pipeline).catch(() => message.error('打开部署窗口失败'))}
-                  >
-                    部署
-                  </Button>
-                  <Button
-                    disabled={!latestDeployment}
-                    onClick={() => latestDeployment && navigate(`/user/deployments/${latestDeployment.id}`, {
-                      state: { from: '/user/pipelines', backLabel: '返回流水线大厅' },
-                    })}
-                  >
-                    查看进度
-                  </Button>
-                  <Button onClick={() => navigate(`/user/pipelines/${pipeline.id}/history`)}>
-                    部署记录
-                  </Button>
-                </Space>
-              </Card>
-            </Col>
+                    <Typography.Paragraph className="!mb-0 text-slate-600">
+                      {pipeline.description || '已配置完成，可直接部署。'}
+                    </Typography.Paragraph>
+                    {tags.length > 0 ? (
+                      <Space className="!mt-3" wrap>
+                        {tags.map((tag) => (
+                          <Tag
+                            key={tag}
+                            style={{
+                              backgroundColor: getTagColor(tag),
+                              color: '#fff',
+                              borderColor: 'transparent',
+                            }}
+                            className="!border-0"
+                          >
+                            {tag}
+                          </Tag>
+                        ))}
+                      </Space>
+                    ) : null}
+                    <div className="pipeline-meta-panel">
+                      <div className="pipeline-meta-row">
+                        <span>{latestDeployment?.branchName ? '执行分支' : '默认分支'}</span>
+                        <span>{latestDeployment?.branchName || pipeline.defaultBranch}</span>
+                      </div>
+                      <div className="pipeline-meta-row">
+                        <span>模板</span>
+                        <span>{pipeline.template?.name || '-'}</span>
+                      </div>
+                      <div className="pipeline-meta-row">
+                        <span>最近部署</span>
+                        <span>{latestOrder ? `第 ${latestOrder} 次` : '-'}</span>
+                      </div>
+                      <div className="pipeline-meta-row">
+                        <span>部署人</span>
+                        <span>{latestDeployment?.triggeredByDisplayName || latestDeployment?.triggeredBy || '-'}</span>
+                      </div>
+                      <div className="pipeline-meta-row">
+                        <span>部署时间</span>
+                        <span>{formatDateTime(latestDeployment?.createdAt)}</span>
+                      </div>
+                      <div className="pipeline-meta-row">
+                        <span>耗时</span>
+                        <span>{formatDeploymentElapsed(latestDeployment, tick)}</span>
+                      </div>
+                      <div className="pt-2">
+                        <Progress
+                          percent={getDeploymentProgress(latestDeployment)}
+                          format={() => latestDeployment?.progressText || `${getDeploymentProgress(latestDeployment)}%`}
+                          strokeColor={getDeploymentProgressColor(latestDeployment?.status)}
+                          trailColor="#d9e2f1"
+                        />
+                      </div>
+                    </div>
+                    <Space>
+                      <Button
+                        type="primary"
+                        loading={submittingId === pipeline.id}
+                        onClick={() => openDeployModal(pipeline).catch(() => message.error('打开部署窗口失败'))}
+                      >
+                        部署
+                      </Button>
+                      <Button
+                        disabled={!latestDeployment}
+                        onClick={() => latestDeployment && navigate(`/user/deployments/${latestDeployment.id}`, {
+                          state: { from: '/user/pipelines', backLabel: '返回流水线大厅' },
+                        })}
+                      >
+                        查看进度
+                      </Button>
+                      <Button onClick={() => navigate(`/user/pipelines/${pipeline.id}/history`)}>
+                        部署记录
+                      </Button>
+                    </Space>
+                  </Card>
+                </Col>
               );
-            })}
-          </Row>
+              })}
+            </Row>
+          </div>
         </>
       )}
       <Modal

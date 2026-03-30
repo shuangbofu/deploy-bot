@@ -76,7 +76,7 @@ export default function AdminLayout() {
           </Dropdown>
         </Space>
       </Layout.Header>
-      <Layout.Content className="px-6 py-6">
+      <Layout.Content className="px-4 py-4">
         <Outlet />
       </Layout.Content>
     </Layout>

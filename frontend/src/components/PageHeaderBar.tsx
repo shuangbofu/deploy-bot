@@ -17,7 +17,7 @@ type PageHeaderBarProps = {
 export default function PageHeaderBar({ title, description, extra }: PageHeaderBarProps) {
   return (
     <div className="page-header">
-      <div>
+      <div className="flex items-center gap-4">
         <Typography.Title level={2} className="!mb-2 !mt-0">
           {title}
         </Typography.Title>

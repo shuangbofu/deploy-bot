@@ -8,6 +8,7 @@ import StatusTag from '../../components/StatusTag';
 import { ACTIVE_DEPLOYMENT_STATUSES } from '../../constants/deployment';
 import type { DeploymentSummary } from '../../types/domain';
 import { formatDateTime } from '../../utils/datetime';
+import { formatDeploymentElapsed } from '../../utils/deploymentDuration';
 import { getDeploymentProgress, getDeploymentProgressColor } from '../../utils/deploymentProgress';
 
 /**
@@ -20,6 +21,7 @@ export default function AdminDeploymentDetailPage() {
   const [searchParams] = useSearchParams();
   const [deployment, setDeployment] = useState<DeploymentSummary>();
   const [logContent, setLogContent] = useState('');
+  const [tick, setTick] = useState(() => Date.now());
 
   /** 同步加载部署详情与日志内容。 */
   const loadDetail = async () => {
@@ -34,6 +36,11 @@ export default function AdminDeploymentDetailPage() {
   useEffect(() => {
     loadDetail().catch(() => message.error('加载部署详情失败'));
   }, [deploymentId]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setTick(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!deployment?.status || !ACTIVE_DEPLOYMENT_STATUSES.includes(deployment.status)) {
@@ -111,7 +118,7 @@ export default function AdminDeploymentDetailPage() {
               <Descriptions.Item label="项目">{deployment?.pipeline?.project?.name || '-'}</Descriptions.Item>
               <Descriptions.Item label="分支">{deployment?.branchName || '-'}</Descriptions.Item>
               <Descriptions.Item label="触发人">{deployment?.triggeredByDisplayName || deployment?.triggeredBy || '-'}</Descriptions.Item>
-              <Descriptions.Item label="创建时间">{formatDateTime(deployment?.createdAt)}</Descriptions.Item>
+              <Descriptions.Item label="耗时">{formatDeploymentElapsed(deployment, tick)}</Descriptions.Item>
               <Descriptions.Item label="开始时间">{formatDateTime(deployment?.startedAt)}</Descriptions.Item>
               <Descriptions.Item label="结束时间">{formatDateTime(deployment?.finishedAt)}</Descriptions.Item>
               <Descriptions.Item label="产物目录">{deployment?.artifactPath || '-'}</Descriptions.Item>
