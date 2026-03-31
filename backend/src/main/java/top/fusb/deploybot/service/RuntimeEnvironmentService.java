@@ -113,8 +113,8 @@ public class RuntimeEnvironmentService {
         entity.setType(request.type());
         entity.setHost(host);
         entity.setVersion(request.version());
-        entity.setHomePath(request.homePath());
-        entity.setBinPath(request.binPath());
+        entity.setHomePath(normalizeRuntimePath(request.homePath(), host));
+        entity.setBinPath(normalizeRuntimePath(request.binPath(), host));
         entity.setActivationScript(request.activationScript());
         entity.setEnvironmentJson(request.environmentJson());
         entity.setEnabled(request.enabled() == null || request.enabled());
@@ -437,10 +437,30 @@ public class RuntimeEnvironmentService {
 
     private Path installRoot(HostEntity host) {
         if (host != null && host.getWorkspaceRoot() != null && !host.getWorkspaceRoot().isBlank()) {
-            return Path.of(host.getWorkspaceRoot().trim());
+            Path path = Path.of(host.getWorkspaceRoot().trim()).normalize();
+            if (host.getType() == HostType.LOCAL && !path.isAbsolute()) {
+                return path.toAbsolutePath().normalize();
+            }
+            return path;
         }
         String workspaceRoot = systemSettingsService.get().getWorkspaceRoot();
-        return Path.of(workspaceRoot == null || workspaceRoot.isBlank() ? "./runtime" : workspaceRoot.trim());
+        Path path = Path.of(workspaceRoot == null || workspaceRoot.isBlank() ? "./runtime" : workspaceRoot.trim()).normalize();
+        return path.isAbsolute() ? path : path.toAbsolutePath().normalize();
+    }
+
+    private String normalizeRuntimePath(String rawPath, HostEntity host) {
+        if (rawPath == null || rawPath.isBlank()) {
+            return rawPath;
+        }
+        Path path = Path.of(rawPath.trim()).normalize();
+        if (path.isAbsolute()) {
+            return path.toString();
+        }
+        Path resolved = installRoot(host).resolve(path).normalize();
+        if (host != null && host.getType() == HostType.LOCAL) {
+            return resolved.toAbsolutePath().normalize().toString();
+        }
+        return resolved.toString();
     }
 
     private void deleteIfExists(Path path) throws IOException {

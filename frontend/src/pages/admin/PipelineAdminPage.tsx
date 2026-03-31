@@ -10,6 +10,7 @@ import EmptyPane from '../../components/EmptyPane';
 import PageHeaderBar from '../../components/PageHeaderBar';
 import PipelineVariablesEditor from '../../components/PipelineVariablesEditor';
 import PipelineIcon, { getRequiredEnvironmentTypes, getRequiredRuntimeEnvironmentTypes } from '../../components/PipelineIcon';
+import { getStableTagColor } from '../../utils/tagColors';
 import type {
   HostSummary,
   PipelineSummary,
@@ -408,8 +409,13 @@ export default function PipelineAdminPage() {
               return (
                 <Tag
                   key={tag}
-                  color={active ? 'blue' : 'default'}
-                  className="cursor-pointer select-none !px-3 !py-1"
+                  style={{
+                    backgroundColor: getStableTagColor(tag),
+                    color: '#fff',
+                    borderColor: 'transparent',
+                    opacity: active ? 1 : 0.55,
+                  }}
+                  className="cursor-pointer select-none !border-0 !px-3 !py-1"
                   onClick={() => {
                     setTagFilter((previous) => {
                       const next = previous?.includes(tag)
@@ -470,7 +476,23 @@ export default function PipelineAdminPage() {
                 title: '标签',
                 width: 180,
                 render: (_, row) => row.parsedTags.length > 0
-                  ? <Space wrap>{row.parsedTags.map((tag: string) => <Tag key={tag}>{tag}</Tag>)}</Space>
+                  ? (
+                    <Space wrap>
+                      {row.parsedTags.map((tag: string) => (
+                        <Tag
+                          key={tag}
+                          style={{
+                            backgroundColor: getStableTagColor(tag),
+                            color: '#fff',
+                            borderColor: 'transparent',
+                          }}
+                          className="!border-0"
+                        >
+                          {tag}
+                        </Tag>
+                      ))}
+                    </Space>
+                  )
                   : '-',
               },
               { title: '构建 Java', render: (_, row) => row.javaEnvironment?.name || '-' },

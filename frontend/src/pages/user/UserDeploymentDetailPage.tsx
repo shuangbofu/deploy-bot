@@ -59,7 +59,7 @@ export default function UserDeploymentDetailPage() {
   const rollbackable = Boolean(
     deployment?.artifactPath
       && deployment?.status
-      && !ACTIVE_DEPLOYMENT_STATUSES.includes(deployment.status),
+      && deployment.status === 'SUCCESS',
   );
   const backTarget = location.state?.from || '/user/pipelines';
   const backLabel = location.state?.backLabel || '返回流水线大厅';

@@ -307,6 +307,9 @@ public class DeploymentRunner {
             return process;
         });
         deploymentRepository.findById(deploymentId).ifPresent(deployment -> {
+            if (deployment.getStatus() != DeploymentStatus.PENDING && deployment.getStatus() != DeploymentStatus.RUNNING) {
+                return;
+            }
             deployment.setStatus(DeploymentStatus.STOPPED);
             deployment.setFinishedAt(LocalDateTime.now());
             deployment.setErrorMessage("任务已手动停止");

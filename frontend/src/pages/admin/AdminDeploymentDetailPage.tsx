@@ -58,7 +58,7 @@ export default function AdminDeploymentDetailPage() {
   const rollbackable = Boolean(
     deployment?.artifactPath
       && deployment?.status
-      && !ACTIVE_DEPLOYMENT_STATUSES.includes(deployment.status),
+      && deployment.status === 'SUCCESS',
   );
   const backPath = searchParams.get('from') === 'services' ? '/admin/services' : '/admin/deployments';
 

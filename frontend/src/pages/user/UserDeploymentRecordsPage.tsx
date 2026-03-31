@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Col, DatePicker, Input, Row, Select, Space, Table, message } from 'antd';
+import { Button, Card, Col, DatePicker, Input, Popconfirm, Row, Select, Space, Table, message } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { deploymentsApi } from '../../api/deployments';
 import EmptyPane from '../../components/EmptyPane';
 import PageHeaderBar from '../../components/PageHeaderBar';
 import StatusTag from '../../components/StatusTag';
+import { ACTIVE_DEPLOYMENT_STATUSES } from '../../constants/deployment';
 import { DEPLOYMENT_STATUS_OPTIONS } from '../../constants/deployment';
 import type { DeploymentRecordFilters, DeploymentSummary } from '../../types/domain';
 import { formatDateTime } from '../../utils/datetime';
@@ -191,15 +192,45 @@ export default function UserDeploymentRecordsPage() {
               {
                 title: '操作',
                 render: (_, row) => (
-                  <Button
-                    size="small"
-                    type="primary"
-                    onClick={() => navigate(`/user/deployments/${row.id}`, {
-                      state: { from: '/user/deployments', backLabel: '返回部署记录' },
-                    })}
-                  >
-                    查看详情
-                  </Button>
+                  <Space wrap>
+                    <Button
+                      size="small"
+                      type="primary"
+                      onClick={() => navigate(`/user/deployments/${row.id}`, {
+                        state: { from: '/user/deployments', backLabel: '返回部署记录' },
+                      })}
+                    >
+                      查看详情
+                    </Button>
+                    {row.status === 'SUCCESS' && row.artifactPath ? (
+                      <Popconfirm
+                        title="确认重新发布"
+                        description="会直接复用这次部署保留下来的构建产物重新发布，不会重新执行构建流程。"
+                        okText="确认"
+                        cancelText="取消"
+                        onConfirm={() => deploymentsApi.rollback(row.id).then((response) => {
+                          message.success('重新发布任务已创建');
+                          navigate(`/user/deployments/${response.id}`, {
+                            state: { from: '/user/deployments', backLabel: '返回部署记录' },
+                          });
+                        }).catch(() => message.error('创建回滚任务失败'))}
+                      >
+                        <Button size="small">回滚</Button>
+                      </Popconfirm>
+                    ) : null}
+                    {row.status && ACTIVE_DEPLOYMENT_STATUSES.includes(row.status) ? (
+                      <Button
+                        size="small"
+                        danger
+                        onClick={() => deploymentsApi.stop(row.id).then(() => {
+                          message.success('部署已停止');
+                          return loadDeployments();
+                        }).catch(() => message.error('停止部署失败'))}
+                      >
+                        停止
+                      </Button>
+                    ) : null}
+                  </Space>
                 ),
               },
           ]}

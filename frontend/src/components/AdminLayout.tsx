@@ -53,7 +53,7 @@ export default function AdminLayout() {
           className="admin-nav"
         />
         <Space>
-          <Link to="/user/dashboard">
+          <Link to="/user/pipelines">
             <Button>用户视角</Button>
           </Link>
           <Dropdown

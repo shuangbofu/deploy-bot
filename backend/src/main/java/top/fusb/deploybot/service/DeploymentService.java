@@ -438,6 +438,9 @@ public class DeploymentService {
         DeploymentEntity entity = deploymentRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorSubCode.DEPLOYMENT_NOT_FOUND));
         ensureDeploymentManageable(entity);
+        if (entity.getStatus() != DeploymentStatus.PENDING && entity.getStatus() != DeploymentStatus.RUNNING) {
+            throw new BusinessException(ErrorSubCode.DEPLOYMENT_NOT_STOPPABLE);
+        }
         deploymentRunner.stop(id);
         return deploymentRepository.findById(id).orElse(entity);
     }
@@ -449,6 +452,9 @@ public class DeploymentService {
         ensureDeploymentManageable(source);
         if (source.getStatus() == DeploymentStatus.PENDING || source.getStatus() == DeploymentStatus.RUNNING) {
             throw new BusinessException(ErrorSubCode.RUNNING_DEPLOYMENT_CANNOT_ROLLBACK);
+        }
+        if (source.getStatus() != DeploymentStatus.SUCCESS) {
+            throw new BusinessException(ErrorSubCode.DEPLOYMENT_ROLLBACK_ONLY_SUCCESS);
         }
         if (source.getArtifactPath() == null || source.getArtifactPath().isBlank()) {
             throw new BusinessException(ErrorSubCode.DEPLOYMENT_ARTIFACT_MISSING);

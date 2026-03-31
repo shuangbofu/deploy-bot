@@ -12,12 +12,15 @@ import type { DeploymentSummary, PipelineSummary } from '../../types/domain';
 import { formatDateTime } from '../../utils/datetime';
 import { formatDeploymentElapsed } from '../../utils/deploymentDuration';
 import { getDeploymentProgress, getDeploymentProgressColor } from '../../utils/deploymentProgress';
+import { getStableTagColor } from '../../utils/tagColors';
 
 /**
  * 用户端流水线大厅。
  * 用户在这里只做三件事：选流水线、发部署、看记录。
  */
 export default function UserPipelinesPage() {
+  const IDLE_POLL_INTERVAL = 15000;
+  const ACTIVE_POLL_INTERVAL = 3000;
   const [pipelines, setPipelines] = useState<PipelineSummary[]>([]);
   const [deployments, setDeployments] = useState<DeploymentSummary[]>([]);
   const [loading, setLoading] = useState(false);
@@ -47,18 +50,11 @@ export default function UserPipelinesPage() {
     }
   };
 
-  const tagPalette = ['#0f766e', '#1d4ed8', '#b45309', '#be123c', '#6d28d9', '#0f172a', '#0369a1', '#166534', '#9a3412', '#4338ca'];
-  const getTagColor = (tag: string) => {
-    let hash = 0;
-    for (let index = 0; index < tag.length; index += 1) {
-      hash = (hash * 31 + tag.charCodeAt(index)) >>> 0;
-    }
-    return tagPalette[hash % tagPalette.length];
-  };
-
   /** 同步加载流水线列表和最新部署记录，用于拼装大厅卡片。 */
-  const loadData = async () => {
-    setLoading(true);
+  const loadData = async (silent = false) => {
+    if (!silent) {
+      setLoading(true);
+    }
     try {
       const [nextPipelines, nextDeployments] = await Promise.all([
         pipelinesApi.list(),
@@ -67,13 +63,26 @@ export default function UserPipelinesPage() {
       setPipelines(nextPipelines);
       setDeployments(nextDeployments);
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
     loadData().catch(() => message.error('加载流水线失败'));
   }, []);
+
+  useEffect(() => {
+    if (loading && pipelines.length === 0 && deployments.length === 0) {
+      return undefined;
+    }
+    const hasActiveDeployment = deployments.some((item) => item.status && ACTIVE_DEPLOYMENT_STATUSES.includes(item.status));
+    const interval = window.setInterval(() => {
+      loadData(true).catch(() => {});
+    }, hasActiveDeployment ? ACTIVE_POLL_INTERVAL : IDLE_POLL_INTERVAL);
+    return () => window.clearInterval(interval);
+  }, [deployments, loading, pipelines.length]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setTick(Date.now()), 1000);
@@ -183,6 +192,11 @@ export default function UserPipelinesPage() {
     }
   };
 
+  const stopDeployment = async (deploymentId: number) => {
+    await deploymentsApi.stop(deploymentId);
+    await loadData();
+  };
+
   return (
     <>
       <PageHeaderBar
@@ -280,7 +294,7 @@ export default function UserPipelinesPage() {
                       <Tag
                         key={tag}
                         style={{
-                          backgroundColor: getTagColor(tag),
+                          backgroundColor: getStableTagColor(tag),
                           color: '#fff',
                           borderColor: 'transparent',
                           opacity: active ? 1 : 0.55,
@@ -304,6 +318,9 @@ export default function UserPipelinesPage() {
               {filteredPipelineCards.map(({ pipeline, latestDeployment }) => {
               const tags = parseTagsJson(pipeline.tagsJson);
               const latestOrder = latestDeployment && pipelineDeploymentOrders.get(pipeline.id)?.get(latestDeployment.id);
+              const activeDeployment = latestDeployment?.status && ACTIVE_DEPLOYMENT_STATUSES.includes(latestDeployment.status)
+                ? latestDeployment
+                : undefined;
               return (
                 <Col xs={24} md={12} xl={8} xxl={6} key={pipeline.id}>
                   <Card className="pipeline-card" bordered={false}>
@@ -332,7 +349,7 @@ export default function UserPipelinesPage() {
                           <Tag
                             key={tag}
                             style={{
-                              backgroundColor: getTagColor(tag),
+                              backgroundColor: getStableTagColor(tag),
                               color: '#fff',
                               borderColor: 'transparent',
                             }}
@@ -378,13 +395,29 @@ export default function UserPipelinesPage() {
                       </div>
                     </div>
                     <Space>
-                      <Button
-                        type="primary"
-                        loading={submittingId === pipeline.id}
-                        onClick={() => openDeployModal(pipeline).catch(() => message.error('打开部署窗口失败'))}
-                      >
-                        部署
-                      </Button>
+                      {activeDeployment ? (
+                        <Button
+                          danger
+                          loading={submittingId === pipeline.id}
+                          onClick={() => {
+                            setSubmittingId(pipeline.id);
+                            stopDeployment(activeDeployment.id)
+                              .then(() => message.success('部署已停止'))
+                              .catch(() => message.error('停止部署失败'))
+                              .finally(() => setSubmittingId(undefined));
+                          }}
+                        >
+                          停止
+                        </Button>
+                      ) : (
+                        <Button
+                          type="primary"
+                          loading={submittingId === pipeline.id}
+                          onClick={() => openDeployModal(pipeline).catch(() => message.error('打开部署窗口失败'))}
+                        >
+                          部署
+                        </Button>
+                      )}
                       <Button
                         disabled={!latestDeployment}
                         onClick={() => latestDeployment && navigate(`/user/deployments/${latestDeployment.id}`, {
