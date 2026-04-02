@@ -1,10 +1,12 @@
-import { AppstoreOutlined, ProfileOutlined, DeploymentUnitOutlined, LogoutOutlined, LockOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, ProfileOutlined, DeploymentUnitOutlined, LogoutOutlined, LockOutlined, GithubOutlined } from '@ant-design/icons';
 import { Button, Dropdown, Layout, Menu, Space, Typography } from 'antd';
 import { useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import ChangePasswordModal from './ChangePasswordModal';
 import deployBotLogo from '../assets/deploy-bot-logo.svg';
+
+const GITHUB_REPOSITORY_URL = 'https://github.com/shuangbofu/deploy-bot';
 
 /**
  * 用户端菜单只保留用户真实需要的三个入口，避免出现配置感。
@@ -80,6 +82,12 @@ export default function UserLayout() {
               {user?.displayName || user?.username || '用户'}
             </Button>
           </Dropdown>
+          <Button
+            href={GITHUB_REPOSITORY_URL}
+            target="_blank"
+            rel="noreferrer"
+            icon={<GithubOutlined />}
+          />
         </Space>
       </Layout.Header>
       <Layout.Content className="px-4 py-4">

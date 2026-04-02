@@ -156,8 +156,8 @@ body {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 8px;
-  gap: 12px;
+  margin-bottom: 12px;
+  gap: 18px;
 }
 
 .pipeline-card-content {
@@ -267,6 +267,7 @@ body {
 
 .log-viewer {
   width: 100%;
+  height: 100%;
   overflow: auto;
   border-radius: 16px;
   background: #08111f;
@@ -277,6 +278,26 @@ body {
   white-space: pre-wrap;
   word-break: break-word;
   font-family: "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
+}
+
+.deployment-detail-log-card {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.deployment-detail-log-card.ant-card {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.deployment-detail-log-card .ant-card-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
 }
 
 .log-line {

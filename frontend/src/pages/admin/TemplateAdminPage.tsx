@@ -240,7 +240,7 @@ export default function TemplateAdminPage() {
     <>
       <PageHeaderBar
         title="模板管理"
-        description="模板负责沉淀部署脚本，只暴露变量定义给流水线复用。"
+        description="管理部署模板、本机构建脚本、发布脚本与变量定义。"
         extra={(
           <Space>
             <Button onClick={() => loadTemplates().catch(() => message.error('加载模板失败'))}>刷新</Button>

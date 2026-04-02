@@ -100,7 +100,7 @@ export default function UserAdminPage() {
     <>
       <PageHeaderBar
         title="用户管理"
-        description="正式维护登录账号、角色和启用状态。管理端与用户端都会基于这里的账号权限进行访问。"
+        description="管理登录账号、显示名称、角色与启用状态。"
         extra={(
           <Space>
             <Button onClick={() => loadUsers().catch(() => message.error('加载用户失败'))}>刷新</Button>

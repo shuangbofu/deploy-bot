@@ -11,7 +11,7 @@ type LogViewerProps = {
  * 日志查看器。
  * 负责高亮错误行，并把页面滚动限制在日志容器内部。
  */
-export default function LogViewer({ content, maxHeight = 360 }: LogViewerProps) {
+export default function LogViewer({ content, maxHeight }: LogViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const lines = (content || '暂无日志输出。').split('\n');
 
@@ -27,7 +27,7 @@ export default function LogViewer({ content, maxHeight = 360 }: LogViewerProps) 
     <div
       ref={containerRef}
       className="log-viewer"
-      style={{ maxHeight }}
+      style={maxHeight ? { maxHeight } : undefined}
     >
       {lines.map((line, index) => {
         const lowerLine = line.toLowerCase();

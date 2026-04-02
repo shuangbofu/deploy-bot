@@ -11,6 +11,7 @@ import type { DeploymentSummary, PipelineSummary } from '../../types/domain';
 import { buildSevenDayTrend, buildTrendAreaPath, buildTrendPoints, buildTrendSmoothPath } from '../../utils/dashboard';
 import { formatDateTime } from '../../utils/datetime';
 import { formatDeploymentElapsed } from '../../utils/deploymentDuration';
+import { formatDeploymentTimeline } from '../../utils/deploymentTimeline';
 
 /**
  * 用户端控制台。
@@ -82,7 +83,7 @@ export default function UserDashboardPage() {
     <>
       <PageHeaderBar
         title="控制台"
-        description="这里汇总用户最关心的内容：当前有哪些流水线可用、最近部署是否稳定、现在有没有任务正在跑。"
+        description="查看可用流水线、近期部署趋势与当前执行情况。"
       />
       <Row gutter={[16, 16]}>
         <Col xs={24} md={12} xl={6}>
@@ -250,9 +251,8 @@ export default function UserDashboardPage() {
                           {item.pipeline?.project?.name || '-'} · {item.branchName || '-'} · {item.triggeredByDisplayName || item.triggeredBy || '-'}
                         </div>
                       </div>
-                      <div className="dashboard-recent-side">
-                        <div>{formatDateTime(item.createdAt)}</div>
-                        <div>{formatDeploymentElapsed(item, tick)}</div>
+                      <div className="dashboard-recent-side" title={formatDeploymentTimeline(item, tick)}>
+                        {formatDeploymentTimeline(item, tick)}
                       </div>
                     </div>
                   ))}
@@ -286,9 +286,8 @@ export default function UserDashboardPage() {
                           {item.pipeline?.project?.name || '-'} · {item.branchName || '-'}
                         </div>
                       </div>
-                      <div className="dashboard-recent-side">
-                        <div>{formatDateTime(item.createdAt)}</div>
-                        <div>{formatDeploymentElapsed(item, tick)}</div>
+                      <div className="dashboard-recent-side" title={formatDeploymentTimeline(item, tick)}>
+                        {formatDeploymentTimeline(item, tick)}
                       </div>
                     </div>
                   ))}

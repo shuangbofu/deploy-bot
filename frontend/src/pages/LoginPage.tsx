@@ -1,9 +1,11 @@
-import { LockOutlined, UserOutlined } from '@ant-design/icons';
+import { GithubOutlined, LockOutlined, UserOutlined } from '@ant-design/icons';
 import { Button, Card, Form, Input, Typography } from 'antd';
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import deployBotLogo from '../assets/deploy-bot-logo.svg';
+
+const GITHUB_REPOSITORY_URL = 'https://github.com/shuangbofu/deploy-bot';
 
 /**
  * 登录页。
@@ -50,9 +52,19 @@ export default function LoginPage() {
             <Form.Item label="密码" name="password" rules={[{ required: true, message: '请输入密码' }]}>
               <Input.Password size="large" prefix={<LockOutlined />} placeholder="请输入密码" />
             </Form.Item>
-            <Button type="primary" htmlType="submit" size="large" block loading={submitting}>
-              登录
-            </Button>
+            <div className="flex items-center gap-3">
+              <Button type="primary" htmlType="submit" size="large" loading={submitting} className="!flex-1">
+                登录
+              </Button>
+              <a
+                href={GITHUB_REPOSITORY_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex !h-10 !w-10 shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 transition-colors hover:border-slate-400 hover:text-slate-900"
+              >
+                <GithubOutlined className="text-lg" />
+              </a>
+            </div>
           </Form>
           <div className="mt-6 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500">
             默认管理员账号：<code>admin</code> / <code>Admin@123456</code>

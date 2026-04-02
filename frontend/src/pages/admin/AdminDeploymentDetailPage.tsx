@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Col, Descriptions, Popconfirm, Progress, Row, Space, message } from 'antd';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Button, Card, Col, Collapse, Descriptions, Popconfirm, Progress, Row, Space, message } from 'antd';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { deploymentsApi } from '../../api/deployments';
 import LogViewer from '../../components/LogViewer';
@@ -10,6 +10,7 @@ import type { DeploymentSummary } from '../../types/domain';
 import { formatDateTime } from '../../utils/datetime';
 import { formatDeploymentElapsed } from '../../utils/deploymentDuration';
 import { getDeploymentProgress, getDeploymentProgressColor } from '../../utils/deploymentProgress';
+import { formatDeploymentTimeline } from '../../utils/deploymentTimeline';
 
 /**
  * 管理端部署详情页。
@@ -22,6 +23,8 @@ export default function AdminDeploymentDetailPage() {
   const [deployment, setDeployment] = useState<DeploymentSummary>();
   const [logContent, setLogContent] = useState('');
   const [tick, setTick] = useState(() => Date.now());
+  const sidebarRef = useRef<HTMLDivElement | null>(null);
+  const [sidebarHeight, setSidebarHeight] = useState<number>();
 
   /** 同步加载部署详情与日志内容。 */
   const loadDetail = async () => {
@@ -75,12 +78,47 @@ export default function AdminDeploymentDetailPage() {
       return null;
     }
   }, [deployment?.executionSnapshotJson]);
+  const snapshotVariables = useMemo(() => {
+    const raw = executionSnapshot?.variables;
+    if (Array.isArray(raw)) {
+      return raw.map((item) => {
+        const entry = item as { name?: unknown; label?: unknown; value?: unknown };
+        const name = String(entry.name ?? '-');
+        return {
+          name,
+          label: String(entry.label ?? name),
+          value: String(entry.value ?? '-'),
+        };
+      });
+    }
+    return Object.entries((raw as Record<string, unknown> | undefined) || {}).map(([name, value]) => ({
+      name,
+      label: name,
+      value: String(value ?? '-'),
+    }));
+  }, [executionSnapshot]);
+
+  useLayoutEffect(() => {
+    if (!sidebarRef.current) {
+      return undefined;
+    }
+    const element = sidebarRef.current;
+    const updateHeight = () => setSidebarHeight(element.getBoundingClientRect().height);
+    updateHeight();
+    const observer = new ResizeObserver(() => updateHeight());
+    observer.observe(element);
+    window.addEventListener('resize', updateHeight);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateHeight);
+    };
+  }, [deployment, logContent, snapshotVariables.length]);
 
   return (
     <>
       <PageHeaderBar
         title={`部署详情 #${deploymentId}`}
-        description="管理端查看部署记录时，应通过详情页追踪执行状态、日志和错误信息。"
+        description="查看部署状态、日志、耗时、错误信息与执行快照。"
         extra={[
           <Button key="back" onClick={() => navigate(backPath)}>
             {backPath === '/admin/services' ? '返回服务管理' : '返回部署记录'}
@@ -117,56 +155,84 @@ export default function AdminDeploymentDetailPage() {
       />
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={7} xxl={6}>
-          <Card
-            className="app-card"
-            title="执行状态"
-            extra={<StatusTag status={deployment?.status} />}
-          >
-            <Progress
-              percent={progress}
-              strokeColor={getDeploymentProgressColor(deployment?.status)}
-              format={() => deployment?.progressText || `${progress}%`}
-            />
-            <Descriptions column={1} size="small" className="mt-4">
-              <Descriptions.Item label="流水线">{deployment?.pipeline?.name || '-'}</Descriptions.Item>
-              <Descriptions.Item label="项目">{deployment?.pipeline?.project?.name || '-'}</Descriptions.Item>
-              <Descriptions.Item label="分支">{deployment?.branchName || '-'}</Descriptions.Item>
-              <Descriptions.Item label="触发人">{deployment?.triggeredByDisplayName || deployment?.triggeredBy || '-'}</Descriptions.Item>
-              <Descriptions.Item label="耗时">{formatDeploymentElapsed(deployment, tick)}</Descriptions.Item>
-              <Descriptions.Item label="开始时间">{formatDateTime(deployment?.startedAt)}</Descriptions.Item>
-              <Descriptions.Item label="结束时间">{formatDateTime(deployment?.finishedAt)}</Descriptions.Item>
-              <Descriptions.Item label="产物目录">{deployment?.artifactPath || '-'}</Descriptions.Item>
-              <Descriptions.Item label="重发来源">
-                {deployment?.rollbackFromDeploymentId ? (
-                  <Button type="link" className="!px-0" onClick={() => navigate(`/admin/deployments/${deployment.rollbackFromDeploymentId}`)}>
-                    #{deployment.rollbackFromDeploymentId}
-                  </Button>
-                ) : '-'}
-              </Descriptions.Item>
-              <Descriptions.Item label="监控 PID">{deployment?.monitoredPid || '-'}</Descriptions.Item>
-              <Descriptions.Item label="错误信息">{deployment?.errorMessage || '-'}</Descriptions.Item>
-            </Descriptions>
-          </Card>
-          <Card className="app-card mt-4" title="执行快照">
-            <Descriptions column={1} size="small">
-              <Descriptions.Item label="模板">{String(executionSnapshot?.templateName || '-')}</Descriptions.Item>
-              <Descriptions.Item label="模板类型">{String(executionSnapshot?.templateType || '-')}</Descriptions.Item>
-              <Descriptions.Item label="目标主机">{String(executionSnapshot?.targetHost || '-')}</Descriptions.Item>
-              <Descriptions.Item label="应用名">{String(executionSnapshot?.applicationName || '-')}</Descriptions.Item>
-              <Descriptions.Item label="Spring Profile">{String(executionSnapshot?.springProfile || '-')}</Descriptions.Item>
-              <Descriptions.Item label="启动关键字">{String(executionSnapshot?.startupKeyword || '-')}</Descriptions.Item>
-              <Descriptions.Item label="启动超时">{String(executionSnapshot?.startupTimeoutSeconds || '-')}</Descriptions.Item>
-              <Descriptions.Item label="构建 Java">{String((executionSnapshot?.javaEnvironment as { version?: string; name?: string } | undefined)?.name || '-')} {String((executionSnapshot?.javaEnvironment as { version?: string } | undefined)?.version || '')}</Descriptions.Item>
-              <Descriptions.Item label="构建 Node">{String((executionSnapshot?.nodeEnvironment as { version?: string; name?: string } | undefined)?.name || '-')} {String((executionSnapshot?.nodeEnvironment as { version?: string } | undefined)?.version || '')}</Descriptions.Item>
-              <Descriptions.Item label="构建 Maven">{String((executionSnapshot?.mavenEnvironment as { version?: string; name?: string } | undefined)?.name || '-')} {String((executionSnapshot?.mavenEnvironment as { version?: string } | undefined)?.version || '')}</Descriptions.Item>
-              <Descriptions.Item label="运行 Java">{String((executionSnapshot?.runtimeJavaEnvironment as { version?: string; name?: string } | undefined)?.name || '-')} {String((executionSnapshot?.runtimeJavaEnvironment as { version?: string } | undefined)?.version || '')}</Descriptions.Item>
-            </Descriptions>
-            <pre className="table-code-preview mt-3 max-w-full !max-h-[320px]">{JSON.stringify(executionSnapshot?.variables || {}, null, 2)}</pre>
-          </Card>
+          <div ref={sidebarRef} className="space-y-4">
+            <Card
+              className="app-card"
+              title="执行状态"
+              extra={<StatusTag status={deployment?.status} />}
+            >
+              <Progress
+                percent={progress}
+                strokeColor={getDeploymentProgressColor(deployment?.status)}
+                format={() => deployment?.progressText || `${progress}%`}
+              />
+              <Descriptions column={1} size="small" className="mt-4">
+                <Descriptions.Item label="流水线">{deployment?.pipeline?.name || '-'}</Descriptions.Item>
+                <Descriptions.Item label="项目">{deployment?.pipeline?.project?.name || '-'}</Descriptions.Item>
+                <Descriptions.Item label="分支">{deployment?.branchName || '-'}</Descriptions.Item>
+                <Descriptions.Item label="触发人">{deployment?.triggeredByDisplayName || deployment?.triggeredBy || '-'}</Descriptions.Item>
+                <Descriptions.Item label="部署时间">{formatDeploymentTimeline(deployment, tick)}</Descriptions.Item>
+                <Descriptions.Item label="产物目录">{deployment?.artifactPath || '-'}</Descriptions.Item>
+                <Descriptions.Item label="重发来源">
+                  {deployment?.rollbackFromDeploymentId ? (
+                    <Button type="link" className="!px-0" onClick={() => navigate(`/admin/deployments/${deployment.rollbackFromDeploymentId}`)}>
+                      #{deployment.rollbackFromDeploymentId}
+                    </Button>
+                  ) : '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="监控 PID">{deployment?.monitoredPid || '-'}</Descriptions.Item>
+                <Descriptions.Item label="错误信息">{deployment?.errorMessage || '-'}</Descriptions.Item>
+              </Descriptions>
+            </Card>
+            <Card className="app-card" title="执行快照">
+              <Descriptions column={1} size="small">
+                <Descriptions.Item label="模板">{String(executionSnapshot?.templateName || '-')}</Descriptions.Item>
+                <Descriptions.Item label="模板类型">{String(executionSnapshot?.templateType || '-')}</Descriptions.Item>
+                <Descriptions.Item label="目标主机">{String(executionSnapshot?.targetHost || '-')}</Descriptions.Item>
+                <Descriptions.Item label="应用名">{String(executionSnapshot?.applicationName || '-')}</Descriptions.Item>
+                <Descriptions.Item label="Spring Profile">{String(executionSnapshot?.springProfile || '-')}</Descriptions.Item>
+                <Descriptions.Item label="启动关键字">{String(executionSnapshot?.startupKeyword || '-')}</Descriptions.Item>
+                <Descriptions.Item label="启动超时">{String(executionSnapshot?.startupTimeoutSeconds || '-')}</Descriptions.Item>
+                <Descriptions.Item label="构建 Java">{String((executionSnapshot?.javaEnvironment as { version?: string; name?: string } | undefined)?.name || '-')} {String((executionSnapshot?.javaEnvironment as { version?: string } | undefined)?.version || '')}</Descriptions.Item>
+                <Descriptions.Item label="构建 Node">{String((executionSnapshot?.nodeEnvironment as { version?: string; name?: string } | undefined)?.name || '-')} {String((executionSnapshot?.nodeEnvironment as { version?: string } | undefined)?.version || '')}</Descriptions.Item>
+                <Descriptions.Item label="构建 Maven">{String((executionSnapshot?.mavenEnvironment as { version?: string; name?: string } | undefined)?.name || '-')} {String((executionSnapshot?.mavenEnvironment as { version?: string } | undefined)?.version || '')}</Descriptions.Item>
+                <Descriptions.Item label="运行 Java">{String((executionSnapshot?.runtimeJavaEnvironment as { version?: string; name?: string } | undefined)?.name || '-')} {String((executionSnapshot?.runtimeJavaEnvironment as { version?: string } | undefined)?.version || '')}</Descriptions.Item>
+              </Descriptions>
+              <Collapse
+                className="mt-4"
+                ghost
+                items={[
+                  {
+                    key: 'variables',
+                    label: '变量快照',
+                    children: (
+                      <div className="space-y-2">
+                        {snapshotVariables.length > 0 ? snapshotVariables.map((item) => (
+                          <div key={item.name} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                            <div className="flex items-start gap-3 text-sm">
+                              <div className="w-40 shrink-0 font-semibold text-slate-700">{item.label}</div>
+                              <code className="block flex-1 break-all text-[13px] font-medium text-slate-600">
+                                {item.value}
+                              </code>
+                            </div>
+                          </div>
+                        )) : (
+                          <div className="rounded-lg border border-dashed border-slate-200 px-3 py-4 text-sm text-slate-400">
+                            暂无变量快照
+                          </div>
+                        )}
+                      </div>
+                    ),
+                  },
+                ]}
+              />
+            </Card>
+          </div>
         </Col>
         <Col xs={24} xl={17} xxl={18}>
           <Card
-            className="app-card"
+            className="app-card deployment-detail-log-card"
+            style={sidebarHeight ? { height: sidebarHeight } : undefined}
             title="执行日志"
             extra={(
               <Space>
@@ -176,7 +242,7 @@ export default function AdminDeploymentDetailPage() {
               </Space>
             )}
           >
-            <LogViewer content={logContent} maxHeight={680} />
+            <LogViewer content={logContent} />
           </Card>
         </Col>
       </Row>

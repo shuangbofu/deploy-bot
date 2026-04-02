@@ -201,7 +201,7 @@ export default function UserPipelinesPage() {
     <>
       <PageHeaderBar
         title="流水线大厅"
-        description="这里只展示已经由管理端准备好的流水线。用户只做部署和查看执行过程，不承担任何配置动作。"
+        description="查看可用流水线，选择分支并发起部署。"
         extra={<Button onClick={() => loadData().catch(() => message.error('加载流水线失败'))}>刷新</Button>}
       />
       {loading ? (
@@ -337,6 +337,11 @@ export default function UserPipelinesPage() {
                         </div>
                       </div>
                       <div className="pipeline-card-status">
+                        {latestOrder ? (
+                          <div className="mb-1 text-right text-[22px] font-bold leading-none text-sky-600">
+                            #{latestOrder}
+                          </div>
+                        ) : null}
                         <StatusTag status={latestDeployment?.status} />
                       </div>
                     </div>
@@ -362,28 +367,20 @@ export default function UserPipelinesPage() {
                     ) : null}
                     <div className="pipeline-meta-panel">
                       <div className="pipeline-meta-row">
-                        <span>{latestDeployment?.branchName ? '执行分支' : '默认分支'}</span>
+                        <span>{latestDeployment?.branchName ? '部署分支' : '默认分支'}</span>
                         <span>{latestDeployment?.branchName || pipeline.defaultBranch}</span>
-                      </div>
-                      <div className="pipeline-meta-row">
-                        <span>模板</span>
-                        <span>{pipeline.template?.name || '-'}</span>
-                      </div>
-                      <div className="pipeline-meta-row">
-                        <span>最近部署</span>
-                        <span>{latestOrder ? `第 ${latestOrder} 次` : '-'}</span>
                       </div>
                       <div className="pipeline-meta-row">
                         <span>部署人</span>
                         <span>{latestDeployment?.triggeredByDisplayName || latestDeployment?.triggeredBy || '-'}</span>
                       </div>
                       <div className="pipeline-meta-row">
-                        <span>部署时间</span>
-                        <span>{formatDateTime(latestDeployment?.createdAt)}</span>
+                        <span>开始时间</span>
+                        <span>{formatDateTime(latestDeployment?.startedAt || latestDeployment?.createdAt)}</span>
                       </div>
                       <div className="pipeline-meta-row">
-                        <span>耗时</span>
-                        <span>{formatDeploymentElapsed(latestDeployment, tick)}</span>
+                        <span>结束时间</span>
+                        <span>{formatDateTime(latestDeployment?.finishedAt)}</span>
                       </div>
                       <div className="pt-2">
                         <Progress
@@ -394,42 +391,47 @@ export default function UserPipelinesPage() {
                         />
                       </div>
                     </div>
-                    <Space>
-                      {activeDeployment ? (
+                    <div className="mt-1 flex items-end justify-between gap-3">
+                      <Space>
+                        {activeDeployment ? (
+                          <Button
+                            danger
+                            loading={submittingId === pipeline.id}
+                            onClick={() => {
+                              setSubmittingId(pipeline.id);
+                              stopDeployment(activeDeployment.id)
+                                .then(() => message.success('部署已停止'))
+                                .catch(() => message.error('停止部署失败'))
+                                .finally(() => setSubmittingId(undefined));
+                            }}
+                          >
+                            停止
+                          </Button>
+                        ) : (
+                          <Button
+                            type="primary"
+                            loading={submittingId === pipeline.id}
+                            onClick={() => openDeployModal(pipeline).catch(() => message.error('打开部署窗口失败'))}
+                          >
+                            部署
+                          </Button>
+                        )}
                         <Button
-                          danger
-                          loading={submittingId === pipeline.id}
-                          onClick={() => {
-                            setSubmittingId(pipeline.id);
-                            stopDeployment(activeDeployment.id)
-                              .then(() => message.success('部署已停止'))
-                              .catch(() => message.error('停止部署失败'))
-                              .finally(() => setSubmittingId(undefined));
-                          }}
+                          disabled={!latestDeployment}
+                          onClick={() => latestDeployment && navigate(`/user/deployments/${latestDeployment.id}`, {
+                            state: { from: '/user/pipelines', backLabel: '返回流水线大厅' },
+                          })}
                         >
-                          停止
+                          查看进度
                         </Button>
-                      ) : (
-                        <Button
-                          type="primary"
-                          loading={submittingId === pipeline.id}
-                          onClick={() => openDeployModal(pipeline).catch(() => message.error('打开部署窗口失败'))}
-                        >
-                          部署
+                        <Button onClick={() => navigate(`/user/pipelines/${pipeline.id}/history`)}>
+                          部署记录
                         </Button>
-                      )}
-                      <Button
-                        disabled={!latestDeployment}
-                        onClick={() => latestDeployment && navigate(`/user/deployments/${latestDeployment.id}`, {
-                          state: { from: '/user/pipelines', backLabel: '返回流水线大厅' },
-                        })}
-                      >
-                        查看进度
-                      </Button>
-                      <Button onClick={() => navigate(`/user/pipelines/${pipeline.id}/history`)}>
-                        部署记录
-                      </Button>
-                    </Space>
+                      </Space>
+                      <div className="shrink-0 text-xs text-slate-500">
+                        耗时 {formatDeploymentElapsed(latestDeployment, tick)}
+                      </div>
+                    </div>
                   </Card>
                 </Col>
               );

@@ -182,7 +182,7 @@ export default function ProjectAdminPage() {
     <>
       <PageHeaderBar
         title="项目管理"
-        description="维护项目名称、说明、仓库地址和项目自己的 Git 认证方式。不同项目可以对接不同 Git 平台和不同账号或 SSH 密钥。"
+        description="管理项目名称、仓库地址与 Git 认证配置。"
         extra={(
           <Space>
             <Button onClick={() => loadProjects().catch(() => message.error('加载项目失败'))}>刷新</Button>

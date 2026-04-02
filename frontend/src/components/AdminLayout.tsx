@@ -1,10 +1,12 @@
-import { AppstoreOutlined, DeploymentUnitOutlined, FileTextOutlined, FolderOpenOutlined, ProfileOutlined, RadarChartOutlined, SettingOutlined, CloudServerOutlined, TeamOutlined, LogoutOutlined, LockOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, DeploymentUnitOutlined, FileTextOutlined, FolderOpenOutlined, ProfileOutlined, RadarChartOutlined, SettingOutlined, CloudServerOutlined, TeamOutlined, LogoutOutlined, LockOutlined, GithubOutlined } from '@ant-design/icons';
 import { Button, Dropdown, Layout, Menu, Space, Typography } from 'antd';
 import { useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import ChangePasswordModal from './ChangePasswordModal';
 import deployBotLogo from '../assets/deploy-bot-logo.svg';
+
+const GITHUB_REPOSITORY_URL = 'https://github.com/shuangbofu/deploy-bot';
 
 /**
  * 管理端一级菜单配置。
@@ -84,6 +86,12 @@ export default function AdminLayout() {
               {user?.displayName || user?.username || '管理员'}
             </Button>
           </Dropdown>
+          <Button
+            href={GITHUB_REPOSITORY_URL}
+            target="_blank"
+            rel="noreferrer"
+            icon={<GithubOutlined />}
+          />
         </Space>
       </Layout.Header>
       <Layout.Content className="px-4 py-4">

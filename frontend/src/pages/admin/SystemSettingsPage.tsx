@@ -105,7 +105,7 @@ export default function SystemSettingsPage() {
     <>
       <PageHeaderBar
         title="系统设置"
-        description="在这里配置平台级参数。工作空间已经下沉到主机管理，这里只保留平台通用的 Git 执行和系统 SSH 密钥对。"
+        description="配置平台级 Git 执行参数，以及 Git SSH 和主机 SSH 密钥。"
         extra={<Button type="primary" loading={saving} onClick={() => saveSettings().catch(() => message.error('保存系统设置失败'))}>保存设置</Button>}
       />
       <Card className="app-card">

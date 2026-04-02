@@ -1,6 +1,8 @@
 package top.fusb.deploybot.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import top.fusb.deploybot.dto.DeploymentRequest;
+import top.fusb.deploybot.dto.TemplateVariable;
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorSubCode;
 import top.fusb.deploybot.model.DeploymentEntity;
@@ -739,23 +741,58 @@ public class DeploymentService {
         snapshot.put("mavenEnvironment", summarizeRuntimeEnvironment(pipeline.getMavenEnvironment()));
         snapshot.put("runtimeJavaEnvironment", summarizeRuntimeEnvironment(pipeline.getRuntimeJavaEnvironment()));
 
-        Map<String, String> importantVariables = new LinkedHashMap<>();
-        copySnapshotVariable(importantVariables, variables, "targetDir");
-        copySnapshotVariable(importantVariables, variables, "jarPath");
-        copySnapshotVariable(importantVariables, variables, "startCommand");
-        copySnapshotVariable(importantVariables, variables, "buildCommand");
-        copySnapshotVariable(importantVariables, variables, "frontendBuildCommand");
-        copySnapshotVariable(importantVariables, variables, "backendBuildCommand");
-        copySnapshotVariable(importantVariables, variables, "frontendDir");
-        copySnapshotVariable(importantVariables, variables, "backendDir");
-        copySnapshotVariable(importantVariables, variables, "distDir");
-        snapshot.put("variables", importantVariables);
+        snapshot.put("variables", buildExecutionSnapshotVariables(pipeline, variables));
 
         String runtimeConfigYaml = pipeline.getRuntimeConfigYaml();
         if (runtimeConfigYaml != null && !runtimeConfigYaml.isBlank()) {
             snapshot.put("runtimeConfigYaml", runtimeConfigYaml);
         }
         return jsonMapper.write(snapshot);
+    }
+
+    private List<Map<String, Object>> buildExecutionSnapshotVariables(PipelineEntity pipeline, Map<String, String> variables) {
+        Map<String, String> labels = new LinkedHashMap<>();
+        if (pipeline.getTemplate() != null && pipeline.getTemplate().getVariablesSchema() != null && !pipeline.getTemplate().getVariablesSchema().isBlank()) {
+            List<TemplateVariable> templateVariables = jsonMapper.read(
+                    pipeline.getTemplate().getVariablesSchema(),
+                    new TypeReference<List<TemplateVariable>>() {
+                    }
+            );
+            for (TemplateVariable item : templateVariables) {
+                if (item != null && item.name() != null && !item.name().isBlank()) {
+                    labels.put(item.name(), item.label() == null || item.label().isBlank() ? item.name() : item.label());
+                }
+            }
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        addExecutionSnapshotVariable(result, labels, variables, "targetDir");
+        addExecutionSnapshotVariable(result, labels, variables, "jarPath");
+        addExecutionSnapshotVariable(result, labels, variables, "startCommand");
+        addExecutionSnapshotVariable(result, labels, variables, "buildCommand");
+        addExecutionSnapshotVariable(result, labels, variables, "frontendBuildCommand");
+        addExecutionSnapshotVariable(result, labels, variables, "backendBuildCommand");
+        addExecutionSnapshotVariable(result, labels, variables, "frontendDir");
+        addExecutionSnapshotVariable(result, labels, variables, "backendDir");
+        addExecutionSnapshotVariable(result, labels, variables, "distDir");
+        return result;
+    }
+
+    private void addExecutionSnapshotVariable(
+            List<Map<String, Object>> result,
+            Map<String, String> labels,
+            Map<String, String> variables,
+            String key
+    ) {
+        String value = variables.get(key);
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("name", key);
+        item.put("label", labels.getOrDefault(key, key));
+        item.put("value", value);
+        result.add(item);
     }
 
     private Map<String, Object> summarizeRuntimeEnvironment(RuntimeEnvironmentEntity environment) {

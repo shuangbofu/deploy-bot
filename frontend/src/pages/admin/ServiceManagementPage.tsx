@@ -80,7 +80,7 @@ export default function ServiceManagementPage() {
     <>
       <PageHeaderBar
         title="服务管理"
-        description="这里管理模板声明为“监控进程”的服务，可以查看运行状态、停止、启动和重启。"
+        description="查看受管服务状态，并执行启动、停止或重启操作。"
         extra={<Button onClick={() => loadServices().catch(() => message.error('刷新失败'))}>刷新</Button>}
       />
       <Card className="app-card">

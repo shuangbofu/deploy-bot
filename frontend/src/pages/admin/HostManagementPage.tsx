@@ -208,7 +208,7 @@ export default function HostManagementPage() {
     <>
       <PageHeaderBar
         title="主机管理"
-        description="统一管理本机和远程主机。流水线只选择目标主机，运行环境也归属到对应主机。"
+        description="管理本机与远程主机，以及对应的连接与工作空间配置。"
         extra={(
           <Space>
             <Button onClick={() => loadHosts().catch(() => message.error('加载主机失败'))}>刷新</Button>
