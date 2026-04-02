@@ -3,7 +3,9 @@ package top.fusb.deploybot.controller;
 import top.fusb.deploybot.dto.HostRequest;
 import top.fusb.deploybot.dto.HostConnectionTestResult;
 import top.fusb.deploybot.dto.HostResourceSnapshot;
+import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.model.HostEntity;
+import top.fusb.deploybot.model.HostType;
 import top.fusb.deploybot.security.AdminOnly;
 import top.fusb.deploybot.service.HostService;
 import jakarta.validation.Valid;
@@ -36,6 +38,17 @@ public class HostController {
     @GetMapping
     public List<HostEntity> list(@RequestParam(defaultValue = "false") boolean enabledOnly) {
         return enabledOnly ? hostService.findEnabled() : hostService.findAll();
+    }
+
+    @GetMapping("/page")
+    public PageResult<HostEntity> page(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int pageSize,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) HostType type,
+            @RequestParam(required = false) Boolean enabled
+    ) {
+        return hostService.findPage(page, pageSize, keyword, type, enabled);
     }
 
     /**

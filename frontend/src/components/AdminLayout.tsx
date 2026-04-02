@@ -1,4 +1,4 @@
-import { AppstoreOutlined, DeploymentUnitOutlined, FileTextOutlined, FolderOpenOutlined, ProfileOutlined, RadarChartOutlined, SettingOutlined, CloudServerOutlined, TeamOutlined, LogoutOutlined, LockOutlined, GithubOutlined, RobotOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, DeploymentUnitOutlined, FileTextOutlined, FolderOpenOutlined, ProfileOutlined, RadarChartOutlined, SettingOutlined, CloudServerOutlined, TeamOutlined, LogoutOutlined, LockOutlined, GithubOutlined, RobotOutlined, NotificationOutlined } from '@ant-design/icons';
 import { Avatar, Button, Dropdown, Layout, Menu, Space, Typography } from 'antd';
 import { useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -20,8 +20,9 @@ const menuItems = [
   { key: '/admin/templates', icon: <FileTextOutlined />, label: '模板' },
   { key: '/admin/pipelines', icon: <DeploymentUnitOutlined />, label: '流水线' },
   { key: '/admin/deployments', icon: <ProfileOutlined />, label: '部署记录' },
-  { key: '/admin/services', icon: <RadarChartOutlined />, label: '服务管理' },
-  { key: '/admin/users', icon: <TeamOutlined />, label: '用户管理' },
+  { key: '/admin/services', icon: <RadarChartOutlined />, label: '服务' },
+  { key: '/admin/notifications', icon: <NotificationOutlined />, label: '通知' },
+  { key: '/admin/users', icon: <TeamOutlined />, label: '用户' },
   { key: '/admin/system-settings', icon: <SettingOutlined />, label: '系统设置' },
 ];
 

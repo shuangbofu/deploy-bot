@@ -1,5 +1,6 @@
 package top.fusb.deploybot.controller;
 
+import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.dto.ProjectConnectionTestResult;
 import top.fusb.deploybot.dto.ProjectRequest;
 import top.fusb.deploybot.model.ProjectEntity;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -34,6 +36,16 @@ public class ProjectController {
     @GetMapping
     public List<ProjectEntity> list() {
         return service.findAll();
+    }
+
+    @GetMapping("/page")
+    public PageResult<ProjectEntity> page(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int pageSize,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String gitAuthType
+    ) {
+        return service.findPage(page, pageSize, keyword, gitAuthType);
     }
 
     /**

@@ -14,12 +14,17 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
 @Service
 public class ServiceManager {
     private static final Logger log = LoggerFactory.getLogger(ServiceManager.class);
+    private static final Comparator<ServiceEntity> SERVICE_HEARTBEAT_COMPARATOR =
+            Comparator.comparing(ServiceEntity::getLastHeartbeatAt, Comparator.nullsLast(Comparator.reverseOrder()))
+                    .thenComparing(ServiceEntity::getUpdatedAt, Comparator.nullsLast(Comparator.reverseOrder()))
+                    .thenComparing(ServiceEntity::getId, Comparator.nullsLast(Comparator.reverseOrder()));
 
     private final ServiceRepository serviceRepository;
     private final JsonMapper jsonMapper;
@@ -32,8 +37,9 @@ public class ServiceManager {
     }
 
     public List<ServiceEntity> findAll() {
-        List<ServiceEntity> services = serviceRepository.findAllByOrderByUpdatedAtDesc();
+        List<ServiceEntity> services = serviceRepository.findAll();
         services.forEach(this::refreshStatus);
+        services.sort(SERVICE_HEARTBEAT_COMPARATOR);
         return services;
     }
 

@@ -1,6 +1,7 @@
 package top.fusb.deploybot.service;
 
 import top.fusb.deploybot.dto.ProjectConnectionTestResult;
+import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.dto.ProjectRequest;
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorSubCode;
@@ -9,6 +10,8 @@ import top.fusb.deploybot.model.ProjectEntity;
 import top.fusb.deploybot.repo.ProjectRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.io.BufferedReader;
@@ -19,6 +22,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -37,6 +41,24 @@ public class ProjectService {
 
     public List<ProjectEntity> findAll() {
         return repository.findAll();
+    }
+
+    public PageResult<ProjectEntity> findPage(int page, int pageSize, String keyword, String gitAuthType) {
+        return PageResult.of(repository.findAll((root, query, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new java.util.ArrayList<>();
+            if (keyword != null && !keyword.isBlank()) {
+                String pattern = "%" + keyword.trim().toLowerCase() + "%";
+                predicates.add(cb.or(
+                        cb.like(cb.lower(root.get("name")), pattern),
+                        cb.like(cb.lower(root.get("description")), pattern),
+                        cb.like(cb.lower(root.get("gitUrl")), pattern)
+                ));
+            }
+            if (gitAuthType != null && !gitAuthType.isBlank()) {
+                predicates.add(cb.equal(root.get("gitAuthType"), GitAuthType.valueOf(gitAuthType)));
+            }
+            return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+        }, PageRequest.of(Math.max(0, page - 1), Math.max(1, Math.min(100, pageSize)), Sort.by(Sort.Order.desc("id")))));
     }
 
     /**
@@ -171,6 +193,20 @@ public class ProjectService {
      */
     private String trimToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private boolean matchesKeyword(ProjectEntity item, String keyword) {
+        if (keyword == null || keyword.isBlank()) {
+            return true;
+        }
+        String normalized = keyword.trim().toLowerCase();
+        return contains(item.getName(), normalized)
+                || contains(item.getDescription(), normalized)
+                || contains(item.getGitUrl(), normalized);
+    }
+
+    private boolean contains(String value, String keyword) {
+        return value != null && value.toLowerCase().contains(keyword);
     }
 
     private String summarizeOutput(String output, int maxLines) {

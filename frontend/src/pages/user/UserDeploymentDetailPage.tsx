@@ -7,6 +7,7 @@ import PageHeaderBar from '../../components/PageHeaderBar';
 import StatusTag from '../../components/StatusTag';
 import { ACTIVE_DEPLOYMENT_STATUSES } from '../../constants/deployment';
 import type { DeploymentSummary } from '../../types/domain';
+import { copyText } from '../../utils/clipboard';
 import { formatDateTime } from '../../utils/datetime';
 import { formatDeploymentElapsed } from '../../utils/deploymentDuration';
 import { getDeploymentProgress, getDeploymentProgressColor } from '../../utils/deploymentProgress';
@@ -257,7 +258,7 @@ export default function UserDeploymentDetailPage() {
             title="部署日志"
             extra={(
               <Space>
-                <Button onClick={() => navigator.clipboard.writeText(logContent).then(() => message.success('日志已复制')).catch(() => message.error('复制失败'))}>
+                <Button onClick={() => copyText(logContent).then(() => message.success('日志已复制')).catch(() => message.error('复制失败'))}>
                   复制日志
                 </Button>
               </Space>

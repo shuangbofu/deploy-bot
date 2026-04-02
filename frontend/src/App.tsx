@@ -8,6 +8,7 @@ import AdminDeploymentDetailPage from './pages/admin/AdminDeploymentDetailPage';
 import DeploymentRecordsPage from './pages/admin/DeploymentRecordsPage';
 import HostManagementPage from './pages/admin/HostManagementPage';
 import PipelineAdminPage from './pages/admin/PipelineAdminPage';
+import NotificationAdminPage from './pages/admin/NotificationAdminPage';
 import ProjectAdminPage from './pages/admin/ProjectAdminPage';
 import RuntimeEnvironmentsPage from './pages/admin/RuntimeEnvironmentsPage';
 import ServiceManagementPage from './pages/admin/ServiceManagementPage';
@@ -18,8 +19,14 @@ import LoginPage from './pages/LoginPage';
 import UserDashboardPage from './pages/user/UserDashboardPage';
 import UserDeploymentDetailPage from './pages/user/UserDeploymentDetailPage';
 import UserDeploymentRecordsPage from './pages/user/UserDeploymentRecordsPage';
+import UserNotificationRecordsPage from './pages/user/UserNotificationRecordsPage';
 import UserPipelineHistoryPage from './pages/user/UserPipelineHistoryPage';
 import UserPipelinesPage from './pages/user/UserPipelinesPage';
+
+function buildLoginRedirectTarget(location: ReturnType<typeof useLocation>) {
+  const callback = `${location.pathname}${location.search}${location.hash}`;
+  return `/login?callback=${encodeURIComponent(callback)}`;
+}
 
 /**
  * 前端路由总入口。
@@ -41,7 +48,7 @@ function RequireAuth() {
     return <RouteLoading />;
   }
   if (!user) {
-    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+    return <Navigate to={buildLoginRedirectTarget(location)} replace state={{ from: `${location.pathname}${location.search}${location.hash}` }} />;
   }
   return <Outlet />;
 }
@@ -54,7 +61,7 @@ function RequireAdmin() {
     return <RouteLoading />;
   }
   if (!user) {
-    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+    return <Navigate to={buildLoginRedirectTarget(location)} replace state={{ from: `${location.pathname}${location.search}${location.hash}` }} />;
   }
   if (!isAdmin) {
     return <Navigate to="/user/dashboard" replace />;
@@ -88,6 +95,7 @@ export default function App() {
           <Route path="hosts/:hostId/environments" element={<RuntimeEnvironmentsPage />} />
           <Route path="templates" element={<TemplateAdminPage />} />
           <Route path="pipelines" element={<PipelineAdminPage />} />
+          <Route path="notifications" element={<NotificationAdminPage />} />
           <Route path="users" element={<UserAdminPage />} />
           <Route path="system-settings" element={<SystemSettingsPage />} />
           <Route path="deployments" element={<DeploymentRecordsPage />} />
@@ -101,6 +109,7 @@ export default function App() {
           <Route path="dashboard" element={<UserDashboardPage />} />
           <Route path="pipelines" element={<UserPipelinesPage />} />
           <Route path="deployments" element={<UserDeploymentRecordsPage />} />
+          <Route path="notification-records" element={<UserNotificationRecordsPage />} />
           <Route path="pipelines/:pipelineId/history" element={<UserPipelineHistoryPage />} />
           <Route path="deployments/:deploymentId" element={<UserDeploymentDetailPage />} />
         </Route>

@@ -1,7 +1,9 @@
 package top.fusb.deploybot.controller;
 
 import top.fusb.deploybot.dto.DeploymentRequest;
+import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.model.DeploymentEntity;
+import top.fusb.deploybot.model.DeploymentStatus;
 import top.fusb.deploybot.service.DeploymentService;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
@@ -11,6 +13,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import java.io.IOException;
 import java.util.List;
@@ -34,9 +37,39 @@ public class DeploymentController {
         return service.findAll();
     }
 
+    @GetMapping("/page")
+    public PageResult<DeploymentEntity> page(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int pageSize,
+            @RequestParam(required = false) String projectName,
+            @RequestParam(required = false) String pipelineName,
+            @RequestParam(required = false) String triggeredBy,
+            @RequestParam(required = false) DeploymentStatus status,
+            @RequestParam(required = false) Long startTime,
+            @RequestParam(required = false) Long endTime
+    ) {
+        return service.findPage(page, pageSize, projectName, pipelineName, triggeredBy, status, startTime, endTime);
+    }
+
     @GetMapping("/mine")
     public List<DeploymentEntity> mine() {
         return service.findMine();
+    }
+
+    @GetMapping("/mine/page")
+    public PageResult<DeploymentEntity> minePage(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int pageSize,
+            @RequestParam(required = false) String projectName,
+            @RequestParam(required = false) String pipelineName,
+            @RequestParam(required = false) String triggeredBy,
+            @RequestParam(required = false) String branchName,
+            @RequestParam(required = false) DeploymentStatus status,
+            @RequestParam(required = false) Long startTime,
+            @RequestParam(required = false) Long endTime,
+            @RequestParam(required = false) Long pipelineId
+    ) {
+        return service.findMinePage(page, pageSize, projectName, pipelineName, triggeredBy, branchName, status, startTime, endTime, pipelineId);
     }
 
     /**

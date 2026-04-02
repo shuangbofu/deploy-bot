@@ -3,6 +3,7 @@ package top.fusb.deploybot.service;
 import top.fusb.deploybot.dto.HostRequest;
 import top.fusb.deploybot.dto.HostConnectionTestResult;
 import top.fusb.deploybot.dto.HostResourceSnapshot;
+import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorSubCode;
 import top.fusb.deploybot.model.HostEntity;
@@ -14,6 +15,8 @@ import top.fusb.deploybot.repo.RuntimeEnvironmentRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.io.BufferedReader;
@@ -60,6 +63,33 @@ public class HostService {
         return hostRepository.findByEnabledTrueOrderByBuiltInDescTypeAscNameAsc();
     }
 
+    public PageResult<HostEntity> findPage(int page, int pageSize, String keyword, HostType type, Boolean enabled) {
+        ensureLocalHost();
+        return PageResult.of(hostRepository.findAll((root, query, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new java.util.ArrayList<>();
+            if (keyword != null && !keyword.isBlank()) {
+                String pattern = "%" + keyword.trim().toLowerCase(Locale.ROOT) + "%";
+                predicates.add(cb.or(
+                        cb.like(cb.lower(root.get("name")), pattern),
+                        cb.like(cb.lower(root.get("description")), pattern),
+                        cb.like(cb.lower(root.get("hostname")), pattern),
+                        cb.like(cb.lower(root.get("workspaceRoot")), pattern)
+                ));
+            }
+            if (type != null) {
+                predicates.add(cb.equal(root.get("type"), type));
+            }
+            if (enabled != null) {
+                predicates.add(cb.equal(root.get("enabled"), enabled));
+            }
+            return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+        }, PageRequest.of(
+                Math.max(0, page - 1),
+                Math.max(1, Math.min(100, pageSize)),
+                Sort.by(Sort.Order.desc("builtIn"), Sort.Order.asc("type"), Sort.Order.asc("name"))
+        )));
+    }
+
     public HostEntity findById(Long id) {
         ensureLocalHost();
         return hostRepository.findById(id)
@@ -83,6 +113,9 @@ public class HostService {
     public HostEntity save(HostRequest request, Long id) {
         HostEntity entity = id == null ? new HostEntity() : hostRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorSubCode.HOST_NOT_FOUND));
+        if (id == null && request.type() == HostType.LOCAL) {
+            throw new BusinessException(ErrorSubCode.BUILT_IN_LOCAL_HOST_TYPE_CHANGE_FORBIDDEN, "本机由系统自动创建，不支持手动新增。");
+        }
         if (Boolean.TRUE.equals(entity.getBuiltIn()) && request.type() != HostType.LOCAL) {
             throw new BusinessException(ErrorSubCode.BUILT_IN_LOCAL_HOST_TYPE_CHANGE_FORBIDDEN);
         }
@@ -284,6 +317,21 @@ public class HostService {
         command.add("bash -s");
         log.info("已构建主机 {} 的 SSH 命令，认证方式={}，超时时间={}秒。", host.getName(), authType, timeoutSeconds);
         return command;
+    }
+
+    private boolean matchesKeyword(HostEntity item, String keyword) {
+        if (keyword == null || keyword.isBlank()) {
+            return true;
+        }
+        String normalized = keyword.trim().toLowerCase(Locale.ROOT);
+        return contains(item.getName(), normalized)
+                || contains(item.getDescription(), normalized)
+                || contains(item.getHostname(), normalized)
+                || contains(item.getWorkspaceRoot(), normalized);
+    }
+
+    private boolean contains(String value, String keyword) {
+        return value != null && value.toLowerCase(Locale.ROOT).contains(keyword);
     }
 
     private String extractValue(String output, String prefix) {

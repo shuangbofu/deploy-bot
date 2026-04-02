@@ -22,7 +22,7 @@ import lombok.ToString;
 @Entity
 @Table(name = "pipelines")
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
-@ToString(exclude = {"project", "template", "targetHost", "javaEnvironment", "nodeEnvironment", "mavenEnvironment", "runtimeJavaEnvironment"})
+@ToString(exclude = {"project", "template", "targetHost", "javaEnvironment", "nodeEnvironment", "mavenEnvironment", "runtimeJavaEnvironment", "mavenSettings"})
 public class PipelineEntity {
 
     @Id
@@ -80,6 +80,11 @@ public class PipelineEntity {
     @JoinColumn(name = "maven_environment_id")
     private RuntimeEnvironmentEntity mavenEnvironment;
 
+    /** 本机构建时可选的 Maven Settings。 */
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "maven_settings_id")
+    private MavenSettingsEntity mavenSettings;
+
     /** 目标主机运行 Java 环境。 */
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "runtime_java_environment_id")
@@ -104,4 +109,9 @@ public class PipelineEntity {
 
     /** 启用服务监测时的启动观察窗口，单位秒。 */
     private Integer startupTimeoutSeconds;
+
+    /** 流水线绑定的通知配置。 */
+    @Lob
+    @Column(name = "notification_bindings_json")
+    private String notificationBindingsJson;
 }

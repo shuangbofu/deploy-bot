@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { RobotOutlined, UploadOutlined } from '@ant-design/icons';
 import { Avatar, Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Switch, Table, Upload, message } from 'antd';
 import type { UploadProps } from 'antd';
@@ -22,6 +22,7 @@ const emptyUser: UserPayload = {
  */
 export default function UserAdminPage() {
   const [users, setUsers] = useState<UserSummary[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<number>();
@@ -34,7 +35,15 @@ export default function UserAdminPage() {
   const loadUsers = async () => {
     setLoading(true);
     try {
-      setUsers(await usersApi.list());
+      const result = await usersApi.listPage({
+        page: pagination.current,
+        pageSize: pagination.pageSize,
+        keyword: keyword.trim() || undefined,
+        role: roleFilter,
+        enabled: enabledFilter,
+      });
+      setUsers(result.items);
+      setTotal(result.total);
     } finally {
       setLoading(false);
     }
@@ -42,7 +51,7 @@ export default function UserAdminPage() {
 
   useEffect(() => {
     loadUsers().catch(() => message.error('加载用户失败'));
-  }, []);
+  }, [pagination.current, pagination.pageSize, keyword, roleFilter, enabledFilter]);
 
   const openCreate = () => {
     setEditingId(undefined);
@@ -85,24 +94,6 @@ export default function UserAdminPage() {
     await usersApi.resetPassword(record.id);
     message.success(`已将 ${record.displayName} 的密码重置为系统默认密码`);
   };
-
-  const filteredUsers = useMemo(() => users.filter((item) => {
-    const normalizedKeyword = keyword.trim().toLowerCase();
-    if (normalizedKeyword) {
-      const matched = [item.username, item.displayName]
-        .some((value) => String(value || '').toLowerCase().includes(normalizedKeyword));
-      if (!matched) {
-        return false;
-      }
-    }
-    if (roleFilter && item.role !== roleFilter) {
-      return false;
-    }
-    if (enabledFilter !== undefined && item.enabled !== enabledFilter) {
-      return false;
-    }
-    return true;
-  }), [users, keyword, roleFilter, enabledFilter]);
 
   const uploadProps: UploadProps = {
     showUploadList: false,
@@ -188,12 +179,12 @@ export default function UserAdminPage() {
         <Table
           rowKey="id"
           loading={loading}
-          dataSource={filteredUsers}
+          dataSource={users}
           locale={{ emptyText: <EmptyPane description="还没有额外用户，先创建一个账号。" /> }}
           pagination={{
             current: pagination.current,
             pageSize: pagination.pageSize,
-            total: filteredUsers.length,
+            total,
             showSizeChanger: true,
             showTotal: (total) => `共 ${total} 条`,
             onChange: (current, pageSize) => setPagination({ current, pageSize }),

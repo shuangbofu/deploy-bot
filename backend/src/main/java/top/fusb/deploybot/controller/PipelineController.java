@@ -1,5 +1,6 @@
 package top.fusb.deploybot.controller;
 
+import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.dto.PipelineRequest;
 import top.fusb.deploybot.model.PipelineEntity;
 import top.fusb.deploybot.security.AdminOnly;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -35,6 +37,24 @@ public class PipelineController {
     @GetMapping
     public List<PipelineEntity> list() {
         return service.findAll();
+    }
+
+    @GetMapping("/page")
+    public PageResult<PipelineEntity> page(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int pageSize,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Long projectId,
+            @RequestParam(required = false) Long templateId,
+            @RequestParam(required = false) Long hostId,
+            @RequestParam(required = false) List<String> tags
+    ) {
+        return service.findPage(page, pageSize, keyword, projectId, templateId, hostId, tags);
+    }
+
+    @GetMapping("/tags")
+    public List<String> tags() {
+        return service.findAllTags();
     }
 
     /**

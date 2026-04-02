@@ -29,6 +29,8 @@ public record PipelineRequest(
         Long nodeEnvironmentId,
         /** 本机构建 Maven 环境 ID。 */
         Long mavenEnvironmentId,
+        /** 本机构建 Maven Settings ID。 */
+        Long mavenSettingsId,
         /** 目标主机运行 Java 环境 ID。 */
         Long runtimeJavaEnvironmentId,
         /** 开启发布监控时用于生成唯一产物名的应用名。 */
@@ -40,6 +42,8 @@ public record PipelineRequest(
         /** 启用服务监测时的启动关键字。 */
         String startupKeyword,
         /** 启用服务监测时的启动观察窗口，单位秒。 */
-        Integer startupTimeoutSeconds
+        Integer startupTimeoutSeconds,
+        /** 流水线绑定的通知配置 JSON。 */
+        String notificationBindingsJson
 ) {
 }

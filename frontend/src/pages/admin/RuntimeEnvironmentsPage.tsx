@@ -1,14 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Form, Input, Modal, Popconfirm, Segmented, Select, Space, Switch, Table, Tag, message } from 'antd';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Button, Card, Collapse, Form, Input, Modal, Popconfirm, Segmented, Select, Space, Switch, Table, Tag, message } from 'antd';
 import { useNavigate, useParams } from 'react-router-dom';
 import { hostsApi } from '../../api/hosts';
 import { runtimeEnvironmentsApi } from '../../api/runtimeEnvironments';
-import type { DetectionItem, PresetItem, RuntimeEnvironmentInstallTaskStatus, RuntimeEnvironmentPayload } from '../../api/types';
+import type { DetectionItem, MavenSettingsPayload, PresetItem, RuntimeEnvironmentInstallTaskStatus, RuntimeEnvironmentPayload } from '../../api/types';
 import BooleanBadge from '../../components/BooleanBadge';
 import EnvironmentVariablesEditor from '../../components/EnvironmentVariablesEditor';
 import EmptyPane from '../../components/EmptyPane';
+import JsonEditor from '../../components/JsonEditor';
 import PageHeaderBar from '../../components/PageHeaderBar';
-import type { HostSummary, RuntimeEnvironmentSummary, RuntimeEnvironmentType } from '../../types/domain';
+import type { HostSummary, MavenSettingsSummary, RuntimeEnvironmentSummary, RuntimeEnvironmentType } from '../../types/domain';
 import { formatDateTime } from '../../utils/datetime';
 
 const typeOptions: { label: string; value: RuntimeEnvironmentType }[] = [
@@ -48,6 +49,14 @@ interface RuntimeEnvironmentFormState {
   enabled: boolean;
 }
 
+interface MavenSettingsFormState {
+  name: string;
+  description: string;
+  contentXml: string;
+  enabled: boolean;
+  isDefault: boolean;
+}
+
 const emptyEnvironment: RuntimeEnvironmentFormState = {
   name: '',
   type: 'JAVA',
@@ -58,6 +67,14 @@ const emptyEnvironment: RuntimeEnvironmentFormState = {
   activationScript: '',
   environmentVariables: [],
   enabled: true,
+};
+
+const emptyMavenSettings: MavenSettingsFormState = {
+  name: '',
+  description: '',
+  contentXml: '',
+  enabled: true,
+  isDefault: false,
 };
 
 const parseEnvironmentVariables = (content: unknown): EnvironmentVariableItem[] => {
@@ -139,6 +156,13 @@ export default function RuntimeEnvironmentsPage() {
   const [installTasks, setInstallTasks] = useState<RuntimeEnvironmentInstallTaskStatus[]>([]);
   const [presetUsageFilter, setPresetUsageFilter] = useState('all');
   const [presetTypeFilter, setPresetTypeFilter] = useState('all');
+  const [mavenSettingsModalOpen, setMavenSettingsModalOpen] = useState(false);
+  const [mavenSettingsLoading, setMavenSettingsLoading] = useState(false);
+  const [mavenSettingsEnvironment, setMavenSettingsEnvironment] = useState<RuntimeEnvironmentSummary | null>(null);
+  const [mavenSettingsList, setMavenSettingsList] = useState<MavenSettingsSummary[]>([]);
+  const [editingMavenSettingsId, setEditingMavenSettingsId] = useState<number>();
+  const [mavenSettingsForm, setMavenSettingsForm] = useState<MavenSettingsFormState>(emptyMavenSettings);
+  const mavenSettingsFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadEnvironments = async () => {
     const [hostResponse, response, taskResponse] = await Promise.all([
@@ -224,6 +248,80 @@ export default function RuntimeEnvironmentsPage() {
     await runtimeEnvironmentsApi.remove(id);
     await loadEnvironments();
     message.success('运行环境已删除');
+  };
+
+  const loadMavenSettings = async (runtimeEnvironmentId: number) => {
+    setMavenSettingsLoading(true);
+    try {
+      setMavenSettingsList(await runtimeEnvironmentsApi.listMavenSettings(runtimeEnvironmentId));
+    } finally {
+      setMavenSettingsLoading(false);
+    }
+  };
+
+  const openMavenSettingsModal = async (record: RuntimeEnvironmentSummary) => {
+    setMavenSettingsEnvironment(record);
+    setEditingMavenSettingsId(undefined);
+    setMavenSettingsForm(emptyMavenSettings);
+    setMavenSettingsModalOpen(true);
+    await loadMavenSettings(record.id);
+  };
+
+  const openEditMavenSettings = (record: MavenSettingsSummary) => {
+    setEditingMavenSettingsId(record.id);
+    setMavenSettingsForm({
+      name: record.name || '',
+      description: record.description || '',
+      contentXml: record.contentXml || '',
+      enabled: record.enabled !== false,
+      isDefault: Boolean(record.isDefault),
+    });
+  };
+
+  const saveMavenSettings = async () => {
+    if (!mavenSettingsEnvironment) {
+      return;
+    }
+    const payload: MavenSettingsPayload = {
+      name: mavenSettingsForm.name,
+      description: mavenSettingsForm.description,
+      contentXml: mavenSettingsForm.contentXml,
+      enabled: mavenSettingsForm.enabled,
+      isDefault: mavenSettingsForm.isDefault,
+    };
+    if (editingMavenSettingsId) {
+      await runtimeEnvironmentsApi.updateMavenSettings(mavenSettingsEnvironment.id, editingMavenSettingsId, payload);
+    } else {
+      await runtimeEnvironmentsApi.createMavenSettings(mavenSettingsEnvironment.id, payload);
+    }
+    setEditingMavenSettingsId(undefined);
+    setMavenSettingsForm(emptyMavenSettings);
+    await loadMavenSettings(mavenSettingsEnvironment.id);
+    message.success(editingMavenSettingsId ? 'settings.xml 已更新' : 'settings.xml 已创建');
+  };
+
+  const removeMavenSettings = async (id: number) => {
+    if (!mavenSettingsEnvironment) {
+      return;
+    }
+    await runtimeEnvironmentsApi.removeMavenSettings(mavenSettingsEnvironment.id, id);
+    await loadMavenSettings(mavenSettingsEnvironment.id);
+    message.success('settings.xml 已删除');
+  };
+
+  const importMavenSettingsFile = async (file?: File | null) => {
+    if (!file) {
+      return;
+    }
+    const content = await file.text();
+    setMavenSettingsForm((previous) => ({
+      ...previous,
+      name: previous.name || file.name.replace(/\.xml$/i, ''),
+      contentXml: content.replace(/\r\n/g, '\n'),
+    }));
+    if (mavenSettingsFileInputRef.current) {
+      mavenSettingsFileInputRef.current.value = '';
+    }
   };
 
   const openDetectModal = async () => {
@@ -324,35 +422,46 @@ export default function RuntimeEnvironmentsPage() {
           <Button key="create" type="primary" onClick={openCreate}>新建运行环境</Button>,
         ]}
       />
-      <Card className="app-card mb-4" size="small" title="安装任务">
-        {installTasks.length === 0 ? (
-          <EmptyPane description="当前还没有下载安装记录。" />
-        ) : (
-          <div className="space-y-3">
-            {installTasks.slice(0, 8).map((item) => (
-              <div key={item.taskId} className="flex items-start justify-between gap-4 rounded-xl border border-slate-200 px-4 py-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <div className="font-medium text-slate-800">{item.presetName}</div>
-                    {renderInstallTaskStatus(item)}
+      <div className="app-page-scroll">
+        <Card className="app-card mb-4" size="small">
+          <Collapse
+            ghost
+            defaultActiveKey={[]}
+            items={[
+              {
+                key: 'install-tasks',
+                label: `安装任务${installTasks.length > 0 ? `（${installTasks.length}）` : ''}`,
+                children: installTasks.length === 0 ? (
+                  <EmptyPane description="当前还没有下载安装记录。" />
+                ) : (
+                  <div className="space-y-3">
+                    {installTasks.slice(0, 8).map((item) => (
+                      <div key={item.taskId} className="flex items-start justify-between gap-4 rounded-xl border border-slate-200 px-4 py-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <div className="font-medium text-slate-800">{item.presetName}</div>
+                            {renderInstallTaskStatus(item)}
+                          </div>
+                          <div className="mt-1 text-sm text-slate-500">
+                            {item.message || '-'}
+                          </div>
+                          <div className="mt-2 text-xs text-slate-400">
+                            开始时间：{formatDateTime(item.startedAt)}{item.finishedAt ? ` · 结束时间：${formatDateTime(item.finishedAt)}` : ''}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <div className="mt-1 text-sm text-slate-500">
-                    {item.message || '-'}
-                  </div>
-                  <div className="mt-2 text-xs text-slate-400">
-                    开始时间：{formatDateTime(item.startedAt)}{item.finishedAt ? ` · 结束时间：${formatDateTime(item.finishedAt)}` : ''}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
-      <Card className="app-card">
-        {groupedData.length === 0 ? (
-          <EmptyPane description="还没有运行环境，先录入 Java / Node / Maven 的可用版本。" />
-        ) : (
-          <Table
+                ),
+              },
+            ]}
+          />
+        </Card>
+        <Card className="app-card">
+          {groupedData.length === 0 ? (
+            <EmptyPane description="还没有运行环境，先录入 Java / Node / Maven 的可用版本。" />
+          ) : (
+            <Table
             rowKey="id"
             scroll={{ x: 1120 }}
             dataSource={groupedData}
@@ -378,10 +487,15 @@ export default function RuntimeEnvironmentsPage() {
               },
               {
                 title: '操作',
-                width: 180,
+                width: 260,
                 render: (_, record) => (
                   <Space>
                     <Button size="small" onClick={() => openEdit(record)}>编辑</Button>
+                    {record.type === 'MAVEN' ? (
+                      <Button size="small" onClick={() => openMavenSettingsModal(record).catch(() => message.error('加载 Maven settings 失败'))}>
+                        Settings
+                      </Button>
+                    ) : null}
                     <Popconfirm
                       title="确认删除这个运行环境吗？"
                       okText="确认"
@@ -394,9 +508,10 @@ export default function RuntimeEnvironmentsPage() {
                 ),
               },
             ]}
-          />
-        )}
-      </Card>
+            />
+          )}
+        </Card>
+      </div>
       <Modal
         title={editingId ? '编辑运行环境' : '新建运行环境'}
         open={modalOpen}
@@ -451,6 +566,106 @@ export default function RuntimeEnvironmentsPage() {
             <Switch checked={form.enabled} checkedChildren="启用" unCheckedChildren="停用" onChange={(checked) => setForm({ ...form, enabled: checked })} />
           </Form.Item>
         </Form>
+      </Modal>
+      <Modal
+        title={mavenSettingsEnvironment ? `${mavenSettingsEnvironment.name} 的 settings.xml` : 'Maven Settings'}
+        open={mavenSettingsModalOpen}
+        width={1100}
+        footer={null}
+        onCancel={() => {
+          setMavenSettingsModalOpen(false);
+          setMavenSettingsEnvironment(null);
+          setEditingMavenSettingsId(undefined);
+          setMavenSettingsForm(emptyMavenSettings);
+          setMavenSettingsList([]);
+        }}
+        destroyOnClose
+      >
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.9fr)]">
+          <Card
+            size="small"
+            title={editingMavenSettingsId ? '编辑 settings.xml' : '新建 settings.xml'}
+            extra={(
+              <Space size="small">
+                <input
+                  ref={mavenSettingsFileInputRef}
+                  type="file"
+                  accept=".xml,text/xml,application/xml"
+                  className="hidden"
+                  onChange={(event) => importMavenSettingsFile(event.target.files?.[0]).catch(() => message.error('读取文件失败'))}
+                />
+                <Button size="small" onClick={() => mavenSettingsFileInputRef.current?.click()}>导入文件</Button>
+                <Button
+                  size="small"
+                  type="primary"
+                  onClick={() => saveMavenSettings().catch(() => message.error(editingMavenSettingsId ? '更新 settings.xml 失败' : '创建 settings.xml 失败'))}
+                >
+                  保存
+                </Button>
+              </Space>
+            )}
+          >
+            <Form layout="vertical">
+              <Form.Item label="配置名称">
+                <Input value={mavenSettingsForm.name} onChange={(event) => setMavenSettingsForm({ ...mavenSettingsForm, name: event.target.value })} placeholder="例如：公司私服 / 公网仓库" />
+              </Form.Item>
+              <Form.Item label="描述">
+                <Input value={mavenSettingsForm.description} onChange={(event) => setMavenSettingsForm({ ...mavenSettingsForm, description: event.target.value })} placeholder="可选。说明这份 settings.xml 用于哪个仓库或环境。" />
+              </Form.Item>
+              <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                <Form.Item label="启用">
+                  <Switch checked={mavenSettingsForm.enabled} checkedChildren="启用" unCheckedChildren="停用" onChange={(checked) => setMavenSettingsForm({ ...mavenSettingsForm, enabled: checked })} />
+                </Form.Item>
+                <Form.Item label="设为默认">
+                  <Switch checked={mavenSettingsForm.isDefault} checkedChildren="默认" unCheckedChildren="否" onChange={(checked) => setMavenSettingsForm({ ...mavenSettingsForm, isDefault: checked })} />
+                </Form.Item>
+              </div>
+              <Form.Item label="settings.xml">
+                <JsonEditor
+                  value={mavenSettingsForm.contentXml}
+                  onChange={(value) => setMavenSettingsForm({ ...mavenSettingsForm, contentXml: value })}
+                  rows={18}
+                  language="xml"
+                  placeholder="请输入或导入 Maven settings.xml 内容"
+                />
+              </Form.Item>
+            </Form>
+          </Card>
+          <Card size="small" title="当前 Maven 环境下的配置">
+            {mavenSettingsList.length === 0 ? (
+              <EmptyPane description="这套 Maven 环境下还没有 settings.xml，先在左侧新建或导入一份。" />
+            ) : (
+              <div className="space-y-3 max-h-[620px] overflow-auto pr-1">
+                {mavenSettingsList.map((item) => (
+                  <div key={item.id} className="rounded-2xl border border-slate-200 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="font-medium text-slate-800">{item.name}</div>
+                          {item.isDefault ? <span className="inline-flex rounded-full bg-emerald-600 px-2 py-0.5 text-[11px] font-medium text-white">默认</span> : null}
+                          {item.enabled === false ? <span className="inline-flex rounded-full bg-slate-500 px-2 py-0.5 text-[11px] font-medium text-white">停用</span> : null}
+                        </div>
+                        {item.description ? <div className="mt-1 text-sm text-slate-500">{item.description}</div> : null}
+                        <pre className="table-code-preview mt-3 max-h-[260px]">{item.contentXml}</pre>
+                      </div>
+                      <Space direction="vertical" size="small">
+                        <Button size="small" onClick={() => openEditMavenSettings(item)}>编辑</Button>
+                        <Popconfirm
+                          title="确认删除这份 settings.xml 吗？"
+                          okText="确认"
+                          cancelText="取消"
+                          onConfirm={() => removeMavenSettings(item.id).catch(() => message.error('删除 settings.xml 失败'))}
+                        >
+                          <Button size="small" danger>删除</Button>
+                        </Popconfirm>
+                      </Space>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </div>
       </Modal>
       <Modal
         title="自动检测运行环境"

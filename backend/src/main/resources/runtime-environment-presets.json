@@ -10,6 +10,16 @@
     "binPathTemplate": "${installRoot}/tools/java-8/bin"
   },
   {
+    "id": "java-11",
+    "name": "Temurin Java 11",
+    "type": "JAVA",
+    "version": "11",
+    "description": "Eclipse Temurin JDK 11，适合仍运行在 Java 11 的 Spring Boot / Java 项目。",
+    "downloadUrlTemplate": "https://api.adoptium.net/v3/binary/latest/11/ga/${os}/${arch}/jdk/hotspot/normal/eclipse",
+    "homePathTemplate": "${installRoot}/tools/java-11",
+    "binPathTemplate": "${installRoot}/tools/java-11/bin"
+  },
+  {
     "id": "java-17",
     "name": "Temurin Java 17",
     "type": "JAVA",
@@ -74,7 +84,7 @@
     "name": "Apache Maven 3.9.14",
     "type": "MAVEN",
     "version": "3.9.14",
-    "description": "Apache Maven 3.9 系列当前推荐版本。",
+    "description": "Apache Maven 3.9.14，官方当前稳定版，运行要求为 JDK 8+，适合 Java 8 / 11 / 17+ 项目。",
     "downloadUrlTemplate": "https://dlcdn.apache.org/maven/maven-3/3.9.14/binaries/apache-maven-3.9.14-bin.tar.gz",
     "homePathTemplate": "${installRoot}/tools/maven-3.9.14",
     "binPathTemplate": "${installRoot}/tools/maven-3.9.14/bin"

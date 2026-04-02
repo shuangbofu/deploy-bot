@@ -1,6 +1,8 @@
 import client from './client';
 import type {
   DetectionItem,
+  MavenSettingsPayload,
+  MavenSettingsSummary,
   PresetItem,
   RuntimeEnvironmentInstallAccepted,
   RuntimeEnvironmentInstallPayload,
@@ -31,4 +33,16 @@ export const runtimeEnvironmentsApi = {
   installPreset: async (payload: RuntimeEnvironmentInstallPayload) => (
     await client.post<RuntimeEnvironmentInstallAccepted>('/runtime-environments/install', payload)
   ).data,
+  listMavenSettings: async (runtimeEnvironmentId: number) => (
+    await client.get<MavenSettingsSummary[]>(`/runtime-environments/${runtimeEnvironmentId}/maven-settings`)
+  ).data,
+  createMavenSettings: async (runtimeEnvironmentId: number, payload: MavenSettingsPayload) => (
+    await client.post<MavenSettingsSummary>(`/runtime-environments/${runtimeEnvironmentId}/maven-settings`, payload)
+  ).data,
+  updateMavenSettings: async (runtimeEnvironmentId: number, id: number, payload: MavenSettingsPayload) => (
+    await client.put<MavenSettingsSummary>(`/runtime-environments/${runtimeEnvironmentId}/maven-settings/${id}`, payload)
+  ).data,
+  removeMavenSettings: async (runtimeEnvironmentId: number, id: number) => (
+    await client.delete(`/runtime-environments/${runtimeEnvironmentId}/maven-settings/${id}`)
+  ),
 };

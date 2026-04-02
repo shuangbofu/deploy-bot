@@ -2,6 +2,7 @@ package top.fusb.deploybot.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import top.fusb.deploybot.dto.DeploymentRequest;
+import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.dto.TemplateVariable;
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorSubCode;
@@ -22,6 +23,9 @@ import top.fusb.deploybot.security.AuthenticatedUser;
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.slf4j.Logger;
@@ -32,6 +36,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
@@ -101,6 +107,93 @@ public class DeploymentService {
         );
     }
 
+    public PageResult<DeploymentEntity> findPage(
+            int page,
+            int pageSize,
+            String projectName,
+            String pipelineName,
+            String triggeredBy,
+            DeploymentStatus status,
+            Long startTime,
+            Long endTime
+    ) {
+        requireCurrentUser();
+        Page<DeploymentEntity> result = deploymentRepository.findAll((root, query, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            var pipelineJoin = root.join("pipeline", jakarta.persistence.criteria.JoinType.LEFT);
+            var projectJoin = pipelineJoin.join("project", jakarta.persistence.criteria.JoinType.LEFT);
+            if (projectName != null && !projectName.isBlank()) {
+                predicates.add(cb.equal(projectJoin.get("name"), projectName));
+            }
+            if (pipelineName != null && !pipelineName.isBlank()) {
+                predicates.add(cb.equal(pipelineJoin.get("name"), pipelineName));
+            }
+            if (triggeredBy != null && !triggeredBy.isBlank()) {
+                String pattern = "%" + triggeredBy.trim().toLowerCase() + "%";
+                predicates.add(cb.like(cb.lower(root.get("triggeredBy")), pattern));
+            }
+            if (status != null) {
+                predicates.add(cb.equal(root.get("status"), status));
+            }
+            if (startTime != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), LocalDateTime.ofInstant(Instant.ofEpochMilli(startTime), ZoneId.systemDefault())));
+            }
+            if (endTime != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("createdAt"), LocalDateTime.ofInstant(Instant.ofEpochMilli(endTime), ZoneId.systemDefault())));
+            }
+            return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+        }, PageRequest.of(Math.max(0, page - 1), Math.max(1, Math.min(100, pageSize)), Sort.by(Sort.Order.desc("createdAt"))));
+        return PageResult.of(result.map(this::enrichTriggeredByDisplayName));
+    }
+
+    public PageResult<DeploymentEntity> findMinePage(
+            int page,
+            int pageSize,
+            String projectName,
+            String pipelineName,
+            String triggeredBy,
+            String branchName,
+            DeploymentStatus status,
+            Long startTime,
+            Long endTime,
+            Long pipelineId
+    ) {
+        AuthenticatedUser currentUser = requireCurrentUser();
+        Page<DeploymentEntity> result = deploymentRepository.findAll((root, query, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            var pipelineJoin = root.join("pipeline", jakarta.persistence.criteria.JoinType.LEFT);
+            var projectJoin = pipelineJoin.join("project", jakarta.persistence.criteria.JoinType.LEFT);
+            predicates.add(cb.equal(root.get("triggeredBy"), currentUser.username()));
+            if (projectName != null && !projectName.isBlank()) {
+                predicates.add(cb.equal(projectJoin.get("name"), projectName));
+            }
+            if (pipelineName != null && !pipelineName.isBlank()) {
+                predicates.add(cb.equal(pipelineJoin.get("name"), pipelineName));
+            }
+            if (pipelineId != null) {
+                predicates.add(cb.equal(pipelineJoin.get("id"), pipelineId));
+            }
+            if (triggeredBy != null && !triggeredBy.isBlank()) {
+                String pattern = "%" + triggeredBy.trim().toLowerCase() + "%";
+                predicates.add(cb.like(cb.lower(root.get("triggeredBy")), pattern));
+            }
+            if (branchName != null && !branchName.isBlank()) {
+                predicates.add(cb.like(cb.lower(root.get("branchName")), "%" + branchName.trim().toLowerCase() + "%"));
+            }
+            if (status != null) {
+                predicates.add(cb.equal(root.get("status"), status));
+            }
+            if (startTime != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), LocalDateTime.ofInstant(Instant.ofEpochMilli(startTime), ZoneId.systemDefault())));
+            }
+            if (endTime != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("createdAt"), LocalDateTime.ofInstant(Instant.ofEpochMilli(endTime), ZoneId.systemDefault())));
+            }
+            return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+        }, PageRequest.of(Math.max(0, page - 1), Math.max(1, Math.min(100, pageSize)), Sort.by(Sort.Order.desc("createdAt"))));
+        return PageResult.of(result.map(this::enrichTriggeredByDisplayName));
+    }
+
     public DeploymentEntity findById(Long id) {
         DeploymentEntity entity = deploymentRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorSubCode.DEPLOYMENT_NOT_FOUND));
@@ -113,6 +206,7 @@ public class DeploymentService {
         // 1. 读取并校验流水线。
         PipelineEntity pipeline = pipelineRepository.findById(request.pipelineId())
                 .orElseThrow(() -> new BusinessException(ErrorSubCode.PIPELINE_NOT_FOUND));
+        AuthenticatedUser currentUser = requireCurrentUser();
         log.info("Creating deployment for pipeline {} with requested branch {}.", pipeline.getName(), request.branchName());
         if (Boolean.TRUE.equals(pipeline.getTemplate().getMonitorProcess())) {
             ServiceEntity stoppedService = serviceManager.stopManagedServiceBeforeDeploy(pipeline.getId());
@@ -132,7 +226,7 @@ public class DeploymentService {
             if (!Boolean.TRUE.equals(request.replaceRunning())) {
                 throw new BusinessException(ErrorSubCode.PIPELINE_HAS_RUNNING_DEPLOYMENT);
             }
-            activeDeployments.forEach(item -> deploymentRunner.stop(item.getId()));
+            activeDeployments.forEach(item -> deploymentRunner.stop(item.getId(), currentUser.username()));
         }
 
         Map<String, String> variables = new LinkedHashMap<>(jsonMapper.toStringMap(pipeline.getVariablesJson()));
@@ -157,6 +251,7 @@ public class DeploymentService {
         variables.put("springProfile", pipeline.getSpringProfile() == null ? "" : pipeline.getSpringProfile());
         variables.put("runtimeConfigYaml", pipeline.getRuntimeConfigYaml() == null ? "" : pipeline.getRuntimeConfigYaml());
         variables.put("runtimeConfigYamlBase64", encodeRuntimeConfigYaml(pipeline.getRuntimeConfigYaml()));
+        variables.put("mavenSettingsXmlBase64", encodeMavenSettingsXml(pipeline));
         variables.put("workspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
         variables.put("buildWorkspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
         variables.put("deployWorkspaceRoot", deployWorkspaceRoot.toAbsolutePath().normalize().toString());
@@ -176,7 +271,6 @@ public class DeploymentService {
         entity.setBranchName(branch);
         entity.setVariablesJson(jsonMapper.write(variables));
         entity.setExecutionSnapshotJson(buildExecutionSnapshotJson(pipeline, branch, variables));
-        AuthenticatedUser currentUser = requireCurrentUser();
         entity.setTriggeredBy(currentUser.username() == null || currentUser.username().isBlank() ? DEFAULT_TRIGGER_USER : currentUser.username());
         entity.setStatus(DeploymentStatus.PENDING);
         entity.setCreatedAt(LocalDateTime.now());
@@ -262,6 +356,7 @@ public class DeploymentService {
         putEnvironmentVariables(variables, "JAVA", pipeline.getJavaEnvironment(), "JAVA_HOME");
         putEnvironmentVariables(variables, "NODE", pipeline.getNodeEnvironment(), "NODE_HOME");
         putEnvironmentVariables(variables, "MAVEN", pipeline.getMavenEnvironment(), "MAVEN_HOME");
+        augmentMavenBuildCommands(variables);
     }
 
     private void applyDeployRuntimeEnvironmentVariables(Map<String, String> variables, PipelineEntity pipeline) {
@@ -320,6 +415,10 @@ public class DeploymentService {
             appendActivationScript(lines, "JAVA", variables);
             appendActivationScript(lines, "NODE", variables);
             appendActivationScript(lines, "MAVEN", variables);
+            lines.add("if [ -n \"" + valueOf(variables, "MAVEN_SETTINGS_XML_BASE64") + "\" ]; then");
+            lines.add("  mkdir -p \"$(dirname \"" + escapeShell(valueOf(variables, "MAVEN_SETTINGS_FILE_PATH")) + "\")\"");
+            lines.add("  printf '%s' '" + escapeShell(valueOf(variables, "MAVEN_SETTINGS_XML_BASE64")) + "' | base64 --decode > \"" + escapeShell(valueOf(variables, "MAVEN_SETTINGS_FILE_PATH")) + "\"");
+            lines.add("fi");
         } else {
             lines.add("if [ -n \"" + valueOf(variables, "JAVA_HOME") + "\" ]; then");
             lines.add("  export JAVA_HOME=\"" + escapeShell(valueOf(variables, "JAVA_HOME")) + "\"");
@@ -357,6 +456,30 @@ public class DeploymentService {
 
         lines.add("");
         return String.join("\n", lines);
+    }
+
+    private void augmentMavenBuildCommands(Map<String, String> variables) {
+        String settingsXmlBase64 = variables.get("mavenSettingsXmlBase64");
+        if (settingsXmlBase64 == null || settingsXmlBase64.isBlank()) {
+            return;
+        }
+        String settingsFilePath = "{{workspaceRoot}}/config/maven-settings-{{deploymentId}}.xml";
+        variables.put("mavenSettingsFilePath", settingsFilePath);
+        variables.put("MAVEN_SETTINGS_FILE_PATH", settingsFilePath);
+        variables.put("MAVEN_SETTINGS_XML_BASE64", settingsXmlBase64);
+        rewriteMavenCommandVariable(variables, "buildCommand", settingsFilePath);
+        rewriteMavenCommandVariable(variables, "backendBuildCommand", settingsFilePath);
+    }
+
+    private void rewriteMavenCommandVariable(Map<String, String> variables, String key, String settingsFilePath) {
+        String command = variables.get(key);
+        if (command == null || command.isBlank()) {
+            return;
+        }
+        if (!command.contains("mvn") || command.contains(" -s ") || command.contains("--settings")) {
+            return;
+        }
+        variables.put(key, command.replaceAll("(^|\\s|&&|\\|\\|)(mvn)(?=\\s|$)", "$1$2 -s \"" + Matcher.quoteReplacement(settingsFilePath) + "\""));
     }
 
     private void appendPath(StringBuilder pathBuilder, String path) {
@@ -456,7 +579,7 @@ public class DeploymentService {
         if (entity.getStatus() != DeploymentStatus.PENDING && entity.getStatus() != DeploymentStatus.RUNNING) {
             throw new BusinessException(ErrorSubCode.DEPLOYMENT_NOT_STOPPABLE);
         }
-        deploymentRunner.stop(id);
+        deploymentRunner.stop(id, requireCurrentUser().username());
         return deploymentRepository.findById(id).orElse(entity);
     }
 
@@ -489,6 +612,7 @@ public class DeploymentService {
         variables.put("springProfile", pipeline.getSpringProfile() == null ? "" : pipeline.getSpringProfile());
         variables.put("runtimeConfigYaml", pipeline.getRuntimeConfigYaml() == null ? "" : pipeline.getRuntimeConfigYaml());
         variables.put("runtimeConfigYamlBase64", encodeRuntimeConfigYaml(pipeline.getRuntimeConfigYaml()));
+        variables.put("mavenSettingsXmlBase64", encodeMavenSettingsXml(pipeline));
         variables.put("workspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
         variables.put("buildWorkspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
         variables.put("deployWorkspaceRoot", deployWorkspaceRoot.toAbsolutePath().normalize().toString());
@@ -619,16 +743,18 @@ public class DeploymentService {
         if (entity == null) {
             return null;
         }
-        String username = entity.getTriggeredBy();
+        entity.setTriggeredByDisplayName(resolveDisplayName(entity.getTriggeredBy()));
+        entity.setStoppedByDisplayName(resolveDisplayName(entity.getStoppedBy()));
+        return entity;
+    }
+
+    private String resolveDisplayName(String username) {
         if (username == null || username.isBlank()) {
-            entity.setTriggeredByDisplayName(null);
-            return entity;
+            return null;
         }
-        String displayName = userRepository.findByUsername(username)
+        return userRepository.findByUsername(username)
                 .map(user -> user.getDisplayName() == null || user.getDisplayName().isBlank() ? user.getUsername() : user.getDisplayName())
                 .orElse(username);
-        entity.setTriggeredByDisplayName(displayName);
-        return entity;
     }
 
     private AuthenticatedUser requireCurrentUser() {
@@ -637,6 +763,56 @@ public class DeploymentService {
             throw new BusinessException(ErrorSubCode.AUTH_REQUIRED);
         }
         return currentUser;
+    }
+
+    private boolean matchesProject(DeploymentEntity item, String projectName) {
+        return projectName == null || projectName.isBlank()
+                || Objects.equals(item.getPipeline() == null || item.getPipeline().getProject() == null ? null : item.getPipeline().getProject().getName(), projectName);
+    }
+
+    private boolean matchesPipeline(DeploymentEntity item, String pipelineName) {
+        return pipelineName == null || pipelineName.isBlank()
+                || Objects.equals(item.getPipeline() == null ? null : item.getPipeline().getName(), pipelineName);
+    }
+
+    private boolean matchesTriggeredBy(DeploymentEntity item, String triggeredBy) {
+        if (triggeredBy == null || triggeredBy.isBlank()) {
+            return true;
+        }
+        String normalized = triggeredBy.trim().toLowerCase();
+        String displayName = resolveDisplayName(item.getTriggeredBy());
+        if (displayName == null) {
+            displayName = "";
+        }
+        displayName = displayName.toLowerCase();
+        String username = item.getTriggeredBy() == null ? "" : item.getTriggeredBy().toLowerCase();
+        return displayName.contains(normalized) || username.contains(normalized);
+    }
+
+    private boolean matchesBranch(DeploymentEntity item, String branchName) {
+        if (branchName == null || branchName.isBlank()) {
+            return true;
+        }
+        return item.getBranchName() != null && item.getBranchName().toLowerCase().contains(branchName.trim().toLowerCase());
+    }
+
+    private boolean matchesTimeRange(DeploymentEntity item, Long startTime, Long endTime) {
+        if (item.getCreatedAt() == null) {
+            return startTime == null && endTime == null;
+        }
+        if (startTime != null) {
+            LocalDateTime start = LocalDateTime.ofInstant(Instant.ofEpochMilli(startTime), ZoneId.systemDefault());
+            if (item.getCreatedAt().isBefore(start)) {
+                return false;
+            }
+        }
+        if (endTime != null) {
+            LocalDateTime end = LocalDateTime.ofInstant(Instant.ofEpochMilli(endTime), ZoneId.systemDefault());
+            if (item.getCreatedAt().isAfter(end)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void ensureDeploymentReadable(DeploymentEntity entity) {
@@ -730,6 +906,13 @@ public class DeploymentService {
         return Base64.getEncoder().encodeToString(runtimeConfigYaml.getBytes(StandardCharsets.UTF_8));
     }
 
+    private String encodeMavenSettingsXml(PipelineEntity pipeline) {
+        if (pipeline.getMavenSettings() == null || pipeline.getMavenSettings().getContentXml() == null || pipeline.getMavenSettings().getContentXml().isBlank()) {
+            return "";
+        }
+        return Base64.getEncoder().encodeToString(pipeline.getMavenSettings().getContentXml().getBytes(StandardCharsets.UTF_8));
+    }
+
     private String buildExecutionSnapshotJson(PipelineEntity pipeline, String branch, Map<String, String> variables) {
         Map<String, Object> snapshot = new LinkedHashMap<>();
         snapshot.put("pipelineName", pipeline.getName());
@@ -746,6 +929,7 @@ public class DeploymentService {
         snapshot.put("javaEnvironment", summarizeRuntimeEnvironment(pipeline.getJavaEnvironment()));
         snapshot.put("nodeEnvironment", summarizeRuntimeEnvironment(pipeline.getNodeEnvironment()));
         snapshot.put("mavenEnvironment", summarizeRuntimeEnvironment(pipeline.getMavenEnvironment()));
+        snapshot.put("mavenSettings", summarizeMavenSettings(pipeline));
         snapshot.put("runtimeJavaEnvironment", summarizeRuntimeEnvironment(pipeline.getRuntimeJavaEnvironment()));
 
         snapshot.put("variables", buildExecutionSnapshotVariables(pipeline, variables));
@@ -816,6 +1000,17 @@ public class DeploymentService {
         if (environment.getHost() != null) {
             summary.put("hostName", environment.getHost().getName());
         }
+        return summary;
+    }
+
+    private Map<String, Object> summarizeMavenSettings(PipelineEntity pipeline) {
+        if (pipeline.getMavenSettings() == null) {
+            return null;
+        }
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("name", pipeline.getMavenSettings().getName());
+        summary.put("enabled", pipeline.getMavenSettings().getEnabled());
+        summary.put("description", pipeline.getMavenSettings().getDescription());
         return summary;
     }
 

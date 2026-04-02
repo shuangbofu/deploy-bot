@@ -1,6 +1,6 @@
 import { useMemo, useRef } from 'react';
 
-type EditorLanguage = 'json' | 'shell';
+type EditorLanguage = 'json' | 'shell' | 'yaml' | 'xml';
 
 function escapeHtml(value: string) {
   return value
@@ -31,12 +31,41 @@ function highlightShell(value: string) {
   return html;
 }
 
+function highlightYaml(value: string) {
+  let html = escapeHtml(value);
+  html = html.replace(/(#.*)$/gm, '<span class="code-token-comment">$1</span>');
+  html = html.replace(/(\{\{[^}]+\}\})/g, '<span class="code-token-template">$1</span>');
+  html = html.replace(/("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/g, '<span class="code-token-string">$1</span>');
+  html = html.replace(/^(\s*)([A-Za-z0-9_.-]+)(\s*:)/gm, '$1<span class="code-token-keyword">$2</span>$3');
+  html = html.replace(/(:\s*)(true|false|null)\b/g, '$1<span class="code-token-keyword">$2</span>');
+  html = html.replace(/(:\s*)(-?\d+(?:\.\d+)?)\b/g, '$1<span class="code-token-number">$2</span>');
+  html = html.replace(/(:\s*)(\$\{[^}]+\}|\$[A-Za-z_][A-Za-z0-9_]*)/g, '$1<span class="code-token-variable">$2</span>');
+  return html;
+}
+
+function highlightXml(value: string) {
+  let html = escapeHtml(value);
+  html = html.replace(/(&lt;!--[\s\S]*?--&gt;)/g, '<span class="code-token-comment">$1</span>');
+  html = html.replace(/(&lt;\/?)([A-Za-z0-9_.:-]+)(.*?)(\/?&gt;)/g, (_, open: string, name: string, attrs: string, close: string) => {
+    const highlightedAttrs = attrs.replace(/([A-Za-z_:][A-Za-z0-9_.:-]*)(=)("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/g,
+      '<span class="code-token-keyword">$1</span>$2<span class="code-token-string">$3</span>');
+    return `${open}<span class="code-token-keyword">${name}</span>${highlightedAttrs}${close}`;
+  });
+  return html;
+}
+
 function highlightCode(value: string, language: EditorLanguage) {
   if (!value) {
     return '&nbsp;';
   }
   if (language === 'json') {
     return highlightJson(value);
+  }
+  if (language === 'yaml') {
+    return highlightYaml(value);
+  }
+  if (language === 'xml') {
+    return highlightXml(value);
   }
   return highlightShell(value);
 }
@@ -81,7 +110,7 @@ export default function JsonEditor({
             previewRef.current.scrollLeft = event.currentTarget.scrollLeft;
           }
         }}
-        placeholder={placeholder || (language === 'shell' ? '请输入 Shell 脚本' : '请输入 JSON')}
+        placeholder={placeholder || (language === 'shell' ? '请输入 Shell 脚本' : language === 'xml' ? '请输入 XML 配置' : '请输入 JSON')}
         spellCheck={false}
         className="code-editor-input"
       />

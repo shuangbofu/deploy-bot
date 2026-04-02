@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Card, DatePicker, Input, Popconfirm, Select, Space, Table, message } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { deploymentsApi } from '../../api/deployments';
+import { pipelinesApi } from '../../api/pipelines';
+import { projectsApi } from '../../api/projects';
 import EmptyPane from '../../components/EmptyPane';
 import PageHeaderBar from '../../components/PageHeaderBar';
 import StatusTag from '../../components/StatusTag';
@@ -26,68 +28,51 @@ const emptyFilters: DeploymentRecordFilters = {
 export default function DeploymentRecordsPage() {
   const navigate = useNavigate();
   const [deployments, setDeployments] = useState<DeploymentSummary[]>([]);
+  const [projectOptions, setProjectOptions] = useState<Array<{ label: string; value: string }>>([]);
+  const [pipelineOptions, setPipelineOptions] = useState<Array<{ label: string; value: string }>>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState<DeploymentRecordFilters>(emptyFilters);
   const [tick, setTick] = useState(() => Date.now());
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
 
-  /** 从后端读取全部部署记录。 */
   const loadDeployments = async () => {
     setLoading(true);
     try {
-      setDeployments(await deploymentsApi.list());
+      const result = await deploymentsApi.listPage({
+        page: pagination.current,
+        pageSize: pagination.pageSize,
+        projectName: filters.projectName,
+        pipelineName: filters.pipelineName,
+        triggeredBy: filters.triggeredBy || undefined,
+        status: filters.status,
+        startTime: filters.timeRange?.[0]?.startOf('day')?.valueOf?.(),
+        endTime: filters.timeRange?.[1]?.endOf('day')?.valueOf?.(),
+      });
+      setDeployments(result.items);
+      setTotal(result.total);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadDeployments().catch(() => message.error('加载部署记录失败'));
+    Promise.all([projectsApi.list(), pipelinesApi.list()])
+      .then(([projects, pipelines]) => {
+        setProjectOptions(projects.map((item) => ({ label: item.name, value: item.name })));
+        setPipelineOptions(pipelines.map((item) => ({ label: item.name, value: item.name })));
+      })
+      .catch(() => message.error('加载筛选项失败'));
   }, []);
+
+  useEffect(() => {
+    loadDeployments().catch(() => message.error('加载部署记录失败'));
+  }, [pagination.current, pagination.pageSize, filters]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setTick(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
-
-  /** 由当前记录反推项目筛选项，避免额外请求接口。 */
-  const projectOptions = useMemo(() => Array.from(new Set(
-    deployments.map((item) => item.pipeline?.project?.name).filter(Boolean),
-  )).map((item) => ({ label: item, value: item })), [deployments]);
-
-  /** 由当前记录反推流水线筛选项。 */
-  const pipelineOptions = useMemo(() => Array.from(new Set(
-    deployments.map((item) => item.pipeline?.name).filter(Boolean),
-  )).map((item) => ({ label: item, value: item })), [deployments]);
-
-  /** 在前端做轻量筛选，当前数据量下足够满足使用。 */
-  const filteredDeployments = useMemo(() => deployments.filter((item) => {
-    if (filters.projectName && item.pipeline?.project?.name !== filters.projectName) {
-      return false;
-    }
-    if (filters.pipelineName && item.pipeline?.name !== filters.pipelineName) {
-      return false;
-    }
-    if (filters.status && item.status !== filters.status) {
-      return false;
-    }
-    const triggeredBy = item.triggeredByDisplayName || item.triggeredBy || '';
-    if (filters.triggeredBy && !triggeredBy.toLowerCase().includes(filters.triggeredBy.toLowerCase())) {
-      return false;
-    }
-    if (filters.timeRange?.length === 2) {
-      const createdAt = new Date(item.createdAt).getTime();
-      const start = filters.timeRange[0]?.startOf('day')?.valueOf?.();
-      const end = filters.timeRange[1]?.endOf('day')?.valueOf?.();
-      if (start && createdAt < start) {
-        return false;
-      }
-      if (end && createdAt > end) {
-        return false;
-      }
-    }
-    return true;
-  }), [deployments, filters]);
 
   return (
     <>
@@ -159,12 +144,12 @@ export default function DeploymentRecordsPage() {
           rowKey="id"
           loading={loading}
           scroll={{ x: 1180 }}
-          dataSource={filteredDeployments}
+          dataSource={deployments}
           locale={{ emptyText: <EmptyPane description="暂无部署记录。" /> }}
           pagination={{
             current: pagination.current,
             pageSize: pagination.pageSize,
-            total: filteredDeployments.length,
+            total,
             showSizeChanger: true,
             showTotal: (total) => `共 ${total} 条`,
             onChange: (current, pageSize) => setPagination({ current, pageSize }),

@@ -3,6 +3,12 @@ import type {
   HostConnectionTestResult,
   HostResourceSnapshot,
   HostSummary,
+  NotificationBinding,
+  NotificationChannelSummary,
+  NotificationWebhookConfigSummary,
+  NotificationDeliveryRecordSummary,
+  NotificationTemplateSummary,
+  MavenSettingsSummary,
   PipelineSummary,
   ProjectConnectionTestResult,
   ProjectSummary,
@@ -23,6 +29,13 @@ export interface ApiResult<T> {
   subMessage?: string | null;
   data: T;
   timestamp: string;
+}
+
+export interface PageResult<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
 /**
@@ -65,12 +78,49 @@ export interface PipelinePayload {
   javaEnvironmentId?: number;
   nodeEnvironmentId?: number;
   mavenEnvironmentId?: number;
+  mavenSettingsId?: number;
   runtimeJavaEnvironmentId?: number;
   applicationName?: string;
   springProfile?: string;
   runtimeConfigYaml?: string;
   startupKeyword?: string;
   startupTimeoutSeconds?: number;
+  notificationBindingsJson?: string;
+}
+
+export interface NotificationPayload {
+  name: string;
+  description?: string;
+  type: 'FEISHU';
+  eventType: 'DEPLOYMENT_STARTED' | 'DEPLOYMENT_FINISHED';
+  webhookConfigId?: number;
+  templateId?: number;
+  messageTemplate?: string;
+  enabled: boolean;
+}
+
+export interface NotificationWebhookConfigPayload {
+  name: string;
+  description?: string;
+  type: 'FEISHU';
+  webhookUrl: string;
+  secret?: string;
+  enabled: boolean;
+}
+
+export interface NotificationTemplatePayload {
+  name: string;
+  description?: string;
+  messageTemplate: string;
+  enabled: boolean;
+}
+
+export interface MavenSettingsPayload {
+  name: string;
+  description?: string;
+  contentXml: string;
+  enabled: boolean;
+  isDefault?: boolean;
 }
 
 export interface LoginPayload {
@@ -213,6 +263,12 @@ export type {
   HostConnectionTestResult,
   HostResourceSnapshot,
   HostSummary,
+  NotificationBinding,
+  NotificationChannelSummary,
+  NotificationWebhookConfigSummary,
+  NotificationDeliveryRecordSummary,
+  NotificationTemplateSummary,
+  MavenSettingsSummary,
   PipelineSummary,
   ProjectConnectionTestResult,
   ProjectSummary,

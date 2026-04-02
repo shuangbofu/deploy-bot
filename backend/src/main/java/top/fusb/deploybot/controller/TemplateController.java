@@ -1,5 +1,6 @@
 package top.fusb.deploybot.controller;
 
+import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.dto.TemplateRequest;
 import top.fusb.deploybot.model.TemplateEntity;
 import top.fusb.deploybot.security.AdminOnly;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -33,6 +35,17 @@ public class TemplateController {
     @GetMapping
     public List<TemplateEntity> list() {
         return service.findAll();
+    }
+
+    @GetMapping("/page")
+    public PageResult<TemplateEntity> page(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int pageSize,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String templateType,
+            @RequestParam(required = false) Boolean monitorProcess
+    ) {
+        return service.findPage(page, pageSize, keyword, templateType, monitorProcess);
     }
 
     /**

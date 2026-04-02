@@ -1,4 +1,4 @@
-import { AppstoreOutlined, ProfileOutlined, DeploymentUnitOutlined, LogoutOutlined, LockOutlined, GithubOutlined, RobotOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, ProfileOutlined, DeploymentUnitOutlined, LogoutOutlined, LockOutlined, GithubOutlined, RobotOutlined, BellOutlined } from '@ant-design/icons';
 import { Avatar, Button, Dropdown, Layout, Menu, Space, Typography } from 'antd';
 import { useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -16,6 +16,7 @@ const menuItems = [
   { key: '/user/dashboard', icon: <AppstoreOutlined />, label: '控制台' },
   { key: '/user/pipelines', icon: <DeploymentUnitOutlined />, label: '流水线大厅' },
   { key: '/user/deployments', icon: <ProfileOutlined />, label: '部署记录' },
+  { key: '/user/notification-records', icon: <BellOutlined />, label: '通知记录' },
 ];
 
 /**

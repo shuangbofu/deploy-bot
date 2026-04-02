@@ -88,6 +88,14 @@ public class DeploymentEntity {
     @Transient
     private String triggeredByDisplayName;
 
+    /** 停止人。 */
+    @Column(length = 1000)
+    private String stoppedBy;
+
+    /** 停止人展示名称。 */
+    @Transient
+    private String stoppedByDisplayName;
+
     /** 创建时间。 */
     @Column(nullable = false)
     private LocalDateTime createdAt;

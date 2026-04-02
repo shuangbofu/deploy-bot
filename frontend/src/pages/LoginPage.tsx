@@ -17,11 +17,24 @@ export default function LoginPage() {
   const location = useLocation();
   const [submitting, setSubmitting] = useState(false);
 
+  const resolveCallback = () => {
+    const searchParams = new URLSearchParams(location.search);
+    const callback = searchParams.get('callback');
+    if (callback && callback.startsWith('/')) {
+      return callback;
+    }
+    const stateRedirect = (location.state as { from?: string } | undefined)?.from;
+    if (stateRedirect && stateRedirect.startsWith('/')) {
+      return stateRedirect;
+    }
+    return undefined;
+  };
+
   const handleSubmit = async (values: { username: string; password: string }) => {
     setSubmitting(true);
     try {
       const user = await login(values);
-      const redirectTo = (location.state as { from?: string } | undefined)?.from;
+      const redirectTo = resolveCallback();
       if (redirectTo) {
         navigate(redirectTo, { replace: true });
         return;

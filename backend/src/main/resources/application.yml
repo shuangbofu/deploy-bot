@@ -28,6 +28,7 @@ spring:
         format_sql: true
 
 deploybot:
+  base-url: http://localhost:8080
   workspace-root: ./runtime
   runtime-environment-presets: classpath:runtime-environment-presets.json
   default-templates: classpath:default-templates.json

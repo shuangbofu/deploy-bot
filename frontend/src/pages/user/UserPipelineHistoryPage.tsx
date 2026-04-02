@@ -28,61 +28,49 @@ export default function UserPipelineHistoryPage() {
   const navigate = useNavigate();
   const [pipeline, setPipeline] = useState<PipelineSummary>();
   const [deployments, setDeployments] = useState<DeploymentSummary[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState<PipelineHistoryFilters>(emptyFilters);
   const [tick, setTick] = useState(() => Date.now());
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
 
-  /** 同时读取流水线元信息和它的历史部署记录。 */
-  const loadData = async () => {
+  const loadPipeline = async () => {
+    const pipelineList = await pipelinesApi.list();
+    setPipeline(pipelineList.find((item) => String(item.id) === String(pipelineId)));
+  };
+
+  const loadDeployments = async () => {
     setLoading(true);
     try {
-      const [pipelineList, deploymentList] = await Promise.all([
-        pipelinesApi.list(),
-        deploymentsApi.list(),
-      ]);
-      const targetPipeline = pipelineList.find((item) => String(item.id) === String(pipelineId));
-      setPipeline(targetPipeline);
-      setDeployments(deploymentList.filter((item) => String(item.pipeline?.id) === String(pipelineId)));
+      const result = await deploymentsApi.listMinePage({
+        page: pagination.current,
+        pageSize: pagination.pageSize,
+        triggeredBy: filters.triggeredBy || undefined,
+        branchName: filters.branchName || undefined,
+        status: filters.status,
+        startTime: filters.timeRange?.[0]?.startOf('day')?.valueOf?.(),
+        endTime: filters.timeRange?.[1]?.endOf('day')?.valueOf?.(),
+        pipelineId: pipelineId ? Number(pipelineId) : undefined,
+      });
+      setDeployments(result.items);
+      setTotal(result.total);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadData().catch(() => message.error('加载流水线历史失败'));
+    loadPipeline().catch(() => message.error('加载流水线失败'));
   }, [pipelineId]);
+
+  useEffect(() => {
+    loadDeployments().catch(() => message.error('加载流水线历史失败'));
+  }, [pipelineId, pagination.current, pagination.pageSize, filters]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setTick(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
-
-  /** 针对当前流水线历史进行前端筛选。 */
-  const filteredDeployments = useMemo(() => deployments.filter((item) => {
-    if (filters.branchName && !(item.branchName || '').toLowerCase().includes(filters.branchName.toLowerCase())) {
-      return false;
-    }
-    if (filters.status && item.status !== filters.status) {
-      return false;
-    }
-    const triggeredBy = item.triggeredByDisplayName || item.triggeredBy || '';
-    if (filters.triggeredBy && !triggeredBy.toLowerCase().includes(filters.triggeredBy.toLowerCase())) {
-      return false;
-    }
-    if (filters.timeRange?.length === 2) {
-      const createdAt = new Date(item.createdAt).getTime();
-      const start = filters.timeRange[0]?.startOf('day')?.valueOf?.();
-      const end = filters.timeRange[1]?.endOf('day')?.valueOf?.();
-      if (start && createdAt < start) {
-        return false;
-      }
-      if (end && createdAt > end) {
-        return false;
-      }
-    }
-    return true;
-  }), [deployments, filters]);
 
   /** 页头标题会随着当前流水线变化。 */
   const title = useMemo(
@@ -97,7 +85,7 @@ export default function UserPipelineHistoryPage() {
         description="查看当前流水线的部署历史和部署结果。"
         extra={[
           <Button key="back" onClick={() => navigate('/user/pipelines')}>返回流水线大厅</Button>,
-          <Button key="refresh" type="primary" onClick={() => loadData().catch(() => message.error('刷新失败'))}>刷新</Button>,
+          <Button key="refresh" type="primary" onClick={() => loadDeployments().catch(() => message.error('刷新失败'))}>刷新</Button>,
         ]}
       />
       <div className="app-page-scroll">
@@ -157,12 +145,12 @@ export default function UserPipelineHistoryPage() {
           rowKey="id"
           loading={loading}
           scroll={{ x: 1180 }}
-          dataSource={filteredDeployments}
+          dataSource={deployments}
           locale={{ emptyText: <EmptyPane description="这条流水线还没有符合条件的部署记录。" /> }}
           pagination={{
             current: pagination.current,
             pageSize: pagination.pageSize,
-            total: filteredDeployments.length,
+            total,
             showSizeChanger: true,
             showTotal: (total) => `共 ${total} 条`,
             onChange: (current, pageSize) => setPagination({ current, pageSize }),

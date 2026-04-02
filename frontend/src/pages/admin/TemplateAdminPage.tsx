@@ -80,6 +80,7 @@ const reservedVariables = [
 
 export default function TemplateAdminPage() {
   const [templates, setTemplates] = useState([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState<TemplateFormState>(emptyTemplate);
   const [editingId, setEditingId] = useState();
@@ -93,7 +94,15 @@ export default function TemplateAdminPage() {
   const loadTemplates = async () => {
     setLoading(true);
     try {
-      setTemplates(await templatesApi.list());
+      const result = await templatesApi.listPage({
+        page: pagination.current,
+        pageSize: pagination.pageSize,
+        keyword: keyword.trim() || undefined,
+        templateType: templateTypeFilter,
+        monitorProcess: monitorFilter == null ? undefined : monitorFilter === 'true',
+      });
+      setTemplates(result.items);
+      setTotal(result.total);
     } finally {
       setLoading(false);
     }
@@ -101,7 +110,7 @@ export default function TemplateAdminPage() {
 
   useEffect(() => {
     loadTemplates().catch(() => message.error('加载模板失败'));
-  }, []);
+  }, [pagination.current, pagination.pageSize, keyword, templateTypeFilter, monitorFilter]);
 
   const openCreate = () => {
     setEditingId(undefined);
@@ -214,28 +223,6 @@ export default function TemplateAdminPage() {
     parsedVariables: parseVariablesSchema(item.variablesSchema),
   })), [templates]);
 
-  const filteredTemplates = useMemo(() => tableData.filter((item) => {
-    const normalizedKeyword = keyword.trim().toLowerCase();
-    if (normalizedKeyword) {
-      const matched = [item.name, item.description]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(normalizedKeyword));
-      if (!matched) {
-        return false;
-      }
-    }
-    if (templateTypeFilter && item.templateType !== templateTypeFilter) {
-      return false;
-    }
-    if (monitorFilter != null) {
-      const expected = monitorFilter === 'true';
-      if (Boolean(item.monitorProcess) !== expected) {
-        return false;
-      }
-    }
-    return true;
-  }), [tableData, keyword, templateTypeFilter, monitorFilter]);
-
   return (
     <>
       <PageHeaderBar
@@ -303,12 +290,12 @@ export default function TemplateAdminPage() {
           rowKey="id"
           loading={loading}
           scroll={{ x: 960 }}
-          dataSource={filteredTemplates}
+          dataSource={tableData}
           locale={{ emptyText: <EmptyPane description="还没有模板，点击右上角先沉淀一套真实部署脚本。" /> }}
           pagination={{
             current: pagination.current,
             pageSize: pagination.pageSize,
-            total: filteredTemplates.length,
+            total,
             showSizeChanger: true,
             showTotal: (total) => `共 ${total} 条`,
             onChange: (current, pageSize) => setPagination({ current, pageSize }),

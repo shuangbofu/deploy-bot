@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Card, Form, Input, Modal, Popconfirm, Radio, Select, Space, Table, message } from 'antd';
 import { projectsApi } from '../../api/projects';
 import type { ProjectPayload, ProjectSummary } from '../../api/types';
@@ -17,6 +17,7 @@ const emptyProject: ProjectPayload = {
 
 export default function ProjectAdminPage() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
   const [form, setForm] = useState<ProjectPayload>(emptyProject);
@@ -29,7 +30,14 @@ export default function ProjectAdminPage() {
   const loadProjects = async () => {
     setLoading(true);
     try {
-      setProjects(await projectsApi.list());
+      const result = await projectsApi.listPage({
+        page: pagination.current,
+        pageSize: pagination.pageSize,
+        keyword: keyword.trim() || undefined,
+        gitAuthType: gitAuthTypeFilter,
+      });
+      setProjects(result.items);
+      setTotal(result.total);
     } finally {
       setLoading(false);
     }
@@ -37,7 +45,7 @@ export default function ProjectAdminPage() {
 
   useEffect(() => {
     loadProjects().catch(() => message.error('加载项目失败'));
-  }, []);
+  }, [pagination.current, pagination.pageSize, keyword, gitAuthTypeFilter]);
 
   const openCreate = () => {
     setEditingId(undefined);
@@ -162,22 +170,6 @@ export default function ProjectAdminPage() {
     message.success('项目已删除');
   };
 
-  const filteredProjects = useMemo(() => projects.filter((item) => {
-    const normalizedKeyword = keyword.trim().toLowerCase();
-    if (normalizedKeyword) {
-      const matched = [item.name, item.description, item.gitUrl]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(normalizedKeyword));
-      if (!matched) {
-        return false;
-      }
-    }
-    if (gitAuthTypeFilter && item.gitAuthType !== gitAuthTypeFilter) {
-      return false;
-    }
-    return true;
-  }), [projects, keyword, gitAuthTypeFilter]);
-
   return (
     <>
       <PageHeaderBar
@@ -233,12 +225,12 @@ export default function ProjectAdminPage() {
           rowKey="id"
           loading={loading}
           scroll={{ x: 820 }}
-          dataSource={filteredProjects}
+          dataSource={projects}
           locale={{ emptyText: <EmptyPane description="还没有项目，点击右上角先创建一个真实项目。" /> }}
           pagination={{
             current: pagination.current,
             pageSize: pagination.pageSize,
-            total: filteredProjects.length,
+            total,
             showSizeChanger: true,
             showTotal: (total) => `共 ${total} 条`,
             onChange: (current, pageSize) => setPagination({ current, pageSize }),

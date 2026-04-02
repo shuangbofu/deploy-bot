@@ -7,8 +7,10 @@ import top.fusb.deploybot.model.DeploymentStatus;
 import top.fusb.deploybot.model.HostEntity;
 import top.fusb.deploybot.model.HostSshAuthType;
 import top.fusb.deploybot.model.HostType;
+import top.fusb.deploybot.notification.model.NotificationEventType;
 import top.fusb.deploybot.repo.DeploymentRepository;
 import top.fusb.deploybot.service.DeploymentBackupService;
+import top.fusb.deploybot.notification.service.DeploymentNotificationAsyncService;
 import top.fusb.deploybot.service.GitCredentialService;
 import top.fusb.deploybot.service.HostService;
 import top.fusb.deploybot.service.JsonMapper;
@@ -58,6 +60,7 @@ public class DeploymentRunner {
     private final DeploymentBackupService deploymentBackupService;
     private final JsonMapper jsonMapper;
     private final HostService hostService;
+    private final DeploymentNotificationAsyncService deploymentNotificationAsyncService;
     private final Path defaultWorkspaceRoot;
     private final Map<Long, Process> runningProcesses = new ConcurrentHashMap<>();
 
@@ -69,6 +72,7 @@ public class DeploymentRunner {
             DeploymentBackupService deploymentBackupService,
             JsonMapper jsonMapper,
             HostService hostService,
+            DeploymentNotificationAsyncService deploymentNotificationAsyncService,
             @Value("${deploybot.workspace-root:./runtime}") String workspaceRoot
     ) {
         this.deploymentRepository = deploymentRepository;
@@ -78,6 +82,7 @@ public class DeploymentRunner {
         this.deploymentBackupService = deploymentBackupService;
         this.jsonMapper = jsonMapper;
         this.hostService = hostService;
+        this.deploymentNotificationAsyncService = deploymentNotificationAsyncService;
         this.defaultWorkspaceRoot = Path.of(workspaceRoot);
     }
 
@@ -129,6 +134,7 @@ public class DeploymentRunner {
             deployment.setStartedAt(LocalDateTime.now());
             deployment.setLogPath(logFile.toAbsolutePath().toString());
             deploymentRepository.save(deployment);
+            deploymentNotificationAsyncService.notifyAsync(deployment.getId(), NotificationEventType.DEPLOYMENT_STARTED);
             appendSystemLog(logFile, "部署任务已开始，日志文件：" + logFile.toAbsolutePath().normalize());
             log.info("Deployment {} log file initialized at {}.", deploymentId, logFile.toAbsolutePath().normalize());
 
@@ -215,6 +221,7 @@ public class DeploymentRunner {
                 log.warn("部署 {} 失败，脚本进程退出码={}。", deploymentId, exitCode);
             }
             deploymentRepository.save(deployment);
+            deploymentNotificationAsyncService.notifyAsync(deployment.getId(), NotificationEventType.DEPLOYMENT_FINISHED);
         } catch (Exception ex) {
             runningProcesses.remove(deploymentId);
             log.error("部署 {} 在完成前发生未预期异常。", deploymentId, ex);
@@ -247,6 +254,7 @@ public class DeploymentRunner {
                 deployment.setStatus(DeploymentStatus.FAILED);
                 deployment.setErrorMessage(ex.getMessage());
                 deploymentRepository.save(deployment);
+                deploymentNotificationAsyncService.notifyAsync(deployment.getId(), NotificationEventType.DEPLOYMENT_FINISHED);
             });
         }
     }
@@ -292,7 +300,7 @@ public class DeploymentRunner {
         }
     }
 
-    public void stop(Long deploymentId) {
+    public void stop(Long deploymentId, String stoppedBy) {
         log.info("收到部署 {} 的手动停止请求。", deploymentId);
         runningProcesses.computeIfPresent(deploymentId, (id, process) -> {
             process.destroy();
@@ -311,6 +319,7 @@ public class DeploymentRunner {
                 return;
             }
             deployment.setStatus(DeploymentStatus.STOPPED);
+            deployment.setStoppedBy(stoppedBy);
             deployment.setFinishedAt(LocalDateTime.now());
             deployment.setErrorMessage("任务已手动停止");
             Path logFile = resolveOrCreateLogFile(null, deployment.getLogPath(), deploymentId);
@@ -322,6 +331,7 @@ public class DeploymentRunner {
                 }
             }
             deploymentRepository.save(deployment);
+            deploymentNotificationAsyncService.notifyAsync(deployment.getId(), NotificationEventType.DEPLOYMENT_FINISHED);
         });
         runningProcesses.remove(deploymentId);
         log.info("部署 {} 手动停止流程结束。", deploymentId);

@@ -1,8 +1,10 @@
 import client from './client';
-import type { AvatarUploadResponse, UserPayload, UserSummary } from './types';
+import type { AvatarUploadResponse, PageResult, UserPayload, UserSummary } from './types';
 
 export const usersApi = {
   list: async () => (await client.get<UserSummary[]>('/users')).data,
+  listPage: async (params: { page: number; pageSize: number; keyword?: string; role?: 'ADMIN' | 'USER'; enabled?: boolean }) =>
+    (await client.get<PageResult<UserSummary>>('/users/page', { params })).data,
   create: async (payload: UserPayload) => (await client.post<UserSummary>('/users', payload)).data,
   update: async (id: number, payload: UserPayload) => (await client.put<UserSummary>(`/users/${id}`, payload)).data,
   resetPassword: async (id: number) => client.post(`/users/${id}/reset-password`),

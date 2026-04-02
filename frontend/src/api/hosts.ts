@@ -1,11 +1,13 @@
 import client from './client';
-import type { HostConnectionTestResult, HostPayload, HostResourceSnapshot, HostSummary } from './types';
+import type { HostConnectionTestResult, HostPayload, HostResourceSnapshot, HostSummary, PageResult } from './types';
 
 /**
  * 主机相关接口。
  */
 export const hostsApi = {
   list: async (enabledOnly = false) => (await client.get<HostSummary[]>('/hosts', { params: enabledOnly ? { enabledOnly } : undefined })).data,
+  listPage: async (params: { page: number; pageSize: number; keyword?: string; type?: 'LOCAL' | 'SSH'; enabled?: boolean }) =>
+    (await client.get<PageResult<HostSummary>>('/hosts/page', { params })).data,
   create: async (payload: HostPayload) => (await client.post<HostSummary>('/hosts', payload)).data,
   update: async (id: number, payload: HostPayload) => (await client.put<HostSummary>(`/hosts/${id}`, payload)).data,
   remove: async (id: number) => client.delete(`/hosts/${id}`),

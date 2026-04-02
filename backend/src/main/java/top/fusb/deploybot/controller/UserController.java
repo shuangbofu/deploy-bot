@@ -12,8 +12,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import top.fusb.deploybot.dto.AvatarUploadResponse;
+import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.dto.UserRequest;
 import top.fusb.deploybot.model.UserEntity;
+import top.fusb.deploybot.model.UserRole;
 import top.fusb.deploybot.security.AdminOnly;
 import top.fusb.deploybot.service.UserService;
 
@@ -35,6 +37,17 @@ public class UserController {
     @GetMapping
     public List<UserEntity> list() {
         return userService.findAll();
+    }
+
+    @GetMapping("/page")
+    public PageResult<UserEntity> page(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int pageSize,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) UserRole role,
+            @RequestParam(required = false) Boolean enabled
+    ) {
+        return userService.findPage(page, pageSize, keyword, role, enabled);
     }
 
     @PostMapping

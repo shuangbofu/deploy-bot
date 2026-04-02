@@ -1,12 +1,17 @@
 package top.fusb.deploybot.service;
 
+import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.dto.PipelineRequest;
+import top.fusb.deploybot.notification.dto.NotificationBinding;
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorSubCode;
 import top.fusb.deploybot.model.HostEntity;
+import top.fusb.deploybot.model.MavenSettingsEntity;
 import top.fusb.deploybot.model.RuntimeEnvironmentEntity;
 import top.fusb.deploybot.model.PipelineEntity;
+import top.fusb.deploybot.notification.repo.NotificationChannelRepository;
 import top.fusb.deploybot.repo.HostRepository;
+import top.fusb.deploybot.repo.MavenSettingsRepository;
 import top.fusb.deploybot.repo.RuntimeEnvironmentRepository;
 import top.fusb.deploybot.repo.PipelineRepository;
 import top.fusb.deploybot.repo.DeploymentRepository;
@@ -14,9 +19,14 @@ import top.fusb.deploybot.repo.ProjectRepository;
 import top.fusb.deploybot.repo.ServiceRepository;
 import top.fusb.deploybot.repo.TemplateRepository;
 import jakarta.transaction.Transactional;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
+import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class PipelineService {
@@ -28,7 +38,10 @@ public class PipelineService {
     private final DeploymentRepository deploymentRepository;
     private final ServiceRepository serviceRepository;
     private final HostRepository hostRepository;
+    private final MavenSettingsRepository mavenSettingsRepository;
     private final HostService hostService;
+    private final NotificationChannelRepository notificationChannelRepository;
+    private final JsonMapper jsonMapper;
 
     public PipelineService(
             PipelineRepository pipelineRepository,
@@ -38,7 +51,10 @@ public class PipelineService {
             DeploymentRepository deploymentRepository,
             ServiceRepository serviceRepository,
             HostRepository hostRepository,
-            HostService hostService
+            MavenSettingsRepository mavenSettingsRepository,
+            HostService hostService,
+            NotificationChannelRepository notificationChannelRepository,
+            JsonMapper jsonMapper
     ) {
         this.pipelineRepository = pipelineRepository;
         this.projectRepository = projectRepository;
@@ -47,11 +63,62 @@ public class PipelineService {
         this.deploymentRepository = deploymentRepository;
         this.serviceRepository = serviceRepository;
         this.hostRepository = hostRepository;
+        this.mavenSettingsRepository = mavenSettingsRepository;
         this.hostService = hostService;
+        this.notificationChannelRepository = notificationChannelRepository;
+        this.jsonMapper = jsonMapper;
     }
 
     public List<PipelineEntity> findAll() {
         return pipelineRepository.findAll();
+    }
+
+    public PageResult<PipelineEntity> findPage(
+            int page,
+            int pageSize,
+            String keyword,
+            Long projectId,
+            Long templateId,
+            Long hostId,
+            List<String> tags
+    ) {
+        return PageResult.of(pipelineRepository.findAll((root, query, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new java.util.ArrayList<>();
+            if (keyword != null && !keyword.isBlank()) {
+                String pattern = "%" + keyword.trim().toLowerCase() + "%";
+                predicates.add(cb.or(
+                        cb.like(cb.lower(root.get("name")), pattern),
+                        cb.like(cb.lower(root.get("description")), pattern),
+                        cb.like(cb.lower(root.get("defaultBranch")), pattern)
+                ));
+            }
+            if (projectId != null) {
+                predicates.add(cb.equal(root.get("project").get("id"), projectId));
+            }
+            if (templateId != null) {
+                predicates.add(cb.equal(root.get("template").get("id"), templateId));
+            }
+            if (hostId != null) {
+                predicates.add(cb.equal(root.get("targetHost").get("id"), hostId));
+            }
+            if (tags != null && !tags.isEmpty()) {
+                for (String tag : tags) {
+                    if (tag != null && !tag.isBlank()) {
+                        predicates.add(cb.like(root.get("tagsJson"), "%" + "\"" + tag + "\"" + "%"));
+                    }
+                }
+            }
+            return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+        }, PageRequest.of(Math.max(0, page - 1), Math.max(1, Math.min(100, pageSize)), Sort.by(Sort.Order.desc("id")))));
+    }
+
+    public List<String> findAllTags() {
+        return pipelineRepository.findAll().stream()
+                .flatMap(item -> parseTags(item.getTagsJson()).stream())
+                .filter(item -> item != null && !item.isBlank())
+                .distinct()
+                .sorted(String::compareTo)
+                .toList();
     }
 
     /**
@@ -74,14 +141,35 @@ public class PipelineService {
         entity.setTagsJson(request.tagsJson());
         entity.setJavaEnvironment(resolveEnvironment(request.javaEnvironmentId()));
         entity.setNodeEnvironment(resolveEnvironment(request.nodeEnvironmentId()));
-        entity.setMavenEnvironment(resolveEnvironment(request.mavenEnvironmentId()));
+        RuntimeEnvironmentEntity mavenEnvironment = resolveEnvironment(request.mavenEnvironmentId());
+        entity.setMavenEnvironment(mavenEnvironment);
+        MavenSettingsEntity mavenSettings = resolveMavenSettings(request.mavenSettingsId());
+        if (mavenSettings != null && (mavenEnvironment == null || mavenSettings.getRuntimeEnvironment() == null
+                || !mavenSettings.getRuntimeEnvironment().getId().equals(mavenEnvironment.getId()))) {
+            throw new BusinessException(ErrorSubCode.MAVEN_SETTINGS_NOT_FOUND, "请选择当前 Maven 环境下的 settings.xml 配置。");
+        }
+        entity.setMavenSettings(mavenSettings);
         entity.setRuntimeJavaEnvironment(resolveRuntimeJavaEnvironment(request.runtimeJavaEnvironmentId(), targetHost));
         entity.setApplicationName(normalizeText(request.applicationName()));
         entity.setSpringProfile(normalizeText(request.springProfile()));
         entity.setRuntimeConfigYaml(normalizeMultilineText(request.runtimeConfigYaml()));
         entity.setStartupKeyword(normalizeText(request.startupKeyword()));
         entity.setStartupTimeoutSeconds(normalizeStartupTimeout(request.startupTimeoutSeconds()));
+        entity.setNotificationBindingsJson(normalizeNotificationBindings(request.notificationBindingsJson()));
         return pipelineRepository.save(entity);
+    }
+
+    private MavenSettingsEntity resolveMavenSettings(Long mavenSettingsId) {
+        if (mavenSettingsId == null) {
+            return null;
+        }
+        MavenSettingsEntity settings = mavenSettingsRepository.findById(mavenSettingsId)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.MAVEN_SETTINGS_NOT_FOUND));
+        RuntimeEnvironmentEntity mavenEnvironment = settings.getRuntimeEnvironment();
+        if (mavenEnvironment == null || mavenEnvironment.getType() != top.fusb.deploybot.model.RuntimeEnvironmentType.MAVEN) {
+            throw new BusinessException(ErrorSubCode.MAVEN_SETTINGS_NOT_FOUND);
+        }
+        return settings;
     }
 
     @Transactional
@@ -146,5 +234,59 @@ public class PipelineService {
             return null;
         }
         return Math.max(5, startupTimeoutSeconds);
+    }
+
+    private String normalizeNotificationBindings(String content) {
+        if (content == null || content.isBlank()) {
+            return null;
+        }
+        List<NotificationBinding> bindings = jsonMapper.read(content, new com.fasterxml.jackson.core.type.TypeReference<>() {
+        });
+        List<NotificationBinding> normalizedBindings = bindings.stream()
+                .filter(item -> item != null && item.notificationId() != null && item.eventType() != null)
+                .toList();
+        Set<String> uniquePairs = normalizedBindings.stream()
+                .map(item -> item.notificationId() + ":" + item.eventType().name())
+                .collect(Collectors.toSet());
+        if (uniquePairs.size() != normalizedBindings.size()) {
+            throw new BusinessException(ErrorSubCode.PIPELINE_NOTIFICATION_BINDING_INVALID);
+        }
+        Set<Long> ids = normalizedBindings.stream()
+                .map(NotificationBinding::notificationId)
+                .collect(Collectors.toSet());
+        if (!ids.isEmpty() && notificationChannelRepository.findAllById(ids).size() != ids.size()) {
+            throw new BusinessException(ErrorSubCode.PIPELINE_NOTIFICATION_BINDING_INVALID);
+        }
+        return jsonMapper.write(normalizedBindings);
+    }
+
+    private boolean matchesKeyword(PipelineEntity item, String keyword) {
+        if (keyword == null || keyword.isBlank()) {
+            return true;
+        }
+        String normalized = keyword.trim().toLowerCase();
+        return contains(item.getName(), normalized)
+                || contains(item.getDescription(), normalized)
+                || contains(item.getDefaultBranch(), normalized);
+    }
+
+    private boolean containsAllTags(PipelineEntity item, List<String> tags) {
+        if (tags == null || tags.isEmpty()) {
+            return true;
+        }
+        List<String> currentTags = parseTags(item.getTagsJson());
+        return tags.stream().allMatch(currentTags::contains);
+    }
+
+    private boolean contains(String value, String keyword) {
+        return value != null && value.toLowerCase().contains(keyword);
+    }
+
+    private List<String> parseTags(String content) {
+        if (content == null || content.isBlank()) {
+            return List.of();
+        }
+        return jsonMapper.read(content, new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {
+        });
     }
 }

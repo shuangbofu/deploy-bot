@@ -23,6 +23,28 @@ export type HostSshAuthType = 'PASSWORD' | 'PRIVATE_KEY' | 'SYSTEM_KEY_PAIR';
  */
 export type RuntimeEnvironmentType = 'JAVA' | 'NODE' | 'MAVEN';
 export type UserRole = 'ADMIN' | 'USER';
+export type NotificationChannelType = 'FEISHU';
+export type NotificationEventType = 'DEPLOYMENT_STARTED' | 'DEPLOYMENT_FINISHED';
+
+export interface MavenSettingsSummary {
+  id: number;
+  name: string;
+  description?: string;
+  contentXml: string;
+  enabled: boolean;
+  isDefault?: boolean;
+  runtimeEnvironment?: RuntimeEnvironmentSummary | null;
+}
+
+export interface NotificationWebhookConfigSummary {
+  id: number;
+  name: string;
+  description?: string;
+  type: NotificationChannelType;
+  webhookUrl?: string;
+  secret?: string;
+  enabled: boolean;
+}
 
 /**
  * 模板变量按照构建、发布、共用三个阶段分组展示。
@@ -152,6 +174,8 @@ export interface PipelineSummary {
   nodeEnvironment?: RuntimeEnvironmentSummary | null;
   /** 本机构建 Maven 环境。 */
   mavenEnvironment?: RuntimeEnvironmentSummary | null;
+  /** 本机构建时使用的 Maven Settings。 */
+  mavenSettings?: MavenSettingsSummary | null;
   /** 目标主机运行 Java 环境。 */
   runtimeJavaEnvironment?: RuntimeEnvironmentSummary | null;
   /** 开启发布监控时用于生成唯一产物名的应用名。 */
@@ -164,10 +188,53 @@ export interface PipelineSummary {
   startupKeyword?: string | null;
   /** 启用服务监测时的启动观察窗口，单位秒。 */
   startupTimeoutSeconds?: number | null;
+  /** 流水线绑定的通知配置。 */
+  notificationBindingsJson?: string | NotificationBinding[];
   /** 流水线默认变量，可能是 JSON 字符串或对象。 */
   variablesJson?: string | Record<string, string>;
   /** 自定义标签，可能是 JSON 字符串或字符串数组。 */
   tagsJson?: string | string[];
+}
+
+export interface NotificationBinding {
+  notificationId: number;
+  eventType: NotificationEventType;
+}
+
+export interface NotificationChannelSummary {
+  id: number;
+  name: string;
+  description?: string;
+  type: NotificationChannelType;
+  eventType: NotificationEventType;
+  webhookConfig?: NotificationWebhookConfigSummary | null;
+  template?: NotificationTemplateSummary | null;
+  messageTemplate?: string;
+  enabled: boolean;
+}
+
+export interface NotificationTemplateSummary {
+  id: number;
+  name: string;
+  description?: string;
+  messageTemplate: string;
+  builtIn: boolean;
+  enabled: boolean;
+}
+
+export interface NotificationDeliveryRecordSummary {
+  id: number;
+  channel?: NotificationChannelSummary | null;
+  deployment?: DeploymentSummary | null;
+  eventType: NotificationEventType;
+  status: 'SUCCESS' | 'FAILED';
+  channelName?: string;
+  pipelineName?: string;
+  message?: string;
+  responseMessage?: string;
+  errorMessage?: string;
+  createdAt?: string;
+  finishedAt?: string;
 }
 
 export interface UserSummary {

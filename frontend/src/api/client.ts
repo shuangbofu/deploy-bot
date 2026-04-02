@@ -32,8 +32,10 @@ export function resolveBackendAssetUrl(url?: string | null) {
 function handleAuthExpired(subCode?: string | null) {
   if (subCode === 'AUTH-001' || subCode === 'AUTH-003') {
     authStorage.clearToken();
-    if (!window.location.hash.startsWith('#/login')) {
-      window.location.hash = '#/login';
+    const callback = `${window.location.pathname}${window.location.search}`;
+    const loginUrl = `/login?callback=${encodeURIComponent(callback)}`;
+    if (!window.location.pathname.startsWith('/login')) {
+      window.location.replace(loginUrl);
     }
     return true;
   }

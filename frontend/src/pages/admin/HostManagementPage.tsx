@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Card, Descriptions, Form, Input, Modal, Popconfirm, Progress, Select, Space, Switch, Table, message } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { hostsApi } from '../../api/hosts';
@@ -15,10 +15,8 @@ import type {
   RuntimeEnvironmentSummary,
 } from '../../types/domain';
 import { formatDateTime } from '../../utils/datetime';
-import { getStableTagColor } from '../../utils/tagColors';
 
 const hostTypeOptions: { label: string; value: HostType }[] = [
-  { label: '本机', value: 'LOCAL' },
   { label: 'SSH 远程主机', value: 'SSH' },
 ];
 
@@ -46,7 +44,7 @@ interface HostFormState {
 
 const emptyHost: HostFormState = {
   name: '',
-  type: 'LOCAL',
+  type: 'SSH',
   description: '',
   hostname: '',
   port: 22,
@@ -60,10 +58,20 @@ const emptyHost: HostFormState = {
   enabled: true,
 };
 
+function renderEnabledStatus(enabled: boolean) {
+  return (
+    <span className="status-chip">
+      <span className={`status-dot ${enabled ? 'status-dot--success' : 'status-dot--pending'}`} />
+      <span>{enabled ? '启用' : '停用'}</span>
+    </span>
+  );
+}
+
 export default function HostManagementPage() {
   const navigate = useNavigate();
   const [hosts, setHosts] = useState<HostSummary[]>([]);
   const [environments, setEnvironments] = useState<RuntimeEnvironmentSummary[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState<HostFormState>(emptyHost);
   const [editingId, setEditingId] = useState<number | undefined>();
@@ -76,15 +84,26 @@ export default function HostManagementPage() {
   const [typeFilter, setTypeFilter] = useState<HostType>();
   const [enabledFilter, setEnabledFilter] = useState<string>();
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
+  const editingHost = hosts.find((item) => item.id === editingId);
+  const currentHostTypeOptions = editingHost?.type === 'LOCAL'
+    ? [{ label: '本机', value: 'LOCAL' as HostType }, ...hostTypeOptions]
+    : hostTypeOptions;
 
   const loadHosts = async () => {
     setLoading(true);
     try {
       const [hostResponse, environmentResponse] = await Promise.all([
-        hostsApi.list(),
+        hostsApi.listPage({
+          page: pagination.current,
+          pageSize: pagination.pageSize,
+          keyword: keyword.trim() || undefined,
+          type: typeFilter,
+          enabled: enabledFilter == null ? undefined : enabledFilter === 'true',
+        }),
         runtimeEnvironmentsApi.list(),
       ]);
-      setHosts(hostResponse);
+      setHosts(hostResponse.items);
+      setTotal(hostResponse.total);
       setEnvironments(environmentResponse);
     } finally {
       setLoading(false);
@@ -93,7 +112,7 @@ export default function HostManagementPage() {
 
   useEffect(() => {
     loadHosts().catch(() => message.error('加载主机失败'));
-  }, []);
+  }, [pagination.current, pagination.pageSize, keyword, typeFilter, enabledFilter]);
 
   const openCreate = () => {
     setEditingId(undefined);
@@ -182,28 +201,6 @@ export default function HostManagementPage() {
     }
   };
 
-  const filteredHosts = useMemo(() => hosts.filter((item) => {
-    const normalizedKeyword = keyword.trim().toLowerCase();
-    if (normalizedKeyword) {
-      const matched = [item.name, item.description, item.hostname, item.workspaceRoot]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(normalizedKeyword));
-      if (!matched) {
-        return false;
-      }
-    }
-    if (typeFilter && item.type !== typeFilter) {
-      return false;
-    }
-    if (enabledFilter != null) {
-      const expected = enabledFilter === 'true';
-      if (Boolean(item.enabled !== false) !== expected) {
-        return false;
-      }
-    }
-    return true;
-  }), [hosts, keyword, typeFilter, enabledFilter]);
-
   return (
     <>
       <PageHeaderBar
@@ -271,12 +268,12 @@ export default function HostManagementPage() {
           rowKey="id"
           loading={loading}
           scroll={{ x: 1080 }}
-          dataSource={filteredHosts}
+          dataSource={hosts}
           locale={{ emptyText: <EmptyPane description="还没有主机，系统会自动内置一条本机记录。" /> }}
           pagination={{
             current: pagination.current,
             pageSize: pagination.pageSize,
-            total: filteredHosts.length,
+            total,
             showSizeChanger: true,
             showTotal: (total) => `共 ${total} 条`,
             onChange: (current, pageSize) => setPagination({ current, pageSize }),
@@ -301,19 +298,7 @@ export default function HostManagementPage() {
                   return items.map((item) => item.name).join(' / ');
                 },
               },
-              { title: '状态', render: (_, row) => row.enabled !== false ? '启用' : '停用', width: 100 },
-              {
-                title: '内置',
-                width: 110,
-                render: (_, row) => row.builtIn ? (
-                  <span
-                    className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold text-white"
-                    style={{ backgroundColor: getStableTagColor('系统内置') }}
-                  >
-                    系统内置
-                  </span>
-                ) : '-',
-              },
+              { title: '状态', render: (_, row) => renderEnabledStatus(row.enabled !== false), width: 100 },
               {
                 title: '操作',
                 width: 420,
@@ -329,15 +314,16 @@ export default function HostManagementPage() {
                       资源预览
                     </Button>
                     <Button size="small" onClick={() => openEdit(record)}>编辑</Button>
-                    <Popconfirm
-                      title="确认删除这台主机吗？"
-                      okText="确认"
-                      cancelText="取消"
-                      disabled={Boolean(record.builtIn)}
-                      onConfirm={() => removeHost(record.id).catch((error) => message.error(error?.response?.data?.message || '删除主机失败'))}
-                    >
-                      <Button size="small" danger disabled={Boolean(record.builtIn)}>删除</Button>
-                    </Popconfirm>
+                    {record.type !== 'LOCAL' && !record.builtIn ? (
+                      <Popconfirm
+                        title="确认删除这台主机吗？"
+                        okText="确认"
+                        cancelText="取消"
+                        onConfirm={() => removeHost(record.id).catch((error) => message.error(error?.response?.data?.message || '删除主机失败'))}
+                      >
+                        <Button size="small" danger>删除</Button>
+                      </Popconfirm>
+                    ) : null}
                   </Space>
                 ),
               },
@@ -359,7 +345,7 @@ export default function HostManagementPage() {
             <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
           </Form.Item>
           <Form.Item label="主机类型">
-            <Select value={form.type} options={hostTypeOptions} onChange={(value) => setForm({ ...form, type: value })} disabled={Boolean(hosts.find((item) => item.id === editingId)?.builtIn)} />
+            <Select value={form.type} options={currentHostTypeOptions} onChange={(value) => setForm({ ...form, type: value })} disabled={Boolean(editingHost?.builtIn)} />
           </Form.Item>
           <Form.Item label="说明">
             <Input.TextArea rows={3} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
