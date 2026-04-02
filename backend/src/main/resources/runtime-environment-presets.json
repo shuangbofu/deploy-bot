@@ -50,6 +50,16 @@
     "binPathTemplate": "${installRoot}/tools/node-20/bin"
   },
   {
+    "id": "node-24",
+    "name": "Node.js 24",
+    "type": "NODE",
+    "version": "24.14.0",
+    "description": "Node.js 24，适合需要更高版本运行时的新项目。",
+    "downloadUrlTemplate": "https://nodejs.org/dist/v24.14.0/node-v24.14.0-${nodePlatform}-${nodeArch}.${nodeArchiveExtension}",
+    "homePathTemplate": "${installRoot}/tools/node-24",
+    "binPathTemplate": "${installRoot}/tools/node-24/bin"
+  },
+  {
     "id": "maven-3.9.14",
     "name": "Apache Maven 3.9.14",
     "type": "MAVEN",
