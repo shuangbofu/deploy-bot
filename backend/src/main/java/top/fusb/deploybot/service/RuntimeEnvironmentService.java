@@ -16,10 +16,10 @@ import top.fusb.deploybot.repo.HostRepository;
 import top.fusb.deploybot.repo.RuntimeEnvironmentRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.io.BufferedReader;
@@ -61,6 +61,7 @@ public class RuntimeEnvironmentService {
     private final ResourceLoader resourceLoader;
     private final String presetsResourceLocation;
     private final Map<String, InstallTaskState> installTasks = new ConcurrentHashMap<>();
+    private final RuntimeEnvironmentInstallAsyncService installAsyncService;
 
     public RuntimeEnvironmentService(
             RuntimeEnvironmentRepository repository,
@@ -69,6 +70,7 @@ public class RuntimeEnvironmentService {
             SystemSettingsService systemSettingsService,
             HostService hostService,
             ResourceLoader resourceLoader,
+            @Lazy RuntimeEnvironmentInstallAsyncService installAsyncService,
             @Value("${deploybot.runtime-environment-presets:classpath:runtime-environment-presets.json}") String presetsResourceLocation
     ) {
         this.repository = repository;
@@ -77,6 +79,7 @@ public class RuntimeEnvironmentService {
         this.systemSettingsService = systemSettingsService;
         this.hostService = hostService;
         this.resourceLoader = resourceLoader;
+        this.installAsyncService = installAsyncService;
         this.presetsResourceLocation = presetsResourceLocation;
     }
 
@@ -269,7 +272,7 @@ public class RuntimeEnvironmentService {
                 host.getId(),
                 host.getName()
         ));
-        installPresetAsync(taskId, request);
+        installAsyncService.installPresetAsync(taskId, request);
         return taskId;
     }
 
@@ -281,8 +284,7 @@ public class RuntimeEnvironmentService {
                 .toList();
     }
 
-    @Async
-    public void installPresetAsync(String taskId, RuntimeEnvironmentInstallRequest request) {
+    public void runInstallPresetTask(String taskId, RuntimeEnvironmentInstallRequest request) {
         InstallTaskState task = installTasks.get(taskId);
         if (task == null) {
             return;
