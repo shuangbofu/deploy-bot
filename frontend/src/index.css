@@ -265,19 +265,73 @@ body {
   box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.14);
 }
 
+.log-viewer-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
 .log-viewer {
   width: 100%;
   height: 100%;
   overflow: auto;
-  border-radius: 16px;
   background: #08111f;
-  padding: 18px;
+  padding: 12px;
   color: #a7f3d0;
   font-size: 12px;
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
   font-family: "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
+}
+
+.log-viewer-top-button {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  border-color: rgba(148, 163, 184, 0.28) !important;
+  background: rgba(8, 17, 31, 0.78) !important;
+  color: #e2e8f0 !important;
+  backdrop-filter: blur(8px);
+}
+
+.deployment-detail-content {
+  overflow: hidden;
+  background: transparent !important;
+}
+
+.deployment-detail-grid {
+  min-height: 0;
+  background: transparent !important;
+  row-gap: 16px;
+}
+
+.deployment-detail-col {
+  min-height: 0;
+  background: transparent !important;
+}
+
+@media (min-width: 1200px) {
+  .deployment-detail-main-col {
+    padding-left: 16px;
+  }
+}
+
+@media (max-width: 1199px) {
+  .deployment-detail-main-col {
+    padding-top: 16px;
+  }
+}
+
+.deployment-detail-sidebar {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 16px;
+  overflow: hidden;
+  background: transparent !important;
 }
 
 .deployment-detail-log-card {
@@ -287,10 +341,32 @@ body {
   min-height: 0;
 }
 
+.deployment-detail-sidebar .app-card,
+.deployment-detail-log-card.app-card {
+  box-shadow: none;
+}
+
+.deployment-detail-snapshot-card {
+  flex: 1;
+  min-height: 0;
+}
+
+.deployment-detail-snapshot-card.ant-card {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .deployment-detail-log-card.ant-card {
   display: flex;
   min-height: 0;
   flex-direction: column;
+  overflow: hidden;
+}
+
+.deployment-detail-snapshot-card .ant-card-body {
+  overflow: auto;
 }
 
 .deployment-detail-log-card .ant-card-body {
@@ -298,6 +374,7 @@ body {
   flex: 1;
   min-height: 0;
   flex-direction: column;
+  padding: 0;
 }
 
 .log-line {

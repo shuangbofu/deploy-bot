@@ -23,8 +23,8 @@ export default function UserDeploymentDetailPage() {
   const [deployment, setDeployment] = useState<DeploymentSummary>();
   const [logContent, setLogContent] = useState('');
   const [tick, setTick] = useState(() => Date.now());
-  const sidebarRef = useRef<HTMLDivElement | null>(null);
-  const [sidebarHeight, setSidebarHeight] = useState<number>();
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const [contentHeight, setContentHeight] = useState<number>();
 
   /** 同步加载部署详情与当前日志内容。 */
   const loadDetail = async () => {
@@ -101,11 +101,18 @@ export default function UserDeploymentDetailPage() {
   }, [executionSnapshot]);
 
   useLayoutEffect(() => {
-    if (!sidebarRef.current) {
+    if (!contentRef.current) {
       return undefined;
     }
-    const element = sidebarRef.current;
-    const updateHeight = () => setSidebarHeight(element.getBoundingClientRect().height);
+    const element = contentRef.current;
+    const updateHeight = () => {
+      if (window.innerWidth < 1200) {
+        setContentHeight(undefined);
+        return;
+      }
+      const top = element.getBoundingClientRect().top;
+      setContentHeight(Math.max(420, Math.floor(window.innerHeight - top - 16)));
+    };
     updateHeight();
     const observer = new ResizeObserver(() => updateHeight());
     observer.observe(element);
@@ -114,7 +121,7 @@ export default function UserDeploymentDetailPage() {
       observer.disconnect();
       window.removeEventListener('resize', updateHeight);
     };
-  }, [deployment, logContent, snapshotVariables.length]);
+  }, [deployment, snapshotVariables.length]);
 
   return (
     <>
@@ -158,9 +165,10 @@ export default function UserDeploymentDetailPage() {
           <Button key="refresh" type="primary" onClick={() => loadDetail().catch(() => message.error('刷新失败'))}>刷新</Button>,
         ]}
       />
-      <Row gutter={[16, 16]}>
-        <Col xs={24} xl={7} xxl={6}>
-          <div ref={sidebarRef} className="space-y-4">
+      <div ref={contentRef} className="deployment-detail-content" style={contentHeight ? { height: contentHeight } : undefined}>
+        <Row className="deployment-detail-grid" gutter={[0, 0]} style={contentHeight ? { height: '100%' } : undefined}>
+        <Col className="deployment-detail-col deployment-detail-sidebar-col" xs={24} xl={7} xxl={6} style={contentHeight ? { height: '100%' } : undefined}>
+          <div className="deployment-detail-sidebar" style={contentHeight ? { height: '100%' } : undefined}>
             <Card
               className="app-card"
               title="执行状态"
@@ -197,7 +205,7 @@ export default function UserDeploymentDetailPage() {
                 <Descriptions.Item label="错误信息">{deployment?.errorMessage || '-'}</Descriptions.Item>
               </Descriptions>
             </Card>
-            <Card className="app-card" title="执行快照">
+            <Card className="app-card deployment-detail-snapshot-card" title="执行快照">
               <Descriptions column={1} size="small">
                 <Descriptions.Item label="模板">{String(executionSnapshot?.templateName || '-')}</Descriptions.Item>
                 <Descriptions.Item label="模板类型">{String(executionSnapshot?.templateType || '-')}</Descriptions.Item>
@@ -242,10 +250,10 @@ export default function UserDeploymentDetailPage() {
             </Card>
           </div>
         </Col>
-        <Col xs={24} xl={17} xxl={18}>
+        <Col className="deployment-detail-col deployment-detail-main-col" xs={24} xl={17} xxl={18} style={contentHeight ? { height: '100%' } : undefined}>
           <Card
             className="app-card deployment-detail-log-card"
-            style={sidebarHeight ? { height: sidebarHeight } : undefined}
+            style={contentHeight ? { height: '100%' } : undefined}
             title="执行日志"
             extra={(
               <Space>
@@ -259,6 +267,7 @@ export default function UserDeploymentDetailPage() {
           </Card>
         </Col>
       </Row>
+      </div>
     </>
   );
 }

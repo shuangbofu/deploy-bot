@@ -1,4 +1,5 @@
-import { useLayoutEffect, useRef } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
+import { Button } from 'antd';
 
 type LogViewerProps = {
   /** 原始日志内容。 */
@@ -13,6 +14,7 @@ type LogViewerProps = {
  */
 export default function LogViewer({ content, maxHeight }: LogViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const [showBackToTop, setShowBackToTop] = useState(false);
   const lines = (content || '暂无日志输出。').split('\n');
 
   // 日志页默认服务于排查场景，因此首次进入和自动刷新后都直接跟到最底部。
@@ -21,34 +23,54 @@ export default function LogViewer({ content, maxHeight }: LogViewerProps) {
       return;
     }
     containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    setShowBackToTop(false);
   }, [content]);
 
-  return (
-    <div
-      ref={containerRef}
-      className="log-viewer"
-      style={maxHeight ? { maxHeight } : undefined}
-    >
-      {lines.map((line, index) => {
-        const lowerLine = line.toLowerCase();
-        const isSystemLine = line.startsWith('[系统]');
-        // 这里优先照顾运维排查体验，对常见错误关键词做红色高亮。
-        const isErrorLine = /(error|failed|fatal|exception|denied|refused|timed out|认证失败|失败|报错|错误)/.test(lowerLine);
-        const lineClassName = [
-          'log-line',
-          isSystemLine ? 'log-line-system' : '',
-          isErrorLine ? 'log-line-error' : '',
-        ].filter(Boolean).join(' ');
+  const scrollToTop = () => {
+    if (!containerRef.current) {
+      return;
+    }
+    containerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
-        return (
-          <div
-            key={`${index}-${line}`}
-            className={lineClassName}
-          >
-            {line || ' '}
-          </div>
-        );
-      })}
+  return (
+    <div className="log-viewer-shell">
+      <div
+        ref={containerRef}
+        className="log-viewer"
+        style={maxHeight ? { maxHeight } : undefined}
+        onScroll={(event) => setShowBackToTop(event.currentTarget.scrollTop > 120)}
+      >
+        {lines.map((line, index) => {
+          const lowerLine = line.toLowerCase();
+          const isSystemLine = line.startsWith('[系统]');
+          // 这里优先照顾运维排查体验，对常见错误关键词做红色高亮。
+          const isErrorLine = /(error|failed|fatal|exception|denied|refused|timed out|认证失败|失败|报错|错误)/.test(lowerLine);
+          const lineClassName = [
+            'log-line',
+            isSystemLine ? 'log-line-system' : '',
+            isErrorLine ? 'log-line-error' : '',
+          ].filter(Boolean).join(' ');
+
+          return (
+            <div
+              key={`${index}-${line}`}
+              className={lineClassName}
+            >
+              {line || ' '}
+            </div>
+          );
+        })}
+      </div>
+      {showBackToTop ? (
+        <Button
+          className="log-viewer-top-button"
+          size="small"
+          onClick={scrollToTop}
+        >
+          回到顶部
+        </Button>
+      ) : null}
     </div>
   );
 }
