@@ -127,7 +127,7 @@ export default function UserDeploymentDetailPage() {
     <>
       <PageHeaderBar
         title={`部署详情 #${deploymentId}`}
-        description="查看当前部署的状态、日志、耗时与执行快照。"
+        description="查看当前部署的状态、执行日志、耗时和执行快照。"
         extra={[
           <Button key="back" onClick={() => navigate(backTarget)}>{backLabel}</Button>,
           rollbackable ? (

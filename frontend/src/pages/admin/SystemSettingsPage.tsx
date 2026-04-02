@@ -105,7 +105,7 @@ export default function SystemSettingsPage() {
     <>
       <PageHeaderBar
         title="系统设置"
-        description="配置平台级 Git 执行参数，以及 Git SSH 和主机 SSH 密钥。"
+        description="配置平台级 Git 参数，以及 Git SSH 和主机 SSH 密钥。"
         extra={<Button type="primary" loading={saving} onClick={() => saveSettings().catch(() => message.error('保存系统设置失败'))}>保存设置</Button>}
       />
       <Card className="app-card">

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Button, Card, Col, Collapse, Descriptions, Popconfirm, Progress, Row, Space, message } from 'antd';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { deploymentsApi } from '../../api/deployments';
 import LogViewer from '../../components/LogViewer';
 import PageHeaderBar from '../../components/PageHeaderBar';
@@ -18,6 +18,7 @@ import { formatDeploymentTimeline } from '../../utils/deploymentTimeline';
  */
 export default function AdminDeploymentDetailPage() {
   const { deploymentId } = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [deployment, setDeployment] = useState<DeploymentSummary>();
@@ -63,7 +64,8 @@ export default function AdminDeploymentDetailPage() {
       && deployment?.status
       && deployment.status === 'SUCCESS',
   );
-  const backPath = searchParams.get('from') === 'services' ? '/admin/services' : '/admin/deployments';
+  const backPath = location.state?.from || (searchParams.get('from') === 'services' ? '/admin/services' : '/admin/deployments');
+  const backLabel = location.state?.backLabel || (backPath === '/admin/services' ? '返回服务管理' : backPath === '/admin/dashboard' ? '返回控制台' : '返回部署记录');
   const executionSnapshot = useMemo(() => {
     const raw = deployment?.executionSnapshotJson;
     if (!raw) {
@@ -125,10 +127,10 @@ export default function AdminDeploymentDetailPage() {
     <>
       <PageHeaderBar
         title={`部署详情 #${deploymentId}`}
-        description="查看部署状态、日志、耗时、错误信息与执行快照。"
+        description="查看部署状态、执行日志、耗时、错误信息和执行快照。"
         extra={[
           <Button key="back" onClick={() => navigate(backPath)}>
-            {backPath === '/admin/services' ? '返回服务管理' : '返回部署记录'}
+            {backLabel}
           </Button>,
           rollbackable ? (
             <Popconfirm

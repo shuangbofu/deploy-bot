@@ -208,7 +208,7 @@ export default function HostManagementPage() {
     <>
       <PageHeaderBar
         title="主机管理"
-        description="管理本机与远程主机，以及对应的连接与工作空间配置。"
+        description="管理本机和远程主机，以及对应的连接和工作空间配置。"
         extra={(
           <Space>
             <Button onClick={() => loadHosts().catch(() => message.error('加载主机失败'))}>刷新</Button>

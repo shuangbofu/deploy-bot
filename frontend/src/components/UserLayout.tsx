@@ -90,8 +90,10 @@ export default function UserLayout() {
           />
         </Space>
       </Layout.Header>
-      <Layout.Content className="px-4 py-4">
-        <Outlet />
+      <Layout.Content className="app-content">
+        <div className="app-page">
+          <Outlet />
+        </div>
       </Layout.Content>
       <ChangePasswordModal open={passwordModalOpen} onClose={() => setPasswordModalOpen(false)} />
     </Layout>

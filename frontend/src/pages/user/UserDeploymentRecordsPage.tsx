@@ -93,7 +93,7 @@ export default function UserDeploymentRecordsPage() {
     <>
       <PageHeaderBar
         title="部署记录"
-        description="查看全部部署历史，并按项目、流水线、状态等条件筛选。"
+        description="查看全部部署记录，并按项目、流水线、状态等条件筛选。"
         extra={<Button onClick={() => loadDeployments().catch(() => message.error('刷新部署记录失败'))}>刷新</Button>}
       />
       <Card className="app-card">

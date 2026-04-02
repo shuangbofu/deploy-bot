@@ -33,6 +33,7 @@ export default function UserPipelinesPage() {
   const [tick, setTick] = useState(() => Date.now());
   const [keyword, setKeyword] = useState('');
   const [tagFilter, setTagFilter] = useState<string[]>();
+  const [selectedPipelineId, setSelectedPipelineId] = useState<number>();
   const navigate = useNavigate();
 
   const parseTagsJson = (content: unknown): string[] => {
@@ -126,7 +127,50 @@ export default function UserPipelinesPage() {
     [pipelines],
   );
 
+  const frequentPipelines = useMemo(() => {
+    const pipelineMap = new Map(pipelines.map((item) => [item.id, item]));
+    const recentDeployments = [...deployments]
+      .filter((item) => item.pipeline?.id && pipelineMap.has(item.pipeline.id))
+      .sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime())
+      .slice(0, 30);
+
+    const counts = new Map<number, { count: number; latestAt: number }>();
+    recentDeployments.forEach((item) => {
+      const pipelineId = item.pipeline?.id;
+      if (!pipelineId) {
+        return;
+      }
+      const latestAt = new Date(item.createdAt || 0).getTime();
+      const current = counts.get(pipelineId);
+      if (!current) {
+        counts.set(pipelineId, { count: 1, latestAt });
+        return;
+      }
+      counts.set(pipelineId, {
+        count: current.count + 1,
+        latestAt: Math.max(current.latestAt, latestAt),
+      });
+    });
+
+    return [...counts.entries()]
+      .map(([pipelineId, stats]) => ({
+        pipeline: pipelineMap.get(pipelineId)!,
+        count: stats.count,
+        latestAt: stats.latestAt,
+      }))
+      .sort((left, right) => {
+        if (right.count !== left.count) {
+          return right.count - left.count;
+        }
+        return right.latestAt - left.latestAt;
+      })
+      .slice(0, 8);
+  }, [deployments, pipelines]);
+
   const filteredPipelineCards = useMemo(() => pipelineCards.filter(({ pipeline }) => {
+    if (selectedPipelineId && pipeline.id !== selectedPipelineId) {
+      return false;
+    }
     const tags = parseTagsJson(pipeline.tagsJson);
     const normalizedKeyword = keyword.trim().toLowerCase();
     if (normalizedKeyword) {
@@ -141,7 +185,7 @@ export default function UserPipelinesPage() {
       return false;
     }
     return true;
-  }), [pipelineCards, keyword, tagFilter]);
+  }), [pipelineCards, keyword, tagFilter, selectedPipelineId]);
 
   /** 打开部署弹窗时顺便拉取可选分支。 */
   const openDeployModal = async (pipeline: PipelineSummary) => {
@@ -205,18 +249,28 @@ export default function UserPipelinesPage() {
         extra={<Button onClick={() => loadData().catch(() => message.error('加载流水线失败'))}>刷新</Button>}
       />
       {loading ? (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
-          <Card className="app-card h-fit">
-            <div className="space-y-3">
-              <Skeleton.Input active block style={{ height: 40 }} />
-              <Skeleton.Button active block style={{ height: 32 }} />
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {Array.from({ length: 8 }).map((_, index) => (
-                <Skeleton.Button key={index} active size="small" style={{ width: 64, height: 28 }} />
-              ))}
-            </div>
-          </Card>
+        <div className="pipeline-hall-layout">
+          <div className="pipeline-hall-sidebar">
+            <Card className="app-card h-fit">
+              <div className="space-y-3">
+                <Skeleton.Input active block style={{ height: 40 }} />
+                <Skeleton.Button active block style={{ height: 32 }} />
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {Array.from({ length: 8 }).map((_, index) => (
+                  <Skeleton.Button key={index} active size="small" style={{ width: 64, height: 28 }} />
+                ))}
+              </div>
+            </Card>
+            <Card className="app-card pipeline-hall-recent-card mt-4" title="最近部署">
+              <div className="space-y-2">
+                {Array.from({ length: 6 }).map((_, index) => (
+                  <Skeleton.Button key={index} active block style={{ height: 34 }} />
+                ))}
+              </div>
+            </Card>
+          </div>
+          <div className="pipeline-hall-content">
           <Row gutter={[16, 16]}>
             {Array.from({ length: 8 }).map((_, index) => (
               <Col xs={24} md={12} xl={8} xxl={6} key={index}>
@@ -262,6 +316,7 @@ export default function UserPipelinesPage() {
               </Col>
             ))}
           </Row>
+          </div>
         </div>
       ) : pipelineCards.length === 0 ? (
         <Card className="app-card">
@@ -269,51 +324,81 @@ export default function UserPipelinesPage() {
         </Card>
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
-            <Card className="app-card h-fit">
-              <div className="space-y-3">
-                <Input
-                  value={keyword}
-                  placeholder="搜索名称 / 项目 / 分支"
-                  onChange={(event) => setKeyword(event.target.value)}
-                />
-                <Button
-                  onClick={() => {
-                    setKeyword('');
-                    setTagFilter(undefined);
-                  }}
-                >
-                  重置条件
-                </Button>
-              </div>
-              {availableTags.length > 0 ? (
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {availableTags.map((tag) => {
-                    const active = Boolean(tagFilter?.includes(tag));
-                    return (
-                      <Tag
-                        key={tag}
-                        style={{
-                          backgroundColor: getStableTagColor(tag),
-                          color: '#fff',
-                          borderColor: 'transparent',
-                          opacity: active ? 1 : 0.55,
-                        }}
-                        className="cursor-pointer select-none !border-0 !px-3 !py-1"
-                        onClick={() => setTagFilter((previous) => {
-                          const next = previous?.includes(tag)
-                            ? previous.filter((item) => item !== tag)
-                            : [...(previous || []), tag];
-                          return next.length > 0 ? next : undefined;
-                        })}
-                      >
-                        {tag}
-                      </Tag>
-                    );
-                  })}
+          <div className="pipeline-hall-layout">
+            <div className="pipeline-hall-sidebar">
+              <Card className="app-card h-fit">
+                <div className="space-y-3">
+                  <Input
+                    value={keyword}
+                    placeholder="搜索名称 / 项目 / 分支"
+                    onChange={(event) => setKeyword(event.target.value)}
+                  />
+                  <Button
+                    onClick={() => {
+                      setKeyword('');
+                      setTagFilter(undefined);
+                      setSelectedPipelineId(undefined);
+                    }}
+                  >
+                    重置条件
+                  </Button>
                 </div>
+                {availableTags.length > 0 ? (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {availableTags.map((tag) => {
+                      const active = Boolean(tagFilter?.includes(tag));
+                      return (
+                        <Tag
+                          key={tag}
+                          style={{
+                            backgroundColor: getStableTagColor(tag),
+                            color: '#fff',
+                            borderColor: 'transparent',
+                            opacity: active ? 1 : 0.55,
+                          }}
+                          className="cursor-pointer select-none !border-0 !px-3 !py-1"
+                          onClick={() => setTagFilter((previous) => {
+                            const next = previous?.includes(tag)
+                              ? previous.filter((item) => item !== tag)
+                              : [...(previous || []), tag];
+                            return next.length > 0 ? next : undefined;
+                          })}
+                        >
+                          {tag}
+                        </Tag>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </Card>
+              {frequentPipelines.length > 0 ? (
+                <Card className="app-card pipeline-hall-recent-card mt-4" title="最近部署">
+                  <div className="space-y-2">
+                    {frequentPipelines.map(({ pipeline, count }) => (
+                      <button
+                        key={pipeline.id}
+                        type="button"
+                        className={`pipeline-hall-shortcut${selectedPipelineId === pipeline.id ? ' pipeline-hall-shortcut--active' : ''}`}
+                        onClick={() => setSelectedPipelineId((previous) => (previous === pipeline.id ? undefined : pipeline.id))}
+                      >
+                        <div className="pipeline-hall-shortcut-main">
+                          <div className="pipeline-hall-shortcut-title">
+                            <PipelineIcon type={pipeline.template?.templateType} />
+                            <span className="pipeline-hall-shortcut-name">{pipeline.name}</span>
+                          </div>
+                          <span className="pipeline-hall-shortcut-count">近 {count} 次</span>
+                        </div>
+                        <div className="pipeline-hall-shortcut-meta">
+                          <span>{pipeline.project?.name || '-'}</span>
+                          <span>{pipeline.defaultBranch || '-'}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </Card>
               ) : null}
-            </Card>
+            </div>
+            <div className="pipeline-hall-content">
             <Row gutter={[16, 16]}>
               {filteredPipelineCards.map(({ pipeline, latestDeployment }) => {
               const tags = parseTagsJson(pipeline.tagsJson);
@@ -323,7 +408,7 @@ export default function UserPipelinesPage() {
                 : undefined;
               return (
                 <Col xs={24} md={12} xl={8} xxl={6} key={pipeline.id}>
-                  <Card className="pipeline-card" bordered={false}>
+                  <Card id={`pipeline-card-${pipeline.id}`} className="pipeline-card" bordered={false}>
                     <div className="pipeline-card-header">
                       <div className="pipeline-card-content">
                         <PipelineIcon type={pipeline.template?.templateType} />
@@ -437,6 +522,7 @@ export default function UserPipelinesPage() {
               );
               })}
             </Row>
+            </div>
           </div>
         </>
       )}

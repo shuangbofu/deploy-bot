@@ -353,7 +353,7 @@ export default function PipelineAdminPage() {
     <>
       <PageHeaderBar
         title="流水线管理"
-        description="管理流水线、默认变量、运行环境与发布配置。"
+        description="配置用户可直接部署的流水线，绑定项目、模板、变量和运行环境。构建在本机完成，目标主机负责接收产物并发布。"
         extra={(
           <Space>
             <Button onClick={() => loadData().catch(() => message.error('加载流水线数据失败'))}>刷新</Button>

@@ -94,7 +94,7 @@ export default function UserPipelineHistoryPage() {
     <>
       <PageHeaderBar
         title={title}
-        description="查看当前流水线的部署历史与执行结果。"
+        description="查看当前流水线的部署历史和执行结果。"
         extra={[
           <Button key="back" onClick={() => navigate('/user/pipelines')}>返回流水线大厅</Button>,
           <Button key="refresh" type="primary" onClick={() => loadData().catch(() => message.error('刷新失败'))}>刷新</Button>,

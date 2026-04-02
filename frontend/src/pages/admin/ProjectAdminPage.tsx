@@ -182,7 +182,7 @@ export default function ProjectAdminPage() {
     <>
       <PageHeaderBar
         title="项目管理"
-        description="管理项目名称、仓库地址与 Git 认证配置。"
+        description="管理项目名称、仓库地址和 Git 认证配置。"
         extra={(
           <Space>
             <Button onClick={() => loadProjects().catch(() => message.error('加载项目失败'))}>刷新</Button>
