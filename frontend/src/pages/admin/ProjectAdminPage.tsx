@@ -190,6 +190,7 @@ export default function ProjectAdminPage() {
           </Space>
         )}
       />
+      <div className="app-page-scroll">
       <Card className="app-card">
         <div className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-3">
           <Input
@@ -292,6 +293,7 @@ export default function ProjectAdminPage() {
           ]}
         />
       </Card>
+      </div>
       <Modal
         title={editingId ? '编辑项目' : '新建项目'}
         open={modalOpen}

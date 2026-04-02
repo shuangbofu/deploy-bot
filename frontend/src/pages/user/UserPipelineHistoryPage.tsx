@@ -94,12 +94,13 @@ export default function UserPipelineHistoryPage() {
     <>
       <PageHeaderBar
         title={title}
-        description="查看当前流水线的部署历史和执行结果。"
+        description="查看当前流水线的部署历史和部署结果。"
         extra={[
           <Button key="back" onClick={() => navigate('/user/pipelines')}>返回流水线大厅</Button>,
           <Button key="refresh" type="primary" onClick={() => loadData().catch(() => message.error('刷新失败'))}>刷新</Button>,
         ]}
       />
+      <div className="app-page-scroll">
       <Card className="app-card">
         <Row gutter={[12, 12]} className="mb-4">
           <Col xs={24} md={12} xl={6}>
@@ -195,6 +196,7 @@ export default function UserPipelineHistoryPage() {
           ]}
         />
       </Card>
+      </div>
     </>
   );
 }

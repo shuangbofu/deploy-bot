@@ -92,7 +92,7 @@ export default function AdminDashboardPage() {
   return (
     <DashboardConsole
       title="控制台"
-      description="查看平台概览、部署趋势、最近执行记录和异常情况。"
+      description="查看平台概览、部署趋势、最近部署记录和异常情况。"
       loading={loading}
       stats={stats}
       deployments={data.deployments}

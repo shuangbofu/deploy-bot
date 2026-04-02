@@ -97,6 +97,15 @@ export default function DashboardConsole({
     return `${value} MB`;
   };
 
+  const getUsageColor = (value?: number | null) => {
+    const percent = typeof value === 'number' ? value : 0;
+    if (percent < 20) return '#166534';
+    if (percent < 40) return '#16a34a';
+    if (percent < 65) return '#eab308';
+    if (percent < 85) return '#f97316';
+    return '#dc2626';
+  };
+
   const statItems = [
     { key: 'projects', title: '项目数', value: stats.projects, prefix: <FolderOpenOutlined style={{ color: '#2563eb' }} /> },
     { key: 'hosts', title: '主机数', value: stats.hosts, prefix: <CloudServerOutlined style={{ color: '#0f766e' }} /> },
@@ -171,19 +180,19 @@ export default function DashboardConsole({
                             </div>
                             <div className="mt-3">
                               <div className="mb-1 text-xs text-slate-500">CPU 使用率</div>
-                              <Progress percent={resource.cpuUsagePercent ?? 0} size="small" strokeColor="#f59e0b" />
+                              <Progress percent={resource.cpuUsagePercent ?? 0} size="small" strokeColor={getUsageColor(resource.cpuUsagePercent)} />
                               <div className="mt-1 text-xs text-slate-500">CPU {resource.cpuUsagePercent ?? '-'}%</div>
                             </div>
                             <div className="mt-3">
                               <div className="mb-1 text-xs text-slate-500">内存使用率</div>
-                              <Progress percent={resource.memoryUsagePercent ?? 0} size="small" strokeColor="#2563eb" />
+                              <Progress percent={resource.memoryUsagePercent ?? 0} size="small" strokeColor={getUsageColor(resource.memoryUsagePercent)} />
                               <div className="mt-1 text-xs text-slate-500">
                                 {formatMemoryMb(resource.memoryUsedMb)} / {formatMemoryMb(resource.memoryTotalMb)}
                               </div>
                             </div>
                             <div className="mt-2">
                               <div className="mb-1 text-xs text-slate-500">磁盘使用率</div>
-                              <Progress percent={resource.diskUsagePercent ?? 0} size="small" strokeColor="#16a34a" />
+                              <Progress percent={resource.diskUsagePercent ?? 0} size="small" strokeColor={getUsageColor(resource.diskUsagePercent)} />
                               <div className="mt-1 text-xs text-slate-500">
                                 {resource.diskUsedGb ?? '-'} / {resource.diskTotalGb ?? '-'} GB
                               </div>
@@ -214,7 +223,7 @@ export default function DashboardConsole({
                   />
                   <div className="dashboard-status-legend">
                     <div className="dashboard-status-row">
-                      <span>执行中</span>
+                      <span>部署中</span>
                       <strong>{derived.running}</strong>
                     </div>
                     <div className="dashboard-status-row">
@@ -329,7 +338,7 @@ export default function DashboardConsole({
               <Card className="app-card dashboard-panel-card" title="最近部署" extra={<a onClick={() => navigate(listPath)}>查看全部</a>} loading={loading}>
                 {renderDeploymentList(latestDeployments, '还没有部署记录。')}
               </Card>
-              <Card className="app-card dashboard-panel-card" title="执行异常" extra={<a onClick={() => navigate(listPath)}>查看全部</a>} loading={loading}>
+              <Card className="app-card dashboard-panel-card" title="部署异常" extra={<a onClick={() => navigate(listPath)}>查看全部</a>} loading={loading}>
                 {renderDeploymentList(attentionDeployments, '当前没有需要优先处理的部署。')}
               </Card>
             </div>

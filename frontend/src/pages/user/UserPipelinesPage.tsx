@@ -543,7 +543,7 @@ export default function UserPipelinesPage() {
         <div className="space-y-4">
           {deployingPipeline && deployments.some((item) => item.pipeline?.id === deployingPipeline.id && item.status && ACTIVE_DEPLOYMENT_STATUSES.includes(item.status)) ? (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
-              检测到当前流水线还有执行中的部署。继续部署会先停止前一个正在运行的任务。
+              检测到当前流水线还有部署中的任务。继续部署会先停止前一个正在运行的任务。
             </div>
           ) : null}
           <div className="text-sm text-slate-500">

@@ -127,7 +127,7 @@ export default function AdminDeploymentDetailPage() {
     <>
       <PageHeaderBar
         title={`部署详情 #${deploymentId}`}
-        description="查看部署状态、执行日志、耗时、错误信息和执行快照。"
+        description="查看部署状态、部署日志、耗时、错误信息和部署快照。"
         extra={[
           <Button key="back" onClick={() => navigate(backPath)}>
             {backLabel}
@@ -136,7 +136,7 @@ export default function AdminDeploymentDetailPage() {
             <Popconfirm
               key="rollback"
               title="确认重新发布"
-              description="会直接复用这次部署保留下来的构建产物重新发布，不会重新执行构建流程。"
+              description="会直接复用这次部署保留下来的构建产物重新发布，不会重新走构建流程。"
               okText="确认重新发布"
               cancelText="取消"
               onConfirm={() => deploymentsApi.rollback(String(deploymentId)).then((response) => {
@@ -168,7 +168,7 @@ export default function AdminDeploymentDetailPage() {
           <div className="deployment-detail-sidebar" style={contentHeight ? { height: '100%' } : undefined}>
             <Card
               className="app-card"
-              title="执行状态"
+              title="部署状态"
               extra={<StatusTag status={deployment?.status} />}
             >
               <Progress
@@ -194,7 +194,7 @@ export default function AdminDeploymentDetailPage() {
                 <Descriptions.Item label="错误信息">{deployment?.errorMessage || '-'}</Descriptions.Item>
               </Descriptions>
             </Card>
-            <Card className="app-card deployment-detail-snapshot-card" title="执行快照">
+            <Card className="app-card deployment-detail-snapshot-card" title="部署快照">
               <Descriptions column={1} size="small">
                 <Descriptions.Item label="模板">{String(executionSnapshot?.templateName || '-')}</Descriptions.Item>
                 <Descriptions.Item label="模板类型">{String(executionSnapshot?.templateType || '-')}</Descriptions.Item>
@@ -243,7 +243,7 @@ export default function AdminDeploymentDetailPage() {
           <Card
             className="app-card deployment-detail-log-card"
             style={contentHeight ? { height: '100%' } : undefined}
-            title="执行日志"
+            title="部署日志"
             extra={(
               <Space>
                 <Button onClick={() => navigator.clipboard.writeText(logContent).then(() => message.success('日志已复制')).catch(() => message.error('复制失败'))}>

@@ -216,6 +216,7 @@ export default function HostManagementPage() {
           </Space>
         )}
       />
+      <div className="app-page-scroll">
       <Card className="app-card">
         <div className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-4">
           <Input
@@ -343,6 +344,7 @@ export default function HostManagementPage() {
           ]}
         />
       </Card>
+      </div>
       <Modal
         title={editingId ? '编辑主机' : '新建主机'}
         open={modalOpen}

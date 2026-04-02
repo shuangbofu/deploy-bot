@@ -11,14 +11,14 @@ interface StatusTagProps {
  */
 export default function StatusTag({ status, runningLabel }: StatusTagProps) {
   const meta = status ? DEPLOYMENT_STATUS_META[status] : null;
-  const label = status === 'RUNNING' && runningLabel ? runningLabel : (meta?.label || status || '未执行');
+  const label = status === 'RUNNING' && runningLabel ? runningLabel : (meta?.label || status || '未部署');
   const dotClass = meta?.dotClass || 'status-dot--pending';
 
   if (!status) {
     return (
       <span className="status-chip">
         <span className="status-dot status-dot--pending" />
-        <span>未执行</span>
+        <span>未部署</span>
       </span>
     );
   }

@@ -248,6 +248,7 @@ export default function TemplateAdminPage() {
           </Space>
         )}
       />
+      <div className="app-page-scroll">
       <Card className="app-card">
         <div className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-4">
           <Input
@@ -388,6 +389,7 @@ export default function TemplateAdminPage() {
           ]}
         />
       </Card>
+      </div>
       <Modal
         title={editingId ? '编辑模板' : '新建模板'}
         open={modalOpen}

@@ -79,7 +79,7 @@ export default function UserDashboardPage() {
   return (
     <DashboardConsole
       title="控制台"
-      description="查看可用流水线、近期部署趋势和当前执行情况。"
+      description="查看可用流水线、近期部署趋势和当前部署情况。"
       loading={loading}
       stats={stats}
       deployments={deployments}

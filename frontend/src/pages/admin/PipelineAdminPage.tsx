@@ -361,6 +361,7 @@ export default function PipelineAdminPage() {
           </Space>
         )}
       />
+      <div className="app-page-scroll">
       <Card className="app-card">
         <div className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-5">
           <Input
@@ -561,7 +562,7 @@ export default function PipelineAdminPage() {
                         </span>
                         <button
                           type="button"
-                          className="cursor-pointer rounded-sm bg-transparent px-1 py-0 font-semibold text-slate-700 transition-colors hover:text-slate-900"
+                          className="cursor-pointer rounded-sm bg-transparent px-1 py-0 text-slate-700 transition-colors hover:text-slate-900"
                           onClick={async () => {
                             const value = row.parsedVariablesJson[item.name] || '-';
                             try {
@@ -641,6 +642,7 @@ export default function PipelineAdminPage() {
           ]}
         />
       </Card>
+      </div>
       <Modal
         title={editingId ? '编辑流水线' : '新建流水线'}
         open={modalOpen}

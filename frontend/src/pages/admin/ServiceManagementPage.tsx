@@ -83,6 +83,7 @@ export default function ServiceManagementPage() {
         description="查看受管服务状态，并执行启动、停止和重启操作。"
         extra={<Button onClick={() => loadServices().catch(() => message.error('刷新失败'))}>刷新</Button>}
       />
+      <div className="app-page-scroll">
       <Card className="app-card">
         <div className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-4">
           <Input
@@ -206,6 +207,7 @@ export default function ServiceManagementPage() {
           ]}
         />
       </Card>
+      </div>
     </>
   );
 }

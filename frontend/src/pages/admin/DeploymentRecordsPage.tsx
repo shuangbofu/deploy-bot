@@ -96,6 +96,7 @@ export default function DeploymentRecordsPage() {
         description="查看全部部署记录，并按项目、流水线、触发人、状态和时间筛选。"
         extra={<Button onClick={() => loadDeployments().catch(() => message.error('刷新部署记录失败'))}>刷新</Button>}
       />
+      <div className="app-page-scroll">
       <Card className="app-card">
         <div className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-5">
           <Select
@@ -189,7 +190,7 @@ export default function DeploymentRecordsPage() {
                     {row.status === 'SUCCESS' && row.artifactPath ? (
                       <Popconfirm
                         title="确认重新发布"
-                        description="会直接复用这次部署保留下来的构建产物重新发布，不会重新执行构建流程。"
+                        description="会直接复用这次部署保留下来的构建产物重新发布，不会重新走构建流程。"
                         okText="确认"
                         cancelText="取消"
                         onConfirm={() => deploymentsApi.rollback(row.id).then((response) => {
@@ -218,6 +219,7 @@ export default function DeploymentRecordsPage() {
           ]}
         />
       </Card>
+      </div>
     </>
   );
 }

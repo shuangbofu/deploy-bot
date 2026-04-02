@@ -44,24 +44,6 @@ body {
   padding: 0 16px 16px;
 }
 
-.app-page > .page-header + .app-card,
-.app-page > .page-header + div {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-}
-
-.app-page > .page-header + .app-card {
-  display: flex;
-  flex-direction: column;
-}
-
-.app-page > .page-header + .app-card > .ant-card-body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-}
-
 .app-page-scroll {
   flex: 1;
   min-height: 0;
@@ -458,13 +440,13 @@ body {
 }
 
 .status-dot--running {
-  background: #2563eb;
-  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.14);
+  background: #eab308;
+  box-shadow: 0 0 0 4px rgba(234, 179, 8, 0.16);
 }
 
 .status-dot--stopped {
-  background: #f59e0b;
-  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.14);
+  background: #f97316;
+  box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.14);
 }
 
 .status-dot--success {
