@@ -7,8 +7,11 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+import top.fusb.deploybot.dto.AvatarUploadResponse;
 import top.fusb.deploybot.dto.UserRequest;
 import top.fusb.deploybot.model.UserEntity;
 import top.fusb.deploybot.security.AdminOnly;
@@ -42,6 +45,16 @@ public class UserController {
     @PutMapping("/{id}")
     public UserEntity update(@PathVariable Long id, @Valid @RequestBody UserRequest request) {
         return userService.save(request, id);
+    }
+
+    @PostMapping("/{id}/reset-password")
+    public void resetPassword(@PathVariable Long id) {
+        userService.resetPassword(id);
+    }
+
+    @PostMapping("/avatar")
+    public AvatarUploadResponse uploadAvatar(@RequestParam("file") MultipartFile file) {
+        return new AvatarUploadResponse(userService.uploadAvatar(file));
     }
 
     @DeleteMapping("/{id}")

@@ -12,8 +12,8 @@ public record UserRequest(
         @NotBlank String username,
         /** 展示名称。 */
         @NotBlank String displayName,
-        /** 密码，新建必填，编辑时留空表示不修改。 */
-        String password,
+        /** 头像访问路径。 */
+        String avatar,
         /** 角色。 */
         @NotNull UserRole role,
         /** 是否启用。 */

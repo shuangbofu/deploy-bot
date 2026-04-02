@@ -12,6 +12,8 @@ public record UserProfile(
         String username,
         /** 展示名称。 */
         String displayName,
+        /** 头像访问路径。 */
+        String avatar,
         /** 用户角色。 */
         UserRole role,
         /** 是否启用。 */

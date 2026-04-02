@@ -30,7 +30,8 @@ public class SchemaMigrationBootstrap {
                 "ALTER TABLE IF EXISTS deployments ADD COLUMN IF NOT EXISTS execution_snapshot_json CLOB",
                 "ALTER TABLE IF EXISTS pipelines ADD COLUMN IF NOT EXISTS application_name VARCHAR(255)",
                 "ALTER TABLE IF EXISTS pipelines ADD COLUMN IF NOT EXISTS spring_profile VARCHAR(255)",
-                "ALTER TABLE IF EXISTS pipelines ADD COLUMN IF NOT EXISTS runtime_config_yaml CLOB"
+                "ALTER TABLE IF EXISTS pipelines ADD COLUMN IF NOT EXISTS runtime_config_yaml CLOB",
+                "ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS avatar VARCHAR(500)"
         );
         statements.forEach(this::executeSilently);
     }

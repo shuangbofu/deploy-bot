@@ -38,6 +38,10 @@ public class UserEntity {
     @Column(nullable = false, length = 100)
     private String displayName;
 
+    /** 头像访问路径。 */
+    @Column(length = 500)
+    private String avatar;
+
     /** 密码哈希。 */
     @JsonIgnore
     @Column(nullable = false, length = 255)

@@ -27,6 +27,8 @@ deploybot:
   workspace-root: ./runtime
   runtime-environment-presets: classpath:runtime-environment-presets.json
   default-templates: classpath:default-templates.json
+  user:
+    default-password: 12345
 
 logging:
   file:

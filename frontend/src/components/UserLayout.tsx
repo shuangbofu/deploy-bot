@@ -1,5 +1,5 @@
-import { AppstoreOutlined, ProfileOutlined, DeploymentUnitOutlined, LogoutOutlined, LockOutlined, GithubOutlined } from '@ant-design/icons';
-import { Button, Dropdown, Layout, Menu, Space, Typography } from 'antd';
+import { AppstoreOutlined, ProfileOutlined, DeploymentUnitOutlined, LogoutOutlined, LockOutlined, GithubOutlined, RobotOutlined } from '@ant-design/icons';
+import { Avatar, Button, Dropdown, Layout, Menu, Space, Typography } from 'antd';
 import { useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
@@ -78,8 +78,14 @@ export default function UserLayout() {
               ],
             }}
           >
-            <Button type="primary">
-              {user?.displayName || user?.username || '用户'}
+            <Button type="primary" className="user-menu-trigger">
+              <Space size={10}>
+                <Avatar size={28} src={user?.avatar} icon={!user?.avatar ? <RobotOutlined /> : undefined} />
+                <span className="user-menu-trigger__text">
+                  <span className="user-menu-trigger__display-name">{user?.displayName || '用户'}</span>
+                  <span className="user-menu-trigger__username">@{user?.username || 'user'}</span>
+                </span>
+              </Space>
             </Button>
           </Dropdown>
           <Button

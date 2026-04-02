@@ -91,9 +91,13 @@ export interface LoginResponse {
 export interface UserPayload {
   username: string;
   displayName: string;
-  password?: string;
+  avatar?: string;
   role: 'ADMIN' | 'USER';
   enabled: boolean;
+}
+
+export interface AvatarUploadResponse {
+  url: string;
 }
 
 /**
@@ -217,5 +221,6 @@ export type {
   RuntimeEnvironmentInstallTaskStatus,
   ServiceSummary,
   TemplateSummary,
+  AvatarUploadResponse,
   UserSummary,
 };

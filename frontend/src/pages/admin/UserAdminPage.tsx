@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Switch, Table, message } from 'antd';
+import { RobotOutlined, UploadOutlined } from '@ant-design/icons';
+import { Avatar, Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Switch, Table, Upload, message } from 'antd';
+import type { UploadProps } from 'antd';
 import { usersApi } from '../../api/users';
 import type { UserPayload, UserSummary } from '../../api/types';
 import EmptyPane from '../../components/EmptyPane';
@@ -8,7 +10,7 @@ import PageHeaderBar from '../../components/PageHeaderBar';
 const emptyUser: UserPayload = {
   username: '',
   displayName: '',
-  password: '',
+  avatar: '',
   role: 'USER',
   enabled: true,
 };
@@ -52,7 +54,7 @@ export default function UserAdminPage() {
     setForm({
       username: record.username,
       displayName: record.displayName,
-      password: '',
+      avatar: record.avatar || '',
       role: record.role,
       enabled: record.enabled,
     });
@@ -78,6 +80,11 @@ export default function UserAdminPage() {
     message.success('用户已删除');
   };
 
+  const resetPassword = async (record: UserSummary) => {
+    await usersApi.resetPassword(record.id);
+    message.success(`已将 ${record.displayName} 的密码重置为系统默认密码`);
+  };
+
   const filteredUsers = useMemo(() => users.filter((item) => {
     const normalizedKeyword = keyword.trim().toLowerCase();
     if (normalizedKeyword) {
@@ -96,11 +103,26 @@ export default function UserAdminPage() {
     return true;
   }), [users, keyword, roleFilter, enabledFilter]);
 
+  const uploadProps: UploadProps = {
+    showUploadList: false,
+    accept: 'image/*',
+    beforeUpload: async (file) => {
+      try {
+        const result = await usersApi.uploadAvatar(file as File);
+        setForm((previous) => ({ ...previous, avatar: result.url }));
+        message.success('头像已上传');
+      } catch {
+        message.error('上传头像失败');
+      }
+      return false;
+    },
+  };
+
   return (
     <>
       <PageHeaderBar
         title="用户管理"
-        description="管理登录账号、显示名称、角色和启用状态。"
+        description="管理登录账号、显示名称、角色和启用状态。新建用户与重置密码都会使用系统默认密码。"
         extra={(
           <Space>
             <Button onClick={() => loadUsers().catch(() => message.error('加载用户失败'))}>刷新</Button>
@@ -176,6 +198,13 @@ export default function UserAdminPage() {
             onChange: (current, pageSize) => setPagination({ current, pageSize }),
           }}
           columns={[
+            {
+              title: '头像',
+              width: 72,
+              render: (_, record) => (
+                <Avatar src={record.avatar} icon={!record.avatar ? <RobotOutlined /> : undefined} />
+              ),
+            },
             { title: '用户名', dataIndex: 'username' },
             { title: '显示名称', dataIndex: 'displayName' },
             { title: '角色', render: (_, record) => (record.role === 'ADMIN' ? '管理员' : '普通用户') },
@@ -185,6 +214,9 @@ export default function UserAdminPage() {
               render: (_, record) => (
                 <Space>
                   <Button type="link" onClick={() => openEdit(record)}>编辑</Button>
+                  <Popconfirm title={`确认将 ${record.displayName} 的密码重置为系统默认密码吗？`} onConfirm={() => resetPassword(record)}>
+                    <Button type="link">重置密码</Button>
+                  </Popconfirm>
                   <Popconfirm title="确认删除这个用户吗？" onConfirm={() => removeUser(record.id)}>
                     <Button type="link" danger>删除</Button>
                   </Popconfirm>
@@ -210,12 +242,22 @@ export default function UserAdminPage() {
           <Form.Item label="显示名称" required>
             <Input value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} />
           </Form.Item>
-          <Form.Item label={editingId ? '重置密码' : '密码'} required={!editingId}>
-            <Input.Password
-              placeholder={editingId ? '留空表示不修改密码' : '请输入登录密码'}
-              value={form.password}
-              onChange={(event) => setForm({ ...form, password: event.target.value })}
-            />
+          <Form.Item label="头像">
+            <Space align="start">
+              <Avatar
+                size={56}
+                src={form.avatar}
+                icon={!form.avatar ? <RobotOutlined /> : undefined}
+              />
+              <Space direction="vertical" size={8}>
+                <Upload {...uploadProps}>
+                  <Button icon={<UploadOutlined />}>上传头像</Button>
+                </Upload>
+                {form.avatar ? (
+                  <Button onClick={() => setForm({ ...form, avatar: '' })}>清空头像</Button>
+                ) : null}
+              </Space>
+            </Space>
           </Form.Item>
           <Form.Item label="角色" required>
             <Select

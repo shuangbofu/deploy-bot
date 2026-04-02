@@ -1,46 +1,26 @@
 import { Empty, message } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { deploymentsApi } from '../../api/deployments';
-import { hostsApi } from '../../api/hosts';
 import { pipelinesApi } from '../../api/pipelines';
-import { projectsApi } from '../../api/projects';
-import { servicesApi } from '../../api/services';
-import { templatesApi } from '../../api/templates';
-import { usersApi } from '../../api/users';
 import DashboardConsole from '../../components/DashboardConsole';
 import { ACTIVE_DEPLOYMENT_STATUSES, FINISHED_DEPLOYMENT_STATUSES } from '../../constants/deployment';
-import type { DeploymentSummary, HostSummary, PipelineSummary, ProjectSummary, ServiceSummary, TemplateSummary, UserSummary } from '../../types/domain';
+import type { DeploymentSummary, PipelineSummary } from '../../types/domain';
 
 export default function UserDashboardPage() {
   const [loading, setLoading] = useState(false);
-  const [projects, setProjects] = useState<ProjectSummary[]>([]);
-  const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [pipelines, setPipelines] = useState<PipelineSummary[]>([]);
   const [deployments, setDeployments] = useState<DeploymentSummary[]>([]);
-  const [hosts, setHosts] = useState<HostSummary[]>([]);
-  const [services, setServices] = useState<ServiceSummary[]>([]);
-  const [users, setUsers] = useState<UserSummary[]>([]);
   const [tick, setTick] = useState(() => Date.now());
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const [nextProjects, nextTemplates, nextPipelines, nextDeployments, nextHosts, nextServices, nextUsers] = await Promise.all([
-        projectsApi.list(),
-        templatesApi.list(),
+      const [nextPipelines, nextDeployments] = await Promise.all([
         pipelinesApi.list(),
         deploymentsApi.list(),
-        hostsApi.list(),
-        servicesApi.list(),
-        usersApi.list(),
       ]);
-      setProjects(nextProjects);
-      setTemplates(nextTemplates);
       setPipelines(nextPipelines);
       setDeployments(nextDeployments);
-      setHosts(nextHosts);
-      setServices(nextServices);
-      setUsers(nextUsers);
     } finally {
       setLoading(false);
     }
@@ -62,19 +42,19 @@ export default function UserDashboardPage() {
     const totalFinished = deployments.filter((item) => item.status && FINISHED_DEPLOYMENT_STATUSES.includes(item.status)).length;
     const successRate = totalFinished > 0 ? Math.round((success * 100) / totalFinished) : 0;
     return {
-      projects: projects.length,
-      templates: templates.length,
+      projects: 0,
+      templates: 0,
       pipelines: pipelines.length,
       deployments: deployments.length,
-      hosts: hosts.length,
-      services: services.length,
-      users: users.length,
+      hosts: 0,
+      services: 0,
+      users: 0,
       running,
       failed,
       successRate,
-      runningServices: services.filter((item) => item.status === 'RUNNING').length,
+      runningServices: 0,
     };
-  }, [deployments, hosts, pipelines, projects, services, templates, users]);
+  }, [deployments, pipelines]);
 
   return (
     <DashboardConsole
@@ -83,7 +63,7 @@ export default function UserDashboardPage() {
       loading={loading}
       stats={stats}
       deployments={deployments}
-      services={services}
+      services={[]}
       resources={[]}
       isAdmin={false}
       detailBasePath="/user/deployments"

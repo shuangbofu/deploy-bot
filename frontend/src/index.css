@@ -97,6 +97,36 @@ body {
   cursor: pointer !important;
 }
 
+.user-menu-trigger {
+  height: 38px !important;
+  padding: 0 10px !important;
+}
+
+.user-menu-trigger__text {
+  display: inline-flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 6px;
+  line-height: 1;
+}
+
+.user-menu-trigger__display-name {
+  max-width: 88px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.user-menu-trigger__username {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
 .page-header {
   flex: none;
   margin-bottom: 5px;

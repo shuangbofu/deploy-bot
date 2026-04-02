@@ -89,7 +89,14 @@ public class AuthService {
     }
 
     public UserProfile toProfile(UserEntity user) {
-        return new UserProfile(user.getId(), user.getUsername(), user.getDisplayName(), user.getRole(), user.getEnabled());
+        return new UserProfile(
+                user.getId(),
+                user.getUsername(),
+                user.getDisplayName(),
+                user.getAvatar(),
+                user.getRole(),
+                user.getEnabled()
+        );
     }
 
     private UserEntity getCurrentUserEntity() {

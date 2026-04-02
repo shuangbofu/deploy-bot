@@ -177,6 +177,8 @@ export interface UserSummary {
   username: string;
   /** 展示名称。 */
   displayName: string;
+  /** 用户头像。 */
+  avatar?: string;
   /** 用户角色。 */
   role: UserRole;
   /** 是否启用。 */

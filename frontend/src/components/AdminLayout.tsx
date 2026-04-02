@@ -1,5 +1,5 @@
-import { AppstoreOutlined, DeploymentUnitOutlined, FileTextOutlined, FolderOpenOutlined, ProfileOutlined, RadarChartOutlined, SettingOutlined, CloudServerOutlined, TeamOutlined, LogoutOutlined, LockOutlined, GithubOutlined } from '@ant-design/icons';
-import { Button, Dropdown, Layout, Menu, Space, Typography } from 'antd';
+import { AppstoreOutlined, DeploymentUnitOutlined, FileTextOutlined, FolderOpenOutlined, ProfileOutlined, RadarChartOutlined, SettingOutlined, CloudServerOutlined, TeamOutlined, LogoutOutlined, LockOutlined, GithubOutlined, RobotOutlined } from '@ant-design/icons';
+import { Avatar, Button, Dropdown, Layout, Menu, Space, Typography } from 'antd';
 import { useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
@@ -82,8 +82,14 @@ export default function AdminLayout() {
               ],
             }}
           >
-            <Button type="primary">
-              {user?.displayName || user?.username || '管理员'}
+            <Button type="primary" className="user-menu-trigger">
+              <Space size={10}>
+                <Avatar size={28} src={user?.avatar} icon={!user?.avatar ? <RobotOutlined /> : undefined} />
+                <span className="user-menu-trigger__text">
+                  <span className="user-menu-trigger__display-name">{user?.displayName || '管理员'}</span>
+                  <span className="user-menu-trigger__username">@{user?.username || 'admin'}</span>
+                </span>
+              </Space>
             </Button>
           </Dropdown>
           <Button

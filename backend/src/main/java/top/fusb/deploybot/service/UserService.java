@@ -1,6 +1,8 @@
 package top.fusb.deploybot.service;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 import top.fusb.deploybot.dto.UserRequest;
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorSubCode;
@@ -10,6 +12,9 @@ import top.fusb.deploybot.repo.UserRepository;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 /**
  * 用户管理服务。
@@ -18,10 +23,23 @@ import java.util.List;
 public class UserService {
     private final UserRepository userRepository;
     private final AuthService authService;
+    private final String defaultPassword;
+    private final Path avatarDirectory;
 
-    public UserService(UserRepository userRepository, AuthService authService) {
+    public UserService(
+            UserRepository userRepository,
+            AuthService authService,
+            @Value("${deploybot.user.default-password:12345}") String defaultPassword,
+            @Value("${deploybot.workspace-root:./runtime}") String workspaceRoot
+    ) {
         this.userRepository = userRepository;
         this.authService = authService;
+        this.defaultPassword = defaultPassword;
+        this.avatarDirectory = Path.of(workspaceRoot == null || workspaceRoot.isBlank() ? "./runtime" : workspaceRoot.trim())
+                .toAbsolutePath()
+                .normalize()
+                .resolve("files")
+                .resolve("avatars");
     }
 
     public List<UserEntity> findAll() {
@@ -40,6 +58,7 @@ public class UserService {
 
         entity.setUsername(request.username().trim());
         entity.setDisplayName(request.displayName().trim());
+        entity.setAvatar(request.avatar());
         entity.setRole(request.role() == null ? UserRole.USER : request.role());
         entity.setEnabled(Boolean.TRUE.equals(request.enabled()));
         if (entity.getCreatedAt() == null) {
@@ -48,15 +67,54 @@ public class UserService {
         entity.setUpdatedAt(LocalDateTime.now());
 
         if (id == null) {
-            if (request.password() == null || request.password().isBlank()) {
-                throw new BusinessException(ErrorSubCode.USER_PASSWORD_REQUIRED);
-            }
-            entity.setPasswordHash(authService.encodePassword(request.password().trim()));
-        } else if (request.password() != null && !request.password().isBlank()) {
-            entity.setPasswordHash(authService.encodePassword(request.password().trim()));
+            entity.setPasswordHash(authService.encodePassword(defaultPassword.trim()));
         }
 
         return userRepository.save(entity);
+    }
+
+    public void resetPassword(Long id) {
+        UserEntity user = userRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.USER_NOT_FOUND));
+        user.setPasswordHash(authService.encodePassword(defaultPassword.trim()));
+        user.setUpdatedAt(LocalDateTime.now());
+        userRepository.save(user);
+    }
+
+    public String uploadAvatar(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new BusinessException(ErrorSubCode.USER_AVATAR_INVALID);
+        }
+        String contentType = file.getContentType();
+        if (contentType == null || !contentType.startsWith("image/")) {
+            throw new BusinessException(ErrorSubCode.USER_AVATAR_INVALID);
+        }
+        String fileName = UUID.randomUUID().toString().replace("-", "") + resolveExtension(file.getOriginalFilename(), contentType);
+        try {
+            Files.createDirectories(avatarDirectory);
+            Path target = avatarDirectory.resolve(fileName);
+            file.transferTo(target);
+            return "/files/avatars/" + fileName;
+        } catch (Exception ex) {
+            throw new BusinessException(ErrorSubCode.USER_AVATAR_UPLOAD_FAILED);
+        }
+    }
+
+    private String resolveExtension(String originalFilename, String contentType) {
+        if (originalFilename != null) {
+            int dotIndex = originalFilename.lastIndexOf('.');
+            if (dotIndex >= 0 && dotIndex < originalFilename.length() - 1) {
+                return originalFilename.substring(dotIndex);
+            }
+        }
+        return switch (contentType) {
+            case "image/png" -> ".png";
+            case "image/jpeg" -> ".jpg";
+            case "image/webp" -> ".webp";
+            case "image/gif" -> ".gif";
+            case "image/svg+xml" -> ".svg";
+            default -> ".img";
+        };
     }
 
     public void delete(Long id) {
