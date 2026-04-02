@@ -23,6 +23,7 @@ export default function UserPipelinesPage() {
   const ACTIVE_POLL_INTERVAL = 3000;
   const [pipelines, setPipelines] = useState<PipelineSummary[]>([]);
   const [deployments, setDeployments] = useState<DeploymentSummary[]>([]);
+  const [myDeployments, setMyDeployments] = useState<DeploymentSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [submittingId, setSubmittingId] = useState<number>();
   const [deployModalOpen, setDeployModalOpen] = useState(false);
@@ -57,12 +58,14 @@ export default function UserPipelinesPage() {
       setLoading(true);
     }
     try {
-      const [nextPipelines, nextDeployments] = await Promise.all([
+      const [nextPipelines, nextDeployments, nextMyDeployments] = await Promise.all([
         pipelinesApi.list(),
         deploymentsApi.list(),
+        deploymentsApi.listMine(),
       ]);
       setPipelines(nextPipelines);
       setDeployments(nextDeployments);
+      setMyDeployments(nextMyDeployments);
     } finally {
       if (!silent) {
         setLoading(false);
@@ -129,7 +132,7 @@ export default function UserPipelinesPage() {
 
   const frequentPipelines = useMemo(() => {
     const pipelineMap = new Map(pipelines.map((item) => [item.id, item]));
-    const recentDeployments = [...deployments]
+    const recentDeployments = [...myDeployments]
       .filter((item) => item.pipeline?.id && pipelineMap.has(item.pipeline.id))
       .sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime())
       .slice(0, 30);
@@ -165,7 +168,7 @@ export default function UserPipelinesPage() {
         return right.latestAt - left.latestAt;
       })
       .slice(0, 8);
-  }, [deployments, pipelines]);
+  }, [myDeployments, pipelines]);
 
   const filteredPipelineCards = useMemo(() => pipelineCards.filter(({ pipeline }) => {
     if (selectedPipelineId && pipeline.id !== selectedPipelineId) {

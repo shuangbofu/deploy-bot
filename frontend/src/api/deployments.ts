@@ -6,6 +6,7 @@ import type { DeploymentPayload, DeploymentSummary, LogResponse } from './types'
  */
 export const deploymentsApi = {
   list: async () => (await client.get<DeploymentSummary[]>('/deployments')).data,
+  listMine: async () => (await client.get<DeploymentSummary[]>('/deployments/mine')).data,
   detail: async (id: number | string) => (await client.get<DeploymentSummary>(`/deployments/${id}`)).data,
   getLog: async (id: number | string) => (await client.get<LogResponse>(`/deployments/${id}/log`)).data,
   create: async (payload: DeploymentPayload) => (await client.post<DeploymentSummary>('/deployments', payload)).data,

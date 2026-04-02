@@ -94,6 +94,13 @@ public class DeploymentService {
         return enrichTriggeredByDisplayNames(deploymentRepository.findAllByOrderByCreatedAtDesc());
     }
 
+    public List<DeploymentEntity> findMine() {
+        AuthenticatedUser currentUser = requireCurrentUser();
+        return enrichTriggeredByDisplayNames(
+                deploymentRepository.findByTriggeredByOrderByCreatedAtDesc(currentUser.username())
+        );
+    }
+
     public DeploymentEntity findById(Long id) {
         DeploymentEntity entity = deploymentRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorSubCode.DEPLOYMENT_NOT_FOUND));

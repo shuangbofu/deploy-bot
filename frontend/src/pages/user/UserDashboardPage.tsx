@@ -17,7 +17,7 @@ export default function UserDashboardPage() {
     try {
       const [nextPipelines, nextDeployments] = await Promise.all([
         pipelinesApi.list(),
-        deploymentsApi.list(),
+        deploymentsApi.listMine(),
       ]);
       setPipelines(nextPipelines);
       setDeployments(nextDeployments);

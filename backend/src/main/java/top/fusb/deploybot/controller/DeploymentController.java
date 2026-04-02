@@ -34,6 +34,11 @@ public class DeploymentController {
         return service.findAll();
     }
 
+    @GetMapping("/mine")
+    public List<DeploymentEntity> mine() {
+        return service.findMine();
+    }
+
     /**
      * 查询单条部署详情。
      */
