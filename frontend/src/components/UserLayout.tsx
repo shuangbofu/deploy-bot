@@ -2,6 +2,7 @@ import { AppstoreOutlined, ProfileOutlined, DeploymentUnitOutlined, LogoutOutlin
 import { Avatar, Button, Dropdown, Layout, Menu, Space, Typography } from 'antd';
 import { useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { resolveBackendAssetUrl } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import ChangePasswordModal from './ChangePasswordModal';
 import deployBotLogo from '../assets/deploy-bot-logo.svg';
@@ -80,7 +81,7 @@ export default function UserLayout() {
           >
             <Button type="primary" className="user-menu-trigger">
               <Space size={10}>
-                <Avatar size={28} src={user?.avatar} icon={!user?.avatar ? <RobotOutlined /> : undefined} />
+                <Avatar size={28} src={resolveBackendAssetUrl(user?.avatar)} icon={!user?.avatar ? <RobotOutlined /> : undefined} />
                 <span className="user-menu-trigger__text">
                   <span className="user-menu-trigger__display-name">{user?.displayName || '用户'}</span>
                   <span className="user-menu-trigger__username">@{user?.username || 'user'}</span>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { RobotOutlined, UploadOutlined } from '@ant-design/icons';
 import { Avatar, Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Switch, Table, Upload, message } from 'antd';
 import type { UploadProps } from 'antd';
+import { resolveBackendAssetUrl } from '../../api/client';
 import { usersApi } from '../../api/users';
 import type { UserPayload, UserSummary } from '../../api/types';
 import EmptyPane from '../../components/EmptyPane';
@@ -202,7 +203,7 @@ export default function UserAdminPage() {
               title: '头像',
               width: 72,
               render: (_, record) => (
-                <Avatar src={record.avatar} icon={!record.avatar ? <RobotOutlined /> : undefined} />
+                <Avatar src={resolveBackendAssetUrl(record.avatar)} icon={!record.avatar ? <RobotOutlined /> : undefined} />
               ),
             },
             { title: '用户名', dataIndex: 'username' },
@@ -246,7 +247,7 @@ export default function UserAdminPage() {
             <Space align="start">
               <Avatar
                 size={56}
-                src={form.avatar}
+                src={resolveBackendAssetUrl(form.avatar)}
                 icon={!form.avatar ? <RobotOutlined /> : undefined}
               />
               <Space direction="vertical" size={8}>
