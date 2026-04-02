@@ -343,7 +343,7 @@ public class DeploymentService {
             lines.add("export PATH=\"" + escapeShell(pathBuilder.toString()) + "$PATH\"");
         }
 
-        appendGitSshPreamble(lines, pipeline);
+        appendGitSshPreamble(lines, pipeline, variables);
 
         lines.add("");
         return String.join("\n", lines);
@@ -373,10 +373,15 @@ public class DeploymentService {
         lines.add(activationScript);
     }
 
-    private void appendGitSshPreamble(List<String> lines, PipelineEntity pipeline) {
+    private void appendGitSshPreamble(List<String> lines, PipelineEntity pipeline, Map<String, String> variables) {
         if (pipeline == null || pipeline.getProject() == null || pipeline.getProject().getGitAuthType() != GitAuthType.SSH) {
             return;
         }
+        String workspaceRoot = valueOf(variables, "workspaceRoot");
+        if (workspaceRoot.isBlank()) {
+            return;
+        }
+        String gitSshDir = escapeShell(Path.of(workspaceRoot).resolve("ssh").resolve("git").toString());
         String privateKey = systemSettingsService.get().getGitSshPrivateKey();
         if (privateKey == null || privateKey.isBlank()) {
             return;
@@ -385,34 +390,34 @@ public class DeploymentService {
         String knownHosts = systemSettingsService.get().getGitSshKnownHosts();
 
         lines.add("# Prepare Git SSH credentials");
-        lines.add("mkdir -p \"{{workspaceRoot}}/ssh/git\"");
-        lines.add("cat > \"{{workspaceRoot}}/ssh/git/id_deploybot\" <<'__DEPLOYBOT_GIT_PRIVATE_KEY__'");
+        lines.add("mkdir -p \"" + gitSshDir + "\"");
+        lines.add("cat > \"" + gitSshDir + "/id_deploybot\" <<'__DEPLOYBOT_GIT_PRIVATE_KEY__'");
         lines.add(privateKey.strip());
         lines.add("__DEPLOYBOT_GIT_PRIVATE_KEY__");
         if (publicKey != null && !publicKey.isBlank()) {
-            lines.add("cat > \"{{workspaceRoot}}/ssh/git/id_deploybot.pub\" <<'__DEPLOYBOT_GIT_PUBLIC_KEY__'");
+            lines.add("cat > \"" + gitSshDir + "/id_deploybot.pub\" <<'__DEPLOYBOT_GIT_PUBLIC_KEY__'");
             lines.add(publicKey.strip());
             lines.add("__DEPLOYBOT_GIT_PUBLIC_KEY__");
         }
         if (knownHosts != null && !knownHosts.isBlank()) {
-            lines.add("cat > \"{{workspaceRoot}}/ssh/git/known_hosts\" <<'__DEPLOYBOT_GIT_KNOWN_HOSTS__'");
+            lines.add("cat > \"" + gitSshDir + "/known_hosts\" <<'__DEPLOYBOT_GIT_KNOWN_HOSTS__'");
             lines.add(knownHosts.strip());
             lines.add("__DEPLOYBOT_GIT_KNOWN_HOSTS__");
-            lines.add("cat > \"{{workspaceRoot}}/ssh/git/git-ssh-wrapper.sh\" <<'__DEPLOYBOT_GIT_SSH_WRAPPER__'");
+            lines.add("cat > \"" + gitSshDir + "/git-ssh-wrapper.sh\" <<'__DEPLOYBOT_GIT_SSH_WRAPPER__'");
             lines.add("#!/usr/bin/env bash");
             lines.add("set -e");
-            lines.add("exec ssh -i \"{{workspaceRoot}}/ssh/git/id_deploybot\" -o IdentitiesOnly=yes -o PreferredAuthentications=publickey -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no -o StrictHostKeyChecking=yes -o UserKnownHostsFile=\"{{workspaceRoot}}/ssh/git/known_hosts\" \"$@\"");
+            lines.add("exec ssh -i \"" + gitSshDir + "/id_deploybot\" -o IdentitiesOnly=yes -o PreferredAuthentications=publickey -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no -o StrictHostKeyChecking=yes -o UserKnownHostsFile=\"" + gitSshDir + "/known_hosts\" \"$@\"");
             lines.add("__DEPLOYBOT_GIT_SSH_WRAPPER__");
         } else {
-            lines.add("cat > \"{{workspaceRoot}}/ssh/git/git-ssh-wrapper.sh\" <<'__DEPLOYBOT_GIT_SSH_WRAPPER__'");
+            lines.add("cat > \"" + gitSshDir + "/git-ssh-wrapper.sh\" <<'__DEPLOYBOT_GIT_SSH_WRAPPER__'");
             lines.add("#!/usr/bin/env bash");
             lines.add("set -e");
-            lines.add("exec ssh -i \"{{workspaceRoot}}/ssh/git/id_deploybot\" -o IdentitiesOnly=yes -o PreferredAuthentications=publickey -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no -o StrictHostKeyChecking=no \"$@\"");
+            lines.add("exec ssh -i \"" + gitSshDir + "/id_deploybot\" -o IdentitiesOnly=yes -o PreferredAuthentications=publickey -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no -o StrictHostKeyChecking=no \"$@\"");
             lines.add("__DEPLOYBOT_GIT_SSH_WRAPPER__");
         }
-        lines.add("chmod 600 \"{{workspaceRoot}}/ssh/git/id_deploybot\" || true");
-        lines.add("chmod 700 \"{{workspaceRoot}}/ssh/git/git-ssh-wrapper.sh\" || true");
-        lines.add("export GIT_SSH=\"{{workspaceRoot}}/ssh/git/git-ssh-wrapper.sh\"");
+        lines.add("chmod 600 \"" + gitSshDir + "/id_deploybot\" || true");
+        lines.add("chmod 700 \"" + gitSshDir + "/git-ssh-wrapper.sh\" || true");
+        lines.add("export GIT_SSH=\"" + gitSshDir + "/git-ssh-wrapper.sh\"");
         lines.add("export GIT_TERMINAL_PROMPT=0");
         lines.add("export GIT_ASKPASS=echo");
     }
