@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RestController;
 import top.fusb.deploybot.dto.LoginRequest;
 import top.fusb.deploybot.dto.LoginResponse;
 import top.fusb.deploybot.dto.UserProfile;
+import top.fusb.deploybot.dto.ChangePasswordRequest;
 import top.fusb.deploybot.service.AuthService;
 
 /**
@@ -36,5 +37,10 @@ public class AuthController {
     @PostMapping("/logout")
     public void logout() {
         authService.logout();
+    }
+
+    @PostMapping("/change-password")
+    public void changePassword(@Valid @RequestBody ChangePasswordRequest request) {
+        authService.changePassword(request);
     }
 }

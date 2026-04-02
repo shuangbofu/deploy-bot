@@ -1,7 +1,9 @@
-import { AppstoreOutlined, DeploymentUnitOutlined, FileTextOutlined, FolderOpenOutlined, ProfileOutlined, RadarChartOutlined, RocketOutlined, SettingOutlined, CloudServerOutlined, TeamOutlined, LogoutOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, DeploymentUnitOutlined, FileTextOutlined, FolderOpenOutlined, ProfileOutlined, RadarChartOutlined, RocketOutlined, SettingOutlined, CloudServerOutlined, TeamOutlined, LogoutOutlined, LockOutlined } from '@ant-design/icons';
 import { Button, Dropdown, Layout, Menu, Space, Typography } from 'antd';
+import { useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import ChangePasswordModal from './ChangePasswordModal';
 
 /**
  * 管理端一级菜单配置。
@@ -27,6 +29,7 @@ export default function AdminLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
 
   return (
     <Layout className="min-h-screen bg-app">
@@ -60,6 +63,12 @@ export default function AdminLayout() {
             menu={{
               items: [
                 {
+                  key: 'change-password',
+                  icon: <LockOutlined />,
+                  label: '修改密码',
+                  onClick: () => setPasswordModalOpen(true),
+                },
+                {
                   key: 'logout',
                   icon: <LogoutOutlined />,
                   label: '退出登录',
@@ -79,6 +88,7 @@ export default function AdminLayout() {
       <Layout.Content className="px-4 py-4">
         <Outlet />
       </Layout.Content>
+      <ChangePasswordModal open={passwordModalOpen} onClose={() => setPasswordModalOpen(false)} />
     </Layout>
   );
 }

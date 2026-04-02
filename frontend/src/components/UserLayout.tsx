@@ -1,7 +1,9 @@
-import { AppstoreOutlined, ProfileOutlined, RocketOutlined, DeploymentUnitOutlined, LogoutOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, ProfileOutlined, RocketOutlined, DeploymentUnitOutlined, LogoutOutlined, LockOutlined } from '@ant-design/icons';
 import { Button, Dropdown, Layout, Menu, Space, Typography } from 'antd';
+import { useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import ChangePasswordModal from './ChangePasswordModal';
 
 /**
  * 用户端菜单只保留用户真实需要的三个入口，避免出现配置感。
@@ -20,6 +22,7 @@ export default function UserLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, isAdmin, logout } = useAuth();
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const selectedKey = menuItems.find((item) => location.pathname.startsWith(item.key))?.key || '/user/dashboard';
 
   return (
@@ -56,6 +59,12 @@ export default function UserLayout() {
             menu={{
               items: [
                 {
+                  key: 'change-password',
+                  icon: <LockOutlined />,
+                  label: '修改密码',
+                  onClick: () => setPasswordModalOpen(true),
+                },
+                {
                   key: 'logout',
                   icon: <LogoutOutlined />,
                   label: '退出登录',
@@ -75,6 +84,7 @@ export default function UserLayout() {
       <Layout.Content className="px-4 py-4">
         <Outlet />
       </Layout.Content>
+      <ChangePasswordModal open={passwordModalOpen} onClose={() => setPasswordModalOpen(false)} />
     </Layout>
   );
 }
