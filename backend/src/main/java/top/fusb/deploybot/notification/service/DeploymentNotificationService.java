@@ -195,7 +195,7 @@ public class DeploymentNotificationService {
             return "-";
         }
         String base = normalizedBaseUrl.endsWith("/") ? normalizedBaseUrl.substring(0, normalizedBaseUrl.length() - 1) : normalizedBaseUrl;
-        return base + "/user/deployments/" + deployment.getId();
+        return base + "/#/user/deployments/" + deployment.getId();
     }
 
     private String mapEventLabel(DeploymentEntity deployment, NotificationEventType eventType) {

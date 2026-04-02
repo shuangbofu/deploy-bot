@@ -32,9 +32,10 @@ export function resolveBackendAssetUrl(url?: string | null) {
 function handleAuthExpired(subCode?: string | null) {
   if (subCode === 'AUTH-001' || subCode === 'AUTH-003') {
     authStorage.clearToken();
-    const callback = `${window.location.pathname}${window.location.search}`;
-    const loginUrl = `/login?callback=${encodeURIComponent(callback)}`;
-    if (!window.location.pathname.startsWith('/login')) {
+    const hashPath = window.location.hash.replace(/^#/, '') || '/';
+    const callback = hashPath.startsWith('/') ? hashPath : `/${hashPath}`;
+    const loginUrl = `/#/login?callback=${encodeURIComponent(callback)}`;
+    if (!callback.startsWith('/login')) {
       window.location.replace(loginUrl);
     }
     return true;

@@ -1,9 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Col, DatePicker, Input, Popconfirm, Row, Select, Space, Table, message } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { deploymentsApi } from '../../api/deployments';
-import { pipelinesApi } from '../../api/pipelines';
-import { projectsApi } from '../../api/projects';
 import EmptyPane from '../../components/EmptyPane';
 import PageHeaderBar from '../../components/PageHeaderBar';
 import StatusTag from '../../components/StatusTag';
@@ -28,8 +26,7 @@ const emptyFilters: DeploymentRecordFilters = {
 export default function UserDeploymentRecordsPage() {
   const navigate = useNavigate();
   const [deployments, setDeployments] = useState<DeploymentSummary[]>([]);
-  const [projectOptions, setProjectOptions] = useState<Array<{ label: string; value: string }>>([]);
-  const [pipelineOptions, setPipelineOptions] = useState<Array<{ label: string; value: string }>>([]);
+  const [filterSourceDeployments, setFilterSourceDeployments] = useState<DeploymentSummary[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState<DeploymentRecordFilters>(emptyFilters);
@@ -57,11 +54,8 @@ export default function UserDeploymentRecordsPage() {
   };
 
   useEffect(() => {
-    Promise.all([projectsApi.list(), pipelinesApi.list()])
-      .then(([projects, pipelines]) => {
-        setProjectOptions(projects.map((item) => ({ label: item.name, value: item.name })));
-        setPipelineOptions(pipelines.map((item) => ({ label: item.name, value: item.name })));
-      })
+    deploymentsApi.listMine()
+      .then((items) => setFilterSourceDeployments(items))
       .catch(() => message.error('加载筛选项失败'));
   }, []);
 
@@ -73,6 +67,24 @@ export default function UserDeploymentRecordsPage() {
     const timer = window.setInterval(() => setTick(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  const projectOptions = useMemo(
+    () => Array.from(new Set(
+      filterSourceDeployments
+        .map((item) => item.pipeline?.project?.name)
+        .filter((value): value is string => Boolean(value && value.trim())),
+    )).sort((left, right) => left.localeCompare(right, 'zh-CN')).map((item) => ({ label: item, value: item })),
+    [filterSourceDeployments],
+  );
+
+  const pipelineOptions = useMemo(
+    () => Array.from(new Set(
+      filterSourceDeployments
+        .map((item) => item.pipeline?.name)
+        .filter((value): value is string => Boolean(value && value.trim())),
+    )).sort((left, right) => left.localeCompare(right, 'zh-CN')).map((item) => ({ label: item, value: item })),
+    [filterSourceDeployments],
+  );
 
   return (
     <>
