@@ -49,9 +49,13 @@ body {
   width: 44px;
   align-items: center;
   justify-content: center;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.12);
   font-size: 18px;
+}
+
+.app-logo-image {
+  display: block;
+  height: 45px;
+  width: 45px;
 }
 
 .admin-nav {
@@ -312,6 +316,74 @@ body {
   font-size: 12px;
   line-height: 1.5;
   white-space: pre-wrap;
+}
+
+.code-editor {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #d9e2f1;
+  border-radius: 14px;
+  background: #0f172a;
+}
+
+.code-editor-preview,
+.code-editor-input {
+  margin: 0;
+  padding: 14px 16px;
+  font-family: "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.code-editor-preview {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  color: #e2e8f0;
+}
+
+.code-editor-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  overflow: auto;
+  resize: none;
+  border: 0;
+  background: transparent;
+  color: transparent;
+  caret-color: #f8fafc;
+  outline: none;
+}
+
+.code-editor-input::placeholder {
+  color: #94a3b8;
+}
+
+.code-token-comment {
+  color: #64748b;
+}
+
+.code-token-string {
+  color: #fbbf24;
+}
+
+.code-token-number {
+  color: #f97316;
+}
+
+.code-token-keyword {
+  color: #60a5fa;
+}
+
+.code-token-variable {
+  color: #34d399;
+}
+
+.code-token-template {
+  color: #f472b6;
 }
 
 .variable-editor .ant-form-item {

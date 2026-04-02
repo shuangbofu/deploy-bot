@@ -201,6 +201,8 @@ export default function ProjectAdminPage() {
             }}
           />
           <Select
+            showSearch
+            optionFilterProp="label"
             allowClear
             value={gitAuthTypeFilter}
             placeholder="筛选 Git 认证方式"

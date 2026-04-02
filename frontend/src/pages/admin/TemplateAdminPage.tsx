@@ -8,6 +8,7 @@ import JsonEditor from '../../components/JsonEditor';
 import PageHeaderBar from '../../components/PageHeaderBar';
 import PipelineIcon, { templateTypeOptions } from '../../components/PipelineIcon';
 import TemplateVariablesEditor from '../../components/TemplateVariablesEditor';
+import { PHASE_LABEL_MAP, PHASE_TAG_COLOR_MAP, sortByPhase } from '../../utils/tagColors';
 
 interface TemplateFormState {
   name: string;
@@ -76,12 +77,6 @@ const reservedVariables = [
   'deploymentId',
   'artifactDir',
 ];
-
-const phaseLabelMap = {
-  build: '构建',
-  deploy: '发布',
-  shared: '共用',
-};
 
 export default function TemplateAdminPage() {
   const [templates, setTemplates] = useState([]);
@@ -264,6 +259,8 @@ export default function TemplateAdminPage() {
             }}
           />
           <Select
+            showSearch
+            optionFilterProp="label"
             allowClear
             value={templateTypeFilter}
             placeholder="筛选模板类型"
@@ -274,6 +271,8 @@ export default function TemplateAdminPage() {
             }}
           />
           <Select
+            showSearch
+            optionFilterProp="label"
             allowClear
             value={monitorFilter}
             placeholder="筛选监控进程"
@@ -336,9 +335,17 @@ export default function TemplateAdminPage() {
                 render: (_, record) => (
                   <Space wrap>
                     {record.parsedVariables.length === 0 ? <span className="text-slate-400">无</span> : null}
-                    {record.parsedVariables.map((item) => (
-                      <Tag key={item.name}>
-                        [{phaseLabelMap[item.phase || 'shared'] || '共用'}] {item.label || item.name}
+                    {sortByPhase(record.parsedVariables).map((item) => (
+                      <Tag
+                        key={item.name}
+                        style={{
+                          backgroundColor: PHASE_TAG_COLOR_MAP[item.phase || 'shared'] || PHASE_TAG_COLOR_MAP.shared,
+                          color: '#fff',
+                          borderColor: 'transparent',
+                        }}
+                        className="!border-0"
+                      >
+                        [{PHASE_LABEL_MAP[item.phase || 'shared'] || '共用'}] {item.label || item.name}
                         {item.required ? ' *' : ''}
                       </Tag>
                     ))}
@@ -424,6 +431,7 @@ export default function TemplateAdminPage() {
               size="small"
               responsive
               current={currentStep}
+              onChange={(value) => setCurrentStep(value)}
               items={[
                 { title: '基础信息', description: '模板名称、类型、描述' },
                 { title: '构建', description: '本机构建脚本' },
@@ -474,6 +482,7 @@ export default function TemplateAdminPage() {
                   </div>
                   <JsonEditor
                     rows={14}
+                    language="shell"
                     value={form.buildScriptContent}
                     onChange={(value) => setForm({ ...form, buildScriptContent: value })}
                   />
@@ -505,6 +514,7 @@ export default function TemplateAdminPage() {
                   </div>
                   <JsonEditor
                     rows={10}
+                    language="shell"
                     value={form.deployScriptContent}
                     onChange={(value) => setForm({ ...form, deployScriptContent: value })}
                   />

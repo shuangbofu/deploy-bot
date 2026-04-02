@@ -3,6 +3,7 @@ import { Button, Card, Form, Input, Typography } from 'antd';
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
+import deployBotLogo from '../assets/deploy-bot-logo.svg';
 
 /**
  * 登录页。
@@ -34,15 +35,13 @@ export default function LoginPage() {
       <div className="mx-auto flex min-h-[calc(100vh-5rem)] max-w-5xl items-center justify-center">
         <Card className="app-card w-full max-w-[460px] !rounded-[28px] !border-white/10">
           <div className="mb-8 text-center">
+            <img src={deployBotLogo} alt="Deploy Bot Logo" className="mx-auto mb-4 h-20 w-20" />
             <Typography.Text className="block text-[12px] uppercase tracking-[0.35em] !text-slate-400">
               Deploy Bot
             </Typography.Text>
             <Typography.Title level={2} className="!mb-2 !mt-3">
-              登录系统
+              登录
             </Typography.Title>
-            <Typography.Paragraph className="!mb-0 !text-slate-500">
-              现在管理端和用户端都会基于真实账号与权限进入，不再是演示入口。
-            </Typography.Paragraph>
           </div>
           <Form layout="vertical" onFinish={handleSubmit} autoComplete="off">
             <Form.Item label="用户名" name="username" rules={[{ required: true, message: '请输入用户名' }]}>
@@ -56,7 +55,7 @@ export default function LoginPage() {
             </Button>
           </Form>
           <div className="mt-6 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500">
-            默认管理员账号：`admin` / `Admin@123456`
+            默认管理员账号：<code>admin</code> / <code>Admin@123456</code>
           </div>
         </Card>
       </div>

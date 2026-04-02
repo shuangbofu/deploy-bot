@@ -181,6 +181,20 @@ export interface RuntimeEnvironmentInstallPayload {
 export interface RuntimeEnvironmentInstallAccepted {
   accepted: boolean;
   message: string;
+  taskId: string;
+}
+
+export interface RuntimeEnvironmentInstallTaskStatus {
+  taskId: string;
+  presetId: string;
+  presetName: string;
+  hostId: number;
+  hostName: string;
+  status: 'PENDING' | 'RUNNING' | 'SUCCESS' | 'FAILED';
+  message: string;
+  runtimeEnvironmentId?: number | null;
+  startedAt: string;
+  finishedAt?: string | null;
 }
 
 export interface SystemSettingsResponse {
@@ -200,6 +214,7 @@ export type {
   ProjectSummary,
   RuntimeEnvironmentSummary,
   RuntimeEnvironmentInstallAccepted,
+  RuntimeEnvironmentInstallTaskStatus,
   ServiceSummary,
   TemplateSummary,
   UserSummary,

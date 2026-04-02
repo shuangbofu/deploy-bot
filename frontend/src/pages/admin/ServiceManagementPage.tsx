@@ -94,6 +94,8 @@ export default function ServiceManagementPage() {
             }}
           />
           <Select
+            showSearch
+            optionFilterProp="label"
             allowClear
             value={statusFilter}
             placeholder="筛选状态"
@@ -110,6 +112,8 @@ export default function ServiceManagementPage() {
             }}
           />
           <Select
+            showSearch
+            optionFilterProp="label"
             allowClear
             value={hostFilter}
             placeholder="筛选主机"

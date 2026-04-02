@@ -1,9 +1,10 @@
-import { AppstoreOutlined, DeploymentUnitOutlined, FileTextOutlined, FolderOpenOutlined, ProfileOutlined, RadarChartOutlined, RocketOutlined, SettingOutlined, CloudServerOutlined, TeamOutlined, LogoutOutlined, LockOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, DeploymentUnitOutlined, FileTextOutlined, FolderOpenOutlined, ProfileOutlined, RadarChartOutlined, SettingOutlined, CloudServerOutlined, TeamOutlined, LogoutOutlined, LockOutlined } from '@ant-design/icons';
 import { Button, Dropdown, Layout, Menu, Space, Typography } from 'antd';
 import { useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import ChangePasswordModal from './ChangePasswordModal';
+import deployBotLogo from '../assets/deploy-bot-logo.svg';
 
 /**
  * 管理端一级菜单配置。
@@ -15,9 +16,9 @@ const menuItems = [
   { key: '/admin/hosts', icon: <CloudServerOutlined />, label: '主机' },
   { key: '/admin/templates', icon: <FileTextOutlined />, label: '模板' },
   { key: '/admin/pipelines', icon: <DeploymentUnitOutlined />, label: '流水线' },
-  { key: '/admin/users', icon: <TeamOutlined />, label: '用户管理' },
   { key: '/admin/deployments', icon: <ProfileOutlined />, label: '部署记录' },
   { key: '/admin/services', icon: <RadarChartOutlined />, label: '服务管理' },
+  { key: '/admin/users', icon: <TeamOutlined />, label: '用户管理' },
   { key: '/admin/system-settings', icon: <SettingOutlined />, label: '系统设置' },
 ];
 
@@ -36,14 +37,14 @@ export default function AdminLayout() {
       <Layout.Header className="app-header px-6">
         <div className="flex items-center gap-3 text-white">
           <div className="app-logo">
-            <RocketOutlined />
+            <img src={deployBotLogo} alt="Deploy Bot Logo" className="app-logo-image" />
           </div>
           <div>
             <Typography.Text className="block text-[11px] uppercase tracking-[0.3em] !text-white/55">
               Deploy Bot
             </Typography.Text>
             <Typography.Title level={4} className="!mb-0 !mt-0 !text-white">
-              管理端
+              控制中心
             </Typography.Title>
           </div>
         </div>
@@ -57,7 +58,7 @@ export default function AdminLayout() {
         />
         <Space>
           <Link to="/user/pipelines">
-            <Button>用户视角</Button>
+            <Button>部署工作台</Button>
           </Link>
           <Dropdown
             menu={{

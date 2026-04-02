@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Descriptions, Form, Input, Modal, Popconfirm, Progress, Select, Space, Switch, Table, Tag, message } from 'antd';
+import { Button, Card, Descriptions, Form, Input, Modal, Popconfirm, Progress, Select, Space, Switch, Table, message } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { hostsApi } from '../../api/hosts';
 import { runtimeEnvironmentsApi } from '../../api/runtimeEnvironments';
@@ -15,6 +15,7 @@ import type {
   RuntimeEnvironmentSummary,
 } from '../../types/domain';
 import { formatDateTime } from '../../utils/datetime';
+import { getStableTagColor } from '../../utils/tagColors';
 
 const hostTypeOptions: { label: string; value: HostType }[] = [
   { label: '本机', value: 'LOCAL' },
@@ -226,6 +227,8 @@ export default function HostManagementPage() {
             }}
           />
           <Select
+            showSearch
+            optionFilterProp="label"
             allowClear
             value={typeFilter}
             placeholder="筛选主机类型"
@@ -236,6 +239,8 @@ export default function HostManagementPage() {
             }}
           />
           <Select
+            showSearch
+            optionFilterProp="label"
             allowClear
             value={enabledFilter}
             placeholder="筛选启用状态"
@@ -296,7 +301,18 @@ export default function HostManagementPage() {
                 },
               },
               { title: '状态', render: (_, row) => row.enabled !== false ? '启用' : '停用', width: 100 },
-              { title: '内置', render: (_, row) => row.builtIn ? <Tag color="blue">系统内置</Tag> : '-', width: 110 },
+              {
+                title: '内置',
+                width: 110,
+                render: (_, row) => row.builtIn ? (
+                  <span
+                    className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold text-white"
+                    style={{ backgroundColor: getStableTagColor('系统内置') }}
+                  >
+                    系统内置
+                  </span>
+                ) : '-',
+              },
               {
                 title: '操作',
                 width: 420,

@@ -4,6 +4,7 @@ import type {
   PresetItem,
   RuntimeEnvironmentInstallAccepted,
   RuntimeEnvironmentInstallPayload,
+  RuntimeEnvironmentInstallTaskStatus,
   RuntimeEnvironmentPayload,
   RuntimeEnvironmentSummary,
 } from './types';
@@ -22,6 +23,9 @@ export const runtimeEnvironmentsApi = {
     params: hostId ? { hostId } : undefined,
   })).data,
   presets: async (hostId?: string | number) => (await client.get<PresetItem[]>('/runtime-environments/presets', {
+    params: hostId ? { hostId } : undefined,
+  })).data,
+  installTasks: async (hostId?: string | number) => (await client.get<RuntimeEnvironmentInstallTaskStatus[]>('/runtime-environments/install-tasks', {
     params: hostId ? { hostId } : undefined,
   })).data,
   installPreset: async (payload: RuntimeEnvironmentInstallPayload) => (

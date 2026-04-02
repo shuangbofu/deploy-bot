@@ -61,6 +61,20 @@ export default function AdminDeploymentDetailPage() {
       && deployment.status === 'SUCCESS',
   );
   const backPath = searchParams.get('from') === 'services' ? '/admin/services' : '/admin/deployments';
+  const executionSnapshot = useMemo(() => {
+    const raw = deployment?.executionSnapshotJson;
+    if (!raw) {
+      return null;
+    }
+    if (typeof raw === 'object') {
+      return raw as Record<string, unknown>;
+    }
+    try {
+      return JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }, [deployment?.executionSnapshotJson]);
 
   return (
     <>
@@ -132,6 +146,22 @@ export default function AdminDeploymentDetailPage() {
               <Descriptions.Item label="监控 PID">{deployment?.monitoredPid || '-'}</Descriptions.Item>
               <Descriptions.Item label="错误信息">{deployment?.errorMessage || '-'}</Descriptions.Item>
             </Descriptions>
+          </Card>
+          <Card className="app-card mt-4" title="执行快照">
+            <Descriptions column={1} size="small">
+              <Descriptions.Item label="模板">{String(executionSnapshot?.templateName || '-')}</Descriptions.Item>
+              <Descriptions.Item label="模板类型">{String(executionSnapshot?.templateType || '-')}</Descriptions.Item>
+              <Descriptions.Item label="目标主机">{String(executionSnapshot?.targetHost || '-')}</Descriptions.Item>
+              <Descriptions.Item label="应用名">{String(executionSnapshot?.applicationName || '-')}</Descriptions.Item>
+              <Descriptions.Item label="Spring Profile">{String(executionSnapshot?.springProfile || '-')}</Descriptions.Item>
+              <Descriptions.Item label="启动关键字">{String(executionSnapshot?.startupKeyword || '-')}</Descriptions.Item>
+              <Descriptions.Item label="启动超时">{String(executionSnapshot?.startupTimeoutSeconds || '-')}</Descriptions.Item>
+              <Descriptions.Item label="构建 Java">{String((executionSnapshot?.javaEnvironment as { version?: string; name?: string } | undefined)?.name || '-')} {String((executionSnapshot?.javaEnvironment as { version?: string } | undefined)?.version || '')}</Descriptions.Item>
+              <Descriptions.Item label="构建 Node">{String((executionSnapshot?.nodeEnvironment as { version?: string; name?: string } | undefined)?.name || '-')} {String((executionSnapshot?.nodeEnvironment as { version?: string } | undefined)?.version || '')}</Descriptions.Item>
+              <Descriptions.Item label="构建 Maven">{String((executionSnapshot?.mavenEnvironment as { version?: string; name?: string } | undefined)?.name || '-')} {String((executionSnapshot?.mavenEnvironment as { version?: string } | undefined)?.version || '')}</Descriptions.Item>
+              <Descriptions.Item label="运行 Java">{String((executionSnapshot?.runtimeJavaEnvironment as { version?: string; name?: string } | undefined)?.name || '-')} {String((executionSnapshot?.runtimeJavaEnvironment as { version?: string } | undefined)?.version || '')}</Descriptions.Item>
+            </Descriptions>
+            <pre className="table-code-preview mt-3 max-w-full !max-h-[320px]">{JSON.stringify(executionSnapshot?.variables || {}, null, 2)}</pre>
           </Card>
         </Col>
         <Col xs={24} xl={17} xxl={18}>

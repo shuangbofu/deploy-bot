@@ -1,9 +1,10 @@
-import { AppstoreOutlined, ProfileOutlined, RocketOutlined, DeploymentUnitOutlined, LogoutOutlined, LockOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, ProfileOutlined, DeploymentUnitOutlined, LogoutOutlined, LockOutlined } from '@ant-design/icons';
 import { Button, Dropdown, Layout, Menu, Space, Typography } from 'antd';
 import { useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import ChangePasswordModal from './ChangePasswordModal';
+import deployBotLogo from '../assets/deploy-bot-logo.svg';
 
 /**
  * 用户端菜单只保留用户真实需要的三个入口，避免出现配置感。
@@ -30,14 +31,14 @@ export default function UserLayout() {
       <Layout.Header className="app-header px-6">
         <div className="flex items-center gap-3 text-white">
           <div className="app-logo">
-            <RocketOutlined />
+            <img src={deployBotLogo} alt="Deploy Bot Logo" className="app-logo-image" />
           </div>
           <div>
             <Typography.Text className="block text-[11px] uppercase tracking-[0.3em] !text-white/55">
               Deploy Bot
             </Typography.Text>
             <Typography.Title level={4} className="!mb-0 !mt-0 !text-white">
-              用户端
+              部署工作台
             </Typography.Title>
           </div>
         </div>
@@ -52,7 +53,7 @@ export default function UserLayout() {
         <Space>
           {isAdmin ? (
             <Link to="/admin/dashboard">
-              <Button>管理端</Button>
+              <Button>控制中心</Button>
             </Link>
           ) : null}
           <Dropdown

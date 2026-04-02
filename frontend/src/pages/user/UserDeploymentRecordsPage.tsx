@@ -94,12 +94,15 @@ export default function UserDeploymentRecordsPage() {
       <PageHeaderBar
         title="部署记录"
         description="用户端也可以全局查看部署历史，快速筛选自己关心的项目、流水线和执行结果。"
+        extra={<Button onClick={() => loadDeployments().catch(() => message.error('刷新部署记录失败'))}>刷新</Button>}
       />
       <Card className="app-card">
         <Row gutter={[12, 12]} className="mb-4">
           <Col xs={24} md={12} xl={5}>
             <Select
               className="w-full"
+              showSearch
+              optionFilterProp="label"
               allowClear
               value={filters.projectName}
               options={projectOptions}
@@ -113,6 +116,8 @@ export default function UserDeploymentRecordsPage() {
           <Col xs={24} md={12} xl={5}>
             <Select
               className="w-full"
+              showSearch
+              optionFilterProp="label"
               allowClear
               value={filters.pipelineName}
               options={pipelineOptions}
@@ -136,6 +141,8 @@ export default function UserDeploymentRecordsPage() {
           <Col xs={24} md={12} xl={4}>
             <Select
               className="w-full"
+              showSearch
+              optionFilterProp="label"
               allowClear
               value={filters.status}
               options={DEPLOYMENT_STATUS_OPTIONS}
@@ -158,11 +165,8 @@ export default function UserDeploymentRecordsPage() {
             />
           </Col>
         </Row>
-        <div className="mb-4">
-          <Space>
-            <Button onClick={() => setFilters(emptyFilters)}>重置条件</Button>
-            <Button onClick={() => loadDeployments().catch(() => message.error('刷新部署记录失败'))}>刷新</Button>
-          </Space>
+        <div className="mb-4 flex items-center">
+          <Button onClick={() => setFilters(emptyFilters)}>重置条件</Button>
         </div>
         <Table
           rowKey="id"

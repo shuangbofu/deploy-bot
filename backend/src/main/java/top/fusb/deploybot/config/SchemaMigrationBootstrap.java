@@ -27,6 +27,7 @@ public class SchemaMigrationBootstrap {
         List<String> statements = List.of(
                 "ALTER TABLE IF EXISTS deployments ALTER COLUMN status VARCHAR(255)",
                 "ALTER TABLE IF EXISTS deployments ALTER COLUMN pipeline_id BIGINT NULL",
+                "ALTER TABLE IF EXISTS deployments ADD COLUMN IF NOT EXISTS execution_snapshot_json CLOB",
                 "ALTER TABLE IF EXISTS pipelines ADD COLUMN IF NOT EXISTS application_name VARCHAR(255)",
                 "ALTER TABLE IF EXISTS pipelines ADD COLUMN IF NOT EXISTS spring_profile VARCHAR(255)",
                 "ALTER TABLE IF EXISTS pipelines ADD COLUMN IF NOT EXISTS runtime_config_yaml CLOB"

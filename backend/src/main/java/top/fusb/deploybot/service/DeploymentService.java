@@ -166,6 +166,7 @@ public class DeploymentService {
         entity.setPipeline(pipeline);
         entity.setBranchName(branch);
         entity.setVariablesJson(jsonMapper.write(variables));
+        entity.setExecutionSnapshotJson(buildExecutionSnapshotJson(pipeline, branch, variables));
         AuthenticatedUser currentUser = requireCurrentUser();
         entity.setTriggeredBy(currentUser.username() == null || currentUser.username().isBlank() ? DEFAULT_TRIGGER_USER : currentUser.username());
         entity.setStatus(DeploymentStatus.PENDING);
@@ -499,6 +500,7 @@ public class DeploymentService {
         entity.setCreatedAt(LocalDateTime.now());
         entity.setRollbackFromDeploymentId(source.getId());
         entity.setVariablesJson(jsonMapper.write(variables));
+        entity.setExecutionSnapshotJson(buildExecutionSnapshotJson(pipeline, source.getBranchName(), variables));
         deploymentRepository.save(entity);
 
         variables.put("deploymentId", entity.getId().toString());
@@ -717,6 +719,67 @@ public class DeploymentService {
             return "";
         }
         return Base64.getEncoder().encodeToString(runtimeConfigYaml.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private String buildExecutionSnapshotJson(PipelineEntity pipeline, String branch, Map<String, String> variables) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("pipelineName", pipeline.getName());
+        snapshot.put("projectName", pipeline.getProject() == null ? null : pipeline.getProject().getName());
+        snapshot.put("templateName", pipeline.getTemplate() == null ? null : pipeline.getTemplate().getName());
+        snapshot.put("templateType", pipeline.getTemplate() == null ? null : pipeline.getTemplate().getTemplateType());
+        snapshot.put("branch", branch);
+        snapshot.put("targetHost", pipeline.getTargetHost() == null ? "本机" : pipeline.getTargetHost().getName());
+        snapshot.put("targetHostType", pipeline.getTargetHost() == null ? "LOCAL" : pipeline.getTargetHost().getType());
+        snapshot.put("applicationName", variables.get("applicationName"));
+        snapshot.put("springProfile", variables.get("springProfile"));
+        snapshot.put("startupKeyword", pipeline.getStartupKeyword());
+        snapshot.put("startupTimeoutSeconds", pipeline.getStartupTimeoutSeconds());
+        snapshot.put("javaEnvironment", summarizeRuntimeEnvironment(pipeline.getJavaEnvironment()));
+        snapshot.put("nodeEnvironment", summarizeRuntimeEnvironment(pipeline.getNodeEnvironment()));
+        snapshot.put("mavenEnvironment", summarizeRuntimeEnvironment(pipeline.getMavenEnvironment()));
+        snapshot.put("runtimeJavaEnvironment", summarizeRuntimeEnvironment(pipeline.getRuntimeJavaEnvironment()));
+
+        Map<String, String> importantVariables = new LinkedHashMap<>();
+        copySnapshotVariable(importantVariables, variables, "targetDir");
+        copySnapshotVariable(importantVariables, variables, "jarPath");
+        copySnapshotVariable(importantVariables, variables, "startCommand");
+        copySnapshotVariable(importantVariables, variables, "buildCommand");
+        copySnapshotVariable(importantVariables, variables, "frontendBuildCommand");
+        copySnapshotVariable(importantVariables, variables, "backendBuildCommand");
+        copySnapshotVariable(importantVariables, variables, "frontendDir");
+        copySnapshotVariable(importantVariables, variables, "backendDir");
+        copySnapshotVariable(importantVariables, variables, "distDir");
+        snapshot.put("variables", importantVariables);
+
+        String runtimeConfigYaml = pipeline.getRuntimeConfigYaml();
+        if (runtimeConfigYaml != null && !runtimeConfigYaml.isBlank()) {
+            snapshot.put("runtimeConfigYaml", runtimeConfigYaml);
+        }
+        return jsonMapper.write(snapshot);
+    }
+
+    private Map<String, Object> summarizeRuntimeEnvironment(RuntimeEnvironmentEntity environment) {
+        if (environment == null) {
+            return null;
+        }
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("id", environment.getId());
+        summary.put("name", environment.getName());
+        summary.put("type", environment.getType());
+        summary.put("version", environment.getVersion());
+        summary.put("homePath", environment.getHomePath());
+        summary.put("binPath", environment.getBinPath());
+        if (environment.getHost() != null) {
+            summary.put("hostName", environment.getHost().getName());
+        }
+        return summary;
+    }
+
+    private void copySnapshotVariable(Map<String, String> target, Map<String, String> source, String key) {
+        String value = source.get(key);
+        if (value != null && !value.isBlank()) {
+            target.put(key, value);
+        }
     }
 
     private void augmentStartCommand(Map<String, String> variables) {

@@ -3,12 +3,13 @@ import { Button, Card, Form, Input, Modal, Popconfirm, Segmented, Select, Space,
 import { useNavigate, useParams } from 'react-router-dom';
 import { hostsApi } from '../../api/hosts';
 import { runtimeEnvironmentsApi } from '../../api/runtimeEnvironments';
-import type { DetectionItem, PresetItem, RuntimeEnvironmentPayload } from '../../api/types';
+import type { DetectionItem, PresetItem, RuntimeEnvironmentInstallTaskStatus, RuntimeEnvironmentPayload } from '../../api/types';
 import BooleanBadge from '../../components/BooleanBadge';
 import EnvironmentVariablesEditor from '../../components/EnvironmentVariablesEditor';
 import EmptyPane from '../../components/EmptyPane';
 import PageHeaderBar from '../../components/PageHeaderBar';
 import type { HostSummary, RuntimeEnvironmentSummary, RuntimeEnvironmentType } from '../../types/domain';
+import { formatDateTime } from '../../utils/datetime';
 
 const typeOptions: { label: string; value: RuntimeEnvironmentType }[] = [
   { label: 'Java', value: 'JAVA' },
@@ -135,21 +136,39 @@ export default function RuntimeEnvironmentsPage() {
   const [presets, setPresets] = useState<PresetItem[]>([]);
   const [presetModalOpen, setPresetModalOpen] = useState(false);
   const [installingPresetId, setInstallingPresetId] = useState<string>();
+  const [installTasks, setInstallTasks] = useState<RuntimeEnvironmentInstallTaskStatus[]>([]);
   const [presetUsageFilter, setPresetUsageFilter] = useState('all');
   const [presetTypeFilter, setPresetTypeFilter] = useState('all');
 
   const loadEnvironments = async () => {
-    const [hostResponse, response] = await Promise.all([
+    const [hostResponse, response, taskResponse] = await Promise.all([
       hostsApi.list(),
       runtimeEnvironmentsApi.list(hostId),
+      runtimeEnvironmentsApi.installTasks(hostId),
     ]);
     setHosts(hostResponse);
     setEnvironments(response);
+    setInstallTasks(taskResponse);
   };
 
   useEffect(() => {
     loadEnvironments().catch(() => message.error('加载运行环境失败'));
   }, [hostId]);
+
+  const activeInstallTasks = useMemo(
+    () => installTasks.filter((item) => ['PENDING', 'RUNNING'].includes(item.status)),
+    [installTasks],
+  );
+
+  useEffect(() => {
+    if (activeInstallTasks.length === 0) {
+      return undefined;
+    }
+    const timer = window.setInterval(() => {
+      loadEnvironments().catch(() => undefined);
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [activeInstallTasks.length, hostId]);
 
   const currentHost = useMemo(
     () => hosts.find((item) => String(item.id) === String(hostId)),
@@ -247,13 +266,25 @@ export default function RuntimeEnvironmentsPage() {
         presetId,
         hostId: currentHost?.id || hosts.find((item) => item.builtIn)?.id,
       });
-      message.success(result.message || '预置环境已开始后台下载安装，请稍后刷新查看结果');
-      window.setTimeout(() => {
-        loadEnvironments().catch(() => undefined);
-      }, 3000);
+      setPresetModalOpen(false);
+      await loadEnvironments();
+      message.success(result.message || '预置环境已开始后台下载安装');
     } finally {
       setInstallingPresetId(undefined);
     }
+  };
+
+  const renderInstallTaskStatus = (item: RuntimeEnvironmentInstallTaskStatus) => {
+    if (item.status === 'SUCCESS') {
+      return <Tag color="success">安装完成</Tag>;
+    }
+    if (item.status === 'FAILED') {
+      return <Tag color="error">安装失败</Tag>;
+    }
+    if (item.status === 'RUNNING') {
+      return <Tag color="processing">安装中</Tag>;
+    }
+    return <Tag color="default">等待中</Tag>;
   };
 
   const getPresetUsages = (preset) => {
@@ -287,11 +318,36 @@ export default function RuntimeEnvironmentsPage() {
           : '统一维护 Java、Node、Maven 的版本和路径。'}
         extra={[
           currentHost ? <Button key="back" onClick={() => navigate('/admin/hosts')}>返回主机管理</Button> : null,
+          <Button key="refresh" onClick={() => loadEnvironments().catch(() => message.error('刷新运行环境失败'))}>刷新</Button>,
           <Button key="detect" onClick={() => openDetectModal().catch(() => message.error('自动检测失败'))}>自动检测</Button>,
           <Button key="preset" onClick={() => openPresetModal().catch(() => message.error('加载预置失败'))}>下载预置</Button>,
           <Button key="create" type="primary" onClick={openCreate}>新建运行环境</Button>,
         ]}
       />
+      <Card className="app-card mb-4" size="small" title="安装任务">
+        {installTasks.length === 0 ? (
+          <EmptyPane description="当前还没有下载安装记录。" />
+        ) : (
+          <div className="space-y-3">
+            {installTasks.slice(0, 8).map((item) => (
+              <div key={item.taskId} className="flex items-start justify-between gap-4 rounded-xl border border-slate-200 px-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <div className="font-medium text-slate-800">{item.presetName}</div>
+                    {renderInstallTaskStatus(item)}
+                  </div>
+                  <div className="mt-1 text-sm text-slate-500">
+                    {item.message || '-'}
+                  </div>
+                  <div className="mt-2 text-xs text-slate-400">
+                    开始时间：{formatDateTime(item.startedAt)}{item.finishedAt ? ` · 结束时间：${formatDateTime(item.finishedAt)}` : ''}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
       <Card className="app-card">
         {groupedData.length === 0 ? (
           <EmptyPane description="还没有运行环境，先录入 Java / Node / Maven 的可用版本。" />

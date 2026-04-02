@@ -125,6 +125,8 @@ export default function UserPipelineHistoryPage() {
           <Col xs={24} md={12} xl={4}>
             <Select
               className="w-full"
+              showSearch
+              optionFilterProp="label"
               allowClear
               value={filters.status}
               options={DEPLOYMENT_STATUS_OPTIONS}
@@ -147,11 +149,8 @@ export default function UserPipelineHistoryPage() {
             />
           </Col>
         </Row>
-        <div className="mb-4">
-          <Space>
-            <Button onClick={() => setFilters(emptyFilters)}>重置条件</Button>
-            <Button onClick={() => loadData().catch(() => message.error('刷新流水线历史失败'))}>刷新列表</Button>
-          </Space>
+        <div className="mb-4 flex items-center">
+          <Button onClick={() => setFilters(emptyFilters)}>重置条件</Button>
         </div>
         <Table
           rowKey="id"

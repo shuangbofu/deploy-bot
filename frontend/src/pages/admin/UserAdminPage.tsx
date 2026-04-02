@@ -119,6 +119,8 @@ export default function UserAdminPage() {
             }}
           />
           <Select
+            showSearch
+            optionFilterProp="label"
             allowClear
             value={roleFilter}
             placeholder="筛选角色"
@@ -132,6 +134,8 @@ export default function UserAdminPage() {
             }}
           />
           <Select
+            showSearch
+            optionFilterProp="label"
             allowClear
             value={enabledFilter}
             placeholder="筛选状态"

@@ -121,6 +121,10 @@ public class DeploymentEntity {
     @Column(length = 2000)
     private String artifactPath;
 
+    /** 本次部署创建时固化的执行快照，便于后续排查历史版本差异。 */
+    @Lob
+    private String executionSnapshotJson;
+
     /** 若这是重新发布历史版本的任务，则记录来源部署 ID。 */
     private Long rollbackFromDeploymentId;
 

@@ -214,6 +214,8 @@ export interface DeploymentSummary {
   pipeline?: PipelineSummary | null;
   /** 本次部署保留下来的构建产物目录，可用于重新发布同一版本。 */
   artifactPath?: string | null;
+  /** 本次部署创建时固化的执行快照。 */
+  executionSnapshotJson?: string | Record<string, unknown> | null;
   /** 若这是重新发布历史版本的任务，则记录来源部署 ID。 */
   rollbackFromDeploymentId?: number | null;
   /** 被监控的进程 PID。 */

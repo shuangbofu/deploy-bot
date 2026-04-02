@@ -4,6 +4,7 @@ import top.fusb.deploybot.dto.RuntimeEnvironmentRequest;
 import top.fusb.deploybot.dto.RuntimeEnvironmentDetection;
 import top.fusb.deploybot.dto.RuntimeEnvironmentInstallRequest;
 import top.fusb.deploybot.dto.RuntimeEnvironmentPreset;
+import top.fusb.deploybot.dto.RuntimeEnvironmentInstallTaskStatus;
 import com.fasterxml.jackson.core.type.TypeReference;
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorSubCode;
@@ -32,11 +33,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 
 @Service
@@ -57,6 +60,7 @@ public class RuntimeEnvironmentService {
     private final HostService hostService;
     private final ResourceLoader resourceLoader;
     private final String presetsResourceLocation;
+    private final Map<String, InstallTaskState> installTasks = new ConcurrentHashMap<>();
 
     public RuntimeEnvironmentService(
             RuntimeEnvironmentRepository repository,
@@ -249,13 +253,90 @@ public class RuntimeEnvironmentService {
         return entity;
     }
 
+    public String startInstallPreset(RuntimeEnvironmentInstallRequest request) {
+        HostEntity host = hostRepository.findById(request.hostId())
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.HOST_NOT_FOUND));
+        RuntimeEnvironmentPreset preset = listPresets(host.getId()).stream()
+                .filter(item -> item.id().equals(request.presetId()))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.PRESET_NOT_FOUND));
+
+        String taskId = UUID.randomUUID().toString();
+        installTasks.put(taskId, new InstallTaskState(
+                taskId,
+                preset.id(),
+                preset.name(),
+                host.getId(),
+                host.getName()
+        ));
+        installPresetAsync(taskId, request);
+        return taskId;
+    }
+
+    public List<RuntimeEnvironmentInstallTaskStatus> listInstallTasks(Long hostId) {
+        return installTasks.values().stream()
+                .filter(item -> hostId == null || hostId.equals(item.hostId))
+                .sorted((left, right) -> right.startedAt.compareTo(left.startedAt))
+                .map(InstallTaskState::toStatus)
+                .toList();
+    }
+
     @Async
-    public void installPresetAsync(RuntimeEnvironmentInstallRequest request) {
+    public void installPresetAsync(String taskId, RuntimeEnvironmentInstallRequest request) {
+        InstallTaskState task = installTasks.get(taskId);
+        if (task == null) {
+            return;
+        }
+        task.status = "RUNNING";
+        task.message = "正在下载并安装...";
         try {
-            installPreset(request);
+            RuntimeEnvironmentEntity entity = installPreset(request);
+            task.status = "SUCCESS";
+            task.runtimeEnvironmentId = entity.getId();
+            task.finishedAt = LocalDateTime.now();
+            task.message = "安装完成";
         } catch (Exception ex) {
+            task.status = "FAILED";
+            task.finishedAt = LocalDateTime.now();
+            task.message = ex.getMessage();
             log.warn("Preset install failed in background: presetId={}, hostId={}, reason={}",
                     request.presetId(), request.hostId(), ex.getMessage(), ex);
+        }
+    }
+
+    private static final class InstallTaskState {
+        private final String taskId;
+        private final String presetId;
+        private final String presetName;
+        private final Long hostId;
+        private final String hostName;
+        private final LocalDateTime startedAt = LocalDateTime.now();
+        private volatile String status = "PENDING";
+        private volatile String message = "等待开始...";
+        private volatile Long runtimeEnvironmentId;
+        private volatile LocalDateTime finishedAt;
+
+        private InstallTaskState(String taskId, String presetId, String presetName, Long hostId, String hostName) {
+            this.taskId = taskId;
+            this.presetId = presetId;
+            this.presetName = presetName;
+            this.hostId = hostId;
+            this.hostName = hostName;
+        }
+
+        private RuntimeEnvironmentInstallTaskStatus toStatus() {
+            return new RuntimeEnvironmentInstallTaskStatus(
+                    taskId,
+                    presetId,
+                    presetName,
+                    hostId,
+                    hostName,
+                    status,
+                    message,
+                    runtimeEnvironmentId,
+                    startedAt,
+                    finishedAt
+            );
         }
     }
 

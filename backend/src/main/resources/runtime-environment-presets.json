@@ -50,6 +50,16 @@
     "binPathTemplate": "${installRoot}/tools/node-20/bin"
   },
   {
+    "id": "node-22",
+    "name": "Node.js 22",
+    "type": "NODE",
+    "version": "22.22.2",
+    "description": "Node.js 22，适合需要 LTS 新特性的前端项目。",
+    "downloadUrlTemplate": "https://nodejs.org/dist/v22.22.2/node-v22.22.2-${nodePlatform}-${nodeArch}.${nodeArchiveExtension}",
+    "homePathTemplate": "${installRoot}/tools/node-22",
+    "binPathTemplate": "${installRoot}/tools/node-22/bin"
+  },
+  {
     "id": "node-24",
     "name": "Node.js 24",
     "type": "NODE",

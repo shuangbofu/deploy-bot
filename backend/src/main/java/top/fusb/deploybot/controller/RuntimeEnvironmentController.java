@@ -4,6 +4,7 @@ import top.fusb.deploybot.dto.RuntimeEnvironmentDetection;
 import top.fusb.deploybot.dto.RuntimeEnvironmentInstallAccepted;
 import top.fusb.deploybot.dto.RuntimeEnvironmentInstallRequest;
 import top.fusb.deploybot.dto.RuntimeEnvironmentPreset;
+import top.fusb.deploybot.dto.RuntimeEnvironmentInstallTaskStatus;
 import top.fusb.deploybot.dto.RuntimeEnvironmentRequest;
 import top.fusb.deploybot.model.RuntimeEnvironmentEntity;
 import top.fusb.deploybot.model.RuntimeEnvironmentType;
@@ -58,13 +59,18 @@ public class RuntimeEnvironmentController {
         return service.listPresets(hostId);
     }
 
+    @GetMapping("/install-tasks")
+    public List<RuntimeEnvironmentInstallTaskStatus> installTasks(@RequestParam(required = false) Long hostId) {
+        return service.listInstallTasks(hostId);
+    }
+
     /**
      * 下载并安装某个预置运行环境。
      */
     @PostMapping("/install")
     public RuntimeEnvironmentInstallAccepted install(@Valid @RequestBody RuntimeEnvironmentInstallRequest request) {
-        service.installPresetAsync(request);
-        return new RuntimeEnvironmentInstallAccepted(true, "预置环境已开始后台下载安装，请稍后刷新查看结果。");
+        String taskId = service.startInstallPreset(request);
+        return new RuntimeEnvironmentInstallAccepted(true, "预置环境已开始后台下载安装。", taskId);
     }
 
     /**

@@ -1,5 +1,6 @@
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
-import { Button, Form, Input, Space, Switch, Tag, Typography } from 'antd';
+import { Button, Form, Input, Space, Switch, Typography } from 'antd';
+import { PHASE_LABEL_MAP, PHASE_TAG_COLOR_MAP } from '../utils/tagColors';
 
 /**
  * 新增变量时的默认结构。
@@ -14,12 +15,6 @@ const emptyVariable = {
 /**
  * 阶段文案映射，用于把 build / deploy / shared 渲染成中文。
  */
-const phaseLabelMap = {
-  build: '构建',
-  deploy: '发布',
-  shared: '共用',
-};
-
 /**
  * 模板变量编辑器。
  * 用于定义模板暴露给流水线和用户端的变量元信息。
@@ -63,7 +58,14 @@ export default function TemplateVariablesEditor({ value, onChange, title, descri
             <div className="variable-row-header">
               <Space>
                 <Typography.Text strong>变量 {index + 1}</Typography.Text>
-                <Tag>{phaseLabelMap[item.phase || phase || 'shared'] || '共用'}</Tag>
+                <span
+                  className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold text-white"
+                  style={{
+                    backgroundColor: PHASE_TAG_COLOR_MAP[item.phase || phase || 'shared'] || PHASE_TAG_COLOR_MAP.shared,
+                  }}
+                >
+                  {PHASE_LABEL_MAP[item.phase || phase || 'shared'] || '共用'}
+                </span>
               </Space>
               <Button danger type="text" icon={<DeleteOutlined />} onClick={() => removeVariable(index)}>
                 删除

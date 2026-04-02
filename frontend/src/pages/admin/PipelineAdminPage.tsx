@@ -10,7 +10,7 @@ import EmptyPane from '../../components/EmptyPane';
 import PageHeaderBar from '../../components/PageHeaderBar';
 import PipelineVariablesEditor from '../../components/PipelineVariablesEditor';
 import PipelineIcon, { getRequiredEnvironmentTypes, getRequiredRuntimeEnvironmentTypes } from '../../components/PipelineIcon';
-import { getStableTagColor } from '../../utils/tagColors';
+import { getStableTagColor, PHASE_LABEL_MAP, PHASE_TAG_COLOR_MAP, sortByPhase } from '../../utils/tagColors';
 import type {
   HostSummary,
   PipelineSummary,
@@ -362,7 +362,7 @@ export default function PipelineAdminPage() {
         )}
       />
       <Card className="app-card">
-        <div className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-4">
+        <div className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-5">
           <Input
             value={keyword}
             placeholder="搜索流水线名称 / 描述 / 默认分支"
@@ -372,6 +372,8 @@ export default function PipelineAdminPage() {
             }}
           />
           <Select
+            showSearch
+            optionFilterProp="label"
             allowClear
             value={projectFilter}
             placeholder="筛选项目"
@@ -382,6 +384,8 @@ export default function PipelineAdminPage() {
             }}
           />
           <Select
+            showSearch
+            optionFilterProp="label"
             allowClear
             value={templateFilter}
             placeholder="筛选模板"
@@ -392,6 +396,8 @@ export default function PipelineAdminPage() {
             }}
           />
           <Select
+            showSearch
+            optionFilterProp="label"
             allowClear
             value={hostFilter}
             placeholder="筛选目标主机"
@@ -401,6 +407,20 @@ export default function PipelineAdminPage() {
               setPagination((previous) => ({ ...previous, current: 1 }));
             }}
           />
+          <div className="flex items-center">
+            <Button
+              onClick={() => {
+                setKeyword('');
+                setProjectFilter(undefined);
+                setTemplateFilter(undefined);
+                setHostFilter(undefined);
+                setTagFilter(undefined);
+                setPagination((previous) => ({ ...previous, current: 1 }));
+              }}
+            >
+              重置条件
+            </Button>
+          </div>
         </div>
         {availableTags.length > 0 ? (
           <div className="mb-4 flex flex-wrap gap-2">
@@ -432,26 +452,10 @@ export default function PipelineAdminPage() {
             })}
           </div>
         ) : null}
-        <div className="mb-4">
-          <div className="flex items-center">
-            <Button
-              onClick={() => {
-                setKeyword('');
-                setProjectFilter(undefined);
-                setTemplateFilter(undefined);
-                setHostFilter(undefined);
-                setTagFilter(undefined);
-                setPagination((previous) => ({ ...previous, current: 1 }));
-              }}
-            >
-              重置条件
-            </Button>
-          </div>
-        </div>
         <Table
           rowKey="id"
           loading={loading}
-          scroll={{ x: 980 }}
+          scroll={{ x: 1720 }}
           dataSource={filteredPipelines}
           locale={{ emptyText: <EmptyPane description="还没有流水线，点击右上角先把项目和模板组合起来。" /> }}
           pagination={{
@@ -463,15 +467,48 @@ export default function PipelineAdminPage() {
             onChange: (current, pageSize) => setPagination({ current, pageSize }),
           }}
           columns={[
-              { title: '名称', dataIndex: 'name', width: 180 },
               {
-                title: '图标',
-                width: 80,
-                render: (_, row) => <PipelineIcon type={row.template?.templateType} />,
+                title: '名称',
+                width: 200,
+                onHeaderCell: () => ({
+                  style: {
+                    minWidth: 200,
+                    maxWidth: 100,
+                  },
+                }),
+                render: (_, row) => (
+                  <div className="flex items-center gap-0.5">
+                    <div className="scale-[0.82] origin-left">
+                      <PipelineIcon type={row.template?.templateType} />
+                    </div>
+                    <span>{row.name}</span>
+                  </div>
+                ),
               },
               { title: '项目', render: (_, row) => row.project?.name },
               { title: '目标主机', render: (_, row) => row.targetHost?.name || '-' },
-              { title: '模板', render: (_, row) => row.template?.name },
+              { title: '模板',  onCell: () => ({
+                                               style: {
+                                                 minWidth: 150,
+                                                 maxWidth: 300,
+                                               },
+                                             }), render: (_, row) => row.template?.name },
+              {
+                title: '描述',
+                dataIndex: 'description',
+                width: 360,
+                onCell: () => ({
+                  style: {
+                    minWidth: 250,
+                    maxWidth: 360,
+                  },
+                }),
+                render: (value) => value ? (
+                  <div className="py-1 text-sm leading-6 whitespace-normal break-words text-slate-600 line-clamp-2" title={value}>
+                    {value}
+                  </div>
+                ) : '-',
+              },
               {
                 title: '标签',
                 width: 180,
@@ -495,28 +532,94 @@ export default function PipelineAdminPage() {
                   )
                   : '-',
               },
-              { title: '构建 Java', render: (_, row) => row.javaEnvironment?.name || '-' },
-              { title: '构建 Node', render: (_, row) => row.nodeEnvironment?.name || '-' },
-              { title: '构建 Maven', render: (_, row) => row.mavenEnvironment?.name || '-' },
-              { title: '运行 Java', render: (_, row) => row.runtimeJavaEnvironment?.name || '-' },
-              { title: '应用名', render: (_, row) => row.applicationName || '-' },
-              { title: 'Spring Profile', render: (_, row) => row.springProfile || '-' },
-              { title: '启动关键字', render: (_, row) => row.startupKeyword || '-' },
-              { title: '启动超时(秒)', width: 120, render: (_, row) => row.startupTimeoutSeconds || '-' },
               { title: '默认分支', dataIndex: 'defaultBranch', width: 120 },
-              { title: '描述', dataIndex: 'description' },
               {
-                title: '默认变量',
+                title: '变量',
                 render: (_, row) => (
-                  <Space wrap>
-                    {row.parsedTemplateVariables.length === 0 ? <span className="text-slate-400">无</span> : null}
-                    {row.parsedTemplateVariables.map((item) => (
-                      <Tag key={item.name}>
-                        {item.label || item.name}：{row.parsedVariablesJson[item.name] || '-'}
+                    <Space wrap>
+                      {row.parsedTemplateVariables.length === 0 ? <span className="text-slate-400">无</span> : null}
+                    {sortByPhase(row.parsedTemplateVariables).map((item) => (
+                      <Tag
+                        key={item.name}
+                        style={{
+                          backgroundColor: `${(PHASE_TAG_COLOR_MAP[item.phase || 'shared'] || PHASE_TAG_COLOR_MAP.shared)}1A`,
+                          color: '#334155',
+                          borderColor: 'transparent',
+                        }}
+                        className="!border-0 !pl-0 !py-0"
+                      >
+                        <span
+                          className="mr-1.5 inline-flex items-center rounded-md px-2 py-1 text-xs font-normal text-white"
+                          style={{
+                            backgroundColor: PHASE_TAG_COLOR_MAP[item.phase || 'shared'] || PHASE_TAG_COLOR_MAP.shared,
+                            borderTopRightRadius: 0,
+                            borderBottomRightRadius: 0,
+                          }}
+                        >
+                          <span>[{PHASE_LABEL_MAP[item.phase || 'shared'] || '共用'}]</span>
+                          <span className="ml-1">{item.label || item.name}</span>
+                        </span>
+                        <button
+                          type="button"
+                          className="cursor-pointer rounded-sm bg-transparent px-1 py-0 font-semibold text-slate-700 transition-colors hover:text-slate-900"
+                          onClick={async () => {
+                            const value = row.parsedVariablesJson[item.name] || '-';
+                            try {
+                              await navigator.clipboard.writeText(value);
+                              message.success(`已复制：${value}`);
+                            } catch {
+                              message.error('复制失败');
+                            }
+                          }}
+                        >
+                          {row.parsedVariablesJson[item.name] || '-'}
+                        </button>
                       </Tag>
                     ))}
                   </Space>
                 ),
+              },
+              {
+                title: '环境版本',
+                width: 360,
+                render: (_, row) => {
+                  const items = [
+                    row.javaEnvironment ? `构建 Java：${row.javaEnvironment.name}` : null,
+                    row.nodeEnvironment ? `构建 Node：${row.nodeEnvironment.name}` : null,
+                    row.mavenEnvironment ? `构建 Maven：${row.mavenEnvironment.name}` : null,
+                    row.runtimeJavaEnvironment ? `运行 Java：${row.runtimeJavaEnvironment.name}` : null,
+                  ].filter(Boolean);
+                  return items.length > 0 ? (
+                    <div className="space-y-2 py-1 text-sm leading-6 text-slate-600">
+                      {items.map((item) => (
+                        <div key={item} className="truncate" title={item}>
+                          {item}
+                        </div>
+                      ))}
+                    </div>
+                  ) : '-';
+                },
+              },
+              {
+                title: '监控配置',
+                width: 380,
+                render: (_, row) => {
+                  const items = [
+                    row.applicationName ? `应用名：${row.applicationName}` : null,
+                    row.springProfile ? `Profile：${row.springProfile}` : null,
+                    row.startupKeyword ? `关键字：${row.startupKeyword}` : null,
+                    row.startupTimeoutSeconds ? `超时：${row.startupTimeoutSeconds} 秒` : null,
+                  ].filter(Boolean);
+                  return items.length > 0 ? (
+                    <div className="space-y-2 py-1 text-sm leading-6 text-slate-600">
+                      {items.map((item) => (
+                        <div key={item} className="truncate" title={item}>
+                          {item}
+                        </div>
+                      ))}
+                    </div>
+                  ) : '-';
+                },
               },
               {
                 title: '操作',
@@ -596,7 +699,7 @@ export default function PipelineAdminPage() {
                 { title: '构建环境', description: '选择本机构建用环境' },
                 { title: '目标主机', description: '选择发布到哪台主机' },
                 { title: '运行配置', description: 'Profile / YAML 覆盖' },
-                { title: '默认变量', description: '按阶段填写默认值' },
+                { title: '变量', description: '按阶段填写变量值' },
               ]}
             />
           </Card>
@@ -794,7 +897,7 @@ export default function PipelineAdminPage() {
               </Card>
             ) : null}
             {currentStep === 4 ? (
-              <Card size="small" title="步骤 5 · 默认变量">
+              <Card size="small" title="步骤 5 · 变量">
                 <PipelineVariablesEditor
                   variables={selectedTemplateVariables}
                   values={form.variablesJson}

@@ -94,10 +94,13 @@ export default function DeploymentRecordsPage() {
       <PageHeaderBar
         title="部署记录"
         description="这里是部署历史列表。支持按项目、流水线、触发人、状态和时间区间筛选，并直接查看耗时。"
+        extra={<Button onClick={() => loadDeployments().catch(() => message.error('刷新部署记录失败'))}>刷新</Button>}
       />
       <Card className="app-card">
         <div className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-5">
           <Select
+            showSearch
+            optionFilterProp="label"
             allowClear
             value={filters.projectName}
             options={projectOptions}
@@ -108,6 +111,8 @@ export default function DeploymentRecordsPage() {
             }}
           />
           <Select
+            showSearch
+            optionFilterProp="label"
             allowClear
             value={filters.pipelineName}
             options={pipelineOptions}
@@ -126,6 +131,8 @@ export default function DeploymentRecordsPage() {
             }}
           />
             <Select
+              showSearch
+              optionFilterProp="label"
               allowClear
               value={filters.status}
               options={DEPLOYMENT_STATUS_OPTIONS}
@@ -144,11 +151,8 @@ export default function DeploymentRecordsPage() {
             placeholder={['开始时间', '结束时间']}
           />
         </div>
-        <div className="mb-4">
-          <Space>
-            <Button onClick={() => setFilters(emptyFilters)}>重置条件</Button>
-            <Button onClick={() => loadDeployments().catch(() => message.error('刷新部署记录失败'))}>刷新</Button>
-          </Space>
+        <div className="mb-4 flex items-center">
+          <Button onClick={() => setFilters(emptyFilters)}>重置条件</Button>
         </div>
         <Table
           rowKey="id"
