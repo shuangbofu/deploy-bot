@@ -9,6 +9,7 @@ import type {
   NotificationDeliveryRecordSummary,
   NotificationTemplateSummary,
   MavenSettingsSummary,
+  PipelineHallSummary,
   PipelineSummary,
   ProjectConnectionTestResult,
   ProjectSummary,

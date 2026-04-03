@@ -14,6 +14,8 @@ import java.util.Optional;
 public interface DeploymentRepository extends JpaRepository<DeploymentEntity, Long>, JpaSpecificationExecutor<DeploymentEntity> {
     List<DeploymentEntity> findAllByOrderByCreatedAtDesc();
     List<DeploymentEntity> findByTriggeredByOrderByCreatedAtDesc(String triggeredBy);
+    List<DeploymentEntity> findTop30ByTriggeredByOrderByCreatedAtDesc(String triggeredBy);
+    java.util.Optional<DeploymentEntity> findFirstByPipelineIdOrderByCreatedAtDesc(Long pipelineId);
     List<DeploymentEntity> findByPipelineIdAndStatusInOrderByCreatedAtDesc(Long pipelineId, List<DeploymentStatus> statuses);
     Optional<DeploymentEntity> findFirstByPipelineIdAndStatusOrderByCreatedAtDesc(Long pipelineId, DeploymentStatus status);
     long countByPipelineId(Long pipelineId);

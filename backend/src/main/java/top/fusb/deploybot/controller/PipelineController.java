@@ -1,6 +1,7 @@
 package top.fusb.deploybot.controller;
 
 import top.fusb.deploybot.dto.PageResult;
+import top.fusb.deploybot.dto.PipelineHallSummary;
 import top.fusb.deploybot.dto.PipelineRequest;
 import top.fusb.deploybot.model.PipelineEntity;
 import top.fusb.deploybot.security.AdminOnly;
@@ -37,6 +38,11 @@ public class PipelineController {
     @GetMapping
     public List<PipelineEntity> list() {
         return service.findAll();
+    }
+
+    @GetMapping("/hall")
+    public List<PipelineHallSummary> hall() {
+        return service.findHallSummaries();
     }
 
     @GetMapping("/page")

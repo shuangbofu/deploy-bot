@@ -8,7 +8,7 @@ import PageHeaderBar from '../../components/PageHeaderBar';
 import PipelineIcon from '../../components/PipelineIcon';
 import StatusTag from '../../components/StatusTag';
 import { ACTIVE_DEPLOYMENT_STATUSES } from '../../constants/deployment';
-import type { DeploymentSummary, PipelineSummary } from '../../types/domain';
+import type { PipelineHallSummary, PipelineSummary, UserRecentPipelineSummary } from '../../types/domain';
 import { formatDateTime } from '../../utils/datetime';
 import { formatDeploymentElapsed } from '../../utils/deploymentDuration';
 import { getDeploymentProgress, getDeploymentProgressColor } from '../../utils/deploymentProgress';
@@ -21,9 +21,8 @@ import { getStableTagColor } from '../../utils/tagColors';
 export default function UserPipelinesPage() {
   const IDLE_POLL_INTERVAL = 15000;
   const ACTIVE_POLL_INTERVAL = 3000;
-  const [pipelines, setPipelines] = useState<PipelineSummary[]>([]);
-  const [deployments, setDeployments] = useState<DeploymentSummary[]>([]);
-  const [myDeployments, setMyDeployments] = useState<DeploymentSummary[]>([]);
+  const [hallItems, setHallItems] = useState<PipelineHallSummary[]>([]);
+  const [recentPipelines, setRecentPipelines] = useState<UserRecentPipelineSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [submittingId, setSubmittingId] = useState<number>();
   const [deployModalOpen, setDeployModalOpen] = useState(false);
@@ -58,14 +57,12 @@ export default function UserPipelinesPage() {
       setLoading(true);
     }
     try {
-      const [nextPipelines, nextDeployments, nextMyDeployments] = await Promise.all([
-        pipelinesApi.list(),
-        deploymentsApi.list(),
-        deploymentsApi.listMine(),
+      const [nextHallItems, nextRecentPipelines] = await Promise.all([
+        pipelinesApi.listHall(),
+        deploymentsApi.listMineRecentPipelines(),
       ]);
-      setPipelines(nextPipelines);
-      setDeployments(nextDeployments);
-      setMyDeployments(nextMyDeployments);
+      setHallItems(nextHallItems);
+      setRecentPipelines(nextRecentPipelines);
     } finally {
       if (!silent) {
         setLoading(false);
@@ -78,106 +75,36 @@ export default function UserPipelinesPage() {
   }, []);
 
   useEffect(() => {
-    if (loading && pipelines.length === 0 && deployments.length === 0) {
+    if (loading && hallItems.length === 0) {
       return undefined;
     }
-    const hasActiveDeployment = deployments.some((item) => item.status && ACTIVE_DEPLOYMENT_STATUSES.includes(item.status));
+    const hasActiveDeployment = hallItems.some((item) => item.latestStatus && ACTIVE_DEPLOYMENT_STATUSES.includes(item.latestStatus));
     const interval = window.setInterval(() => {
       loadData(true).catch(() => {});
     }, hasActiveDeployment ? ACTIVE_POLL_INTERVAL : IDLE_POLL_INTERVAL);
     return () => window.clearInterval(interval);
-  }, [deployments, loading, pipelines.length]);
+  }, [hallItems, loading]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setTick(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
 
-  /** 把流水线和它的最近一次部署拼成卡片展示结构。 */
-  const pipelineDeploymentOrders = useMemo(() => {
-    const grouped = new Map<number, DeploymentSummary[]>();
-    deployments.forEach((item) => {
-      const pipelineId = item.pipeline?.id;
-      if (!pipelineId) {
-        return;
-      }
-      const bucket = grouped.get(pipelineId) || [];
-      bucket.push(item);
-      grouped.set(pipelineId, bucket);
-    });
-    const result = new Map<number, Map<number, number>>();
-    grouped.forEach((items, pipelineId) => {
-      const sorted = [...items].sort((left, right) => {
-        const leftTime = new Date(left.createdAt || 0).getTime();
-        const rightTime = new Date(right.createdAt || 0).getTime();
-        return leftTime - rightTime;
-      });
-      result.set(
-        pipelineId,
-        new Map(sorted.map((item, index) => [item.id, index + 1])),
-      );
-    });
-    return result;
-  }, [deployments]);
-
-  const pipelineCards = useMemo(() => pipelines.map((pipeline) => ({
-    pipeline,
-    latestDeployment: deployments.find((item) => item.pipeline?.id === pipeline.id),
-  })), [pipelines, deployments]);
-
-  const availableTags = useMemo(
-    () => Array.from(new Set(pipelines.flatMap((item) => parseTagsJson(item.tagsJson)))).sort((left, right) => left.localeCompare(right, 'zh-CN')),
-    [pipelines],
+    const availableTags = useMemo(
+    () => Array.from(new Set(hallItems.flatMap((item) => parseTagsJson(item.tagsJson)))).sort((left, right) => left.localeCompare(right, 'zh-CN')),
+    [hallItems],
   );
 
-  const frequentPipelines = useMemo(() => {
-    const pipelineMap = new Map(pipelines.map((item) => [item.id, item]));
-    const recentDeployments = [...myDeployments]
-      .filter((item) => item.pipeline?.id && pipelineMap.has(item.pipeline.id))
-      .sort((left, right) => new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime())
-      .slice(0, 30);
+  const frequentPipelines = useMemo(() => recentPipelines.slice(0, 8), [recentPipelines]);
 
-    const counts = new Map<number, { count: number; latestAt: number }>();
-    recentDeployments.forEach((item) => {
-      const pipelineId = item.pipeline?.id;
-      if (!pipelineId) {
-        return;
-      }
-      const latestAt = new Date(item.createdAt || 0).getTime();
-      const current = counts.get(pipelineId);
-      if (!current) {
-        counts.set(pipelineId, { count: 1, latestAt });
-        return;
-      }
-      counts.set(pipelineId, {
-        count: current.count + 1,
-        latestAt: Math.max(current.latestAt, latestAt),
-      });
-    });
-
-    return [...counts.entries()]
-      .map(([pipelineId, stats]) => ({
-        pipeline: pipelineMap.get(pipelineId)!,
-        count: stats.count,
-        latestAt: stats.latestAt,
-      }))
-      .sort((left, right) => {
-        if (right.count !== left.count) {
-          return right.count - left.count;
-        }
-        return right.latestAt - left.latestAt;
-      })
-      .slice(0, 8);
-  }, [myDeployments, pipelines]);
-
-  const filteredPipelineCards = useMemo(() => pipelineCards.filter(({ pipeline }) => {
-    if (selectedPipelineId && pipeline.id !== selectedPipelineId) {
+  const filteredPipelineCards = useMemo(() => hallItems.filter((item) => {
+    if (selectedPipelineId && item.pipelineId !== selectedPipelineId) {
       return false;
     }
-    const tags = parseTagsJson(pipeline.tagsJson);
+    const tags = parseTagsJson(item.tagsJson);
     const normalizedKeyword = keyword.trim().toLowerCase();
     if (normalizedKeyword) {
-      const matched = [pipeline.name, pipeline.description, pipeline.project?.name, pipeline.defaultBranch, ...tags]
+      const matched = [item.pipelineName, item.pipelineDescription, item.projectName, item.defaultBranch, ...tags]
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(normalizedKeyword));
       if (!matched) {
@@ -188,7 +115,7 @@ export default function UserPipelinesPage() {
       return false;
     }
     return true;
-  }), [pipelineCards, keyword, tagFilter, selectedPipelineId]);
+  }), [hallItems, keyword, tagFilter, selectedPipelineId]);
 
   /** 打开部署弹窗时顺便拉取可选分支。 */
   const openDeployModal = async (pipeline: PipelineSummary) => {
@@ -215,16 +142,14 @@ export default function UserPipelinesPage() {
     if (!deployingPipeline) {
       return;
     }
-    const activeDeployment = deployments.find(
-      (item) => item.pipeline?.id === deployingPipeline.id && item.status && ACTIVE_DEPLOYMENT_STATUSES.includes(item.status),
-    );
+    const activePipeline = hallItems.find((item) => item.pipelineId === deployingPipeline.id);
     setSubmittingId(deployingPipeline.id);
     try {
       const deployment = await deploymentsApi.create({
         pipelineId: deployingPipeline.id,
         branchName: selectedBranch,
         triggeredBy: 'user',
-        replaceRunning: Boolean(activeDeployment),
+        replaceRunning: Boolean(activePipeline?.latestStatus && ACTIVE_DEPLOYMENT_STATUSES.includes(activePipeline.latestStatus)),
       });
       setDeployModalOpen(false);
       setDeployingPipeline(undefined);
@@ -321,7 +246,7 @@ export default function UserPipelinesPage() {
           </Row>
           </div>
         </div>
-      ) : pipelineCards.length === 0 ? (
+      ) : hallItems.length === 0 ? (
         <Card className="app-card">
           <EmptyPane description="当前没有可部署流水线，请先到管理端创建。" />
         </Card>
@@ -377,23 +302,23 @@ export default function UserPipelinesPage() {
               {frequentPipelines.length > 0 ? (
                 <Card className="app-card pipeline-hall-recent-card mt-4" title="最近部署">
                   <div className="space-y-2">
-                    {frequentPipelines.map(({ pipeline, count }) => (
+                    {frequentPipelines.map((item) => (
                       <button
-                        key={pipeline.id}
+                        key={item.pipelineId}
                         type="button"
-                        className={`pipeline-hall-shortcut${selectedPipelineId === pipeline.id ? ' pipeline-hall-shortcut--active' : ''}`}
-                        onClick={() => setSelectedPipelineId((previous) => (previous === pipeline.id ? undefined : pipeline.id))}
+                        className={`pipeline-hall-shortcut${selectedPipelineId === item.pipelineId ? ' pipeline-hall-shortcut--active' : ''}`}
+                        onClick={() => setSelectedPipelineId((previous) => (previous === item.pipelineId ? undefined : item.pipelineId))}
                       >
                         <div className="pipeline-hall-shortcut-main">
                           <div className="pipeline-hall-shortcut-title">
-                            <PipelineIcon type={pipeline.template?.templateType} />
-                            <span className="pipeline-hall-shortcut-name">{pipeline.name}</span>
+                            <PipelineIcon type={item.templateType} />
+                            <span className="pipeline-hall-shortcut-name">{item.pipelineName}</span>
                           </div>
-                          <span className="pipeline-hall-shortcut-count">近 {count} 次</span>
+                          <span className="pipeline-hall-shortcut-count">近 {item.count} 次</span>
                         </div>
                         <div className="pipeline-hall-shortcut-meta">
-                          <span>{pipeline.project?.name || '-'}</span>
-                          <span>{pipeline.defaultBranch || '-'}</span>
+                          <span>{item.projectName || '-'}</span>
+                          <span>{item.defaultBranch || '-'}</span>
                         </div>
                       </button>
                     ))}
@@ -403,38 +328,37 @@ export default function UserPipelinesPage() {
             </div>
             <div className="pipeline-hall-content">
             <Row gutter={[16, 16]}>
-              {filteredPipelineCards.map(({ pipeline, latestDeployment }) => {
-              const tags = parseTagsJson(pipeline.tagsJson);
-              const latestOrder = latestDeployment && pipelineDeploymentOrders.get(pipeline.id)?.get(latestDeployment.id);
-              const activeDeployment = latestDeployment?.status && ACTIVE_DEPLOYMENT_STATUSES.includes(latestDeployment.status)
-                ? latestDeployment
+              {filteredPipelineCards.map((item) => {
+              const tags = parseTagsJson(item.tagsJson);
+              const activeDeployment = item.latestStatus && ACTIVE_DEPLOYMENT_STATUSES.includes(item.latestStatus)
+                ? item
                 : undefined;
               return (
-                <Col xs={24} md={12} xl={8} xxl={6} key={pipeline.id}>
-                  <Card id={`pipeline-card-${pipeline.id}`} className="pipeline-card" bordered={false}>
+                <Col xs={24} md={12} xl={8} xxl={6} key={item.pipelineId}>
+                  <Card id={`pipeline-card-${item.pipelineId}`} className="pipeline-card" bordered={false}>
                     <div className="pipeline-card-header">
                       <div className="pipeline-card-content">
-                        <PipelineIcon type={pipeline.template?.templateType} />
+                        <PipelineIcon type={item.templateType} />
                         <div className="min-w-0 flex-1 pipeline-card-title-block">
                           <Typography.Text className="block text-[11px] uppercase tracking-[0.24em] text-slate-400">
-                            {pipeline.project?.name || 'Project'}
+                            {item.projectName || 'Project'}
                           </Typography.Text>
                           <Typography.Title level={4} className="!mb-1 !mt-0">
-                            {pipeline.name}
+                            {item.pipelineName}
                           </Typography.Title>
                         </div>
                       </div>
                       <div className="pipeline-card-status">
-                        {latestOrder ? (
+                        {item.latestDeploymentOrder ? (
                           <div className="mb-1 text-right text-[22px] font-bold leading-none text-sky-600">
-                            #{latestOrder}
+                            #{item.latestDeploymentOrder}
                           </div>
                         ) : null}
-                        <StatusTag status={latestDeployment?.status} />
+                        <StatusTag status={item.latestStatus || undefined} />
                       </div>
                     </div>
                     <Typography.Paragraph className="!mb-0 text-slate-600">
-                      {pipeline.description || '已配置完成，可直接部署。'}
+                      {item.pipelineDescription || '已配置完成，可直接部署。'}
                     </Typography.Paragraph>
                     {tags.length > 0 ? (
                       <Space className="!mt-3" wrap>
@@ -455,26 +379,26 @@ export default function UserPipelinesPage() {
                     ) : null}
                     <div className="pipeline-meta-panel">
                       <div className="pipeline-meta-row">
-                        <span>{latestDeployment?.branchName ? '部署分支' : '默认分支'}</span>
-                        <span>{latestDeployment?.branchName || pipeline.defaultBranch}</span>
+                        <span>{item.latestBranchName ? '部署分支' : '默认分支'}</span>
+                        <span>{item.latestBranchName || item.defaultBranch}</span>
                       </div>
                       <div className="pipeline-meta-row">
                         <span>部署人</span>
-                        <span>{latestDeployment?.triggeredByDisplayName || latestDeployment?.triggeredBy || '-'}</span>
+                        <span>{item.latestTriggeredByDisplayName || item.latestTriggeredBy || '-'}</span>
                       </div>
                       <div className="pipeline-meta-row">
                         <span>开始时间</span>
-                        <span>{formatDateTime(latestDeployment?.startedAt || latestDeployment?.createdAt)}</span>
+                        <span>{formatDateTime(item.latestStartedAt || item.latestCreatedAt)}</span>
                       </div>
                       <div className="pipeline-meta-row">
                         <span>结束时间</span>
-                        <span>{formatDateTime(latestDeployment?.finishedAt)}</span>
+                        <span>{formatDateTime(item.latestFinishedAt)}</span>
                       </div>
                       <div className="pt-2">
                         <Progress
-                          percent={getDeploymentProgress(latestDeployment)}
-                          format={() => latestDeployment?.progressText || `${getDeploymentProgress(latestDeployment)}%`}
-                          strokeColor={getDeploymentProgressColor(latestDeployment?.status)}
+                          percent={item.latestProgressPercent ?? 0}
+                          format={() => item.latestProgressText || `${item.latestProgressPercent ?? 0}%`}
+                          strokeColor={getDeploymentProgressColor(item.latestStatus)}
                           trailColor="#d9e2f1"
                         />
                       </div>
@@ -484,10 +408,10 @@ export default function UserPipelinesPage() {
                         {activeDeployment ? (
                           <Button
                             danger
-                            loading={submittingId === pipeline.id}
+                            loading={submittingId === item.pipelineId}
                             onClick={() => {
-                              setSubmittingId(pipeline.id);
-                              stopDeployment(activeDeployment.id)
+                              setSubmittingId(item.pipelineId);
+                              stopDeployment(activeDeployment.latestDeploymentId!)
                                 .then(() => message.success('部署已停止'))
                                 .catch(() => message.error('停止部署失败'))
                                 .finally(() => setSubmittingId(undefined));
@@ -498,26 +422,39 @@ export default function UserPipelinesPage() {
                         ) : (
                           <Button
                             type="primary"
-                            loading={submittingId === pipeline.id}
-                            onClick={() => openDeployModal(pipeline).catch(() => message.error('打开部署窗口失败'))}
+                            loading={submittingId === item.pipelineId}
+                            onClick={() => openDeployModal({
+                              id: item.pipelineId,
+                              name: item.pipelineName,
+                              description: item.pipelineDescription || undefined,
+                              defaultBranch: item.defaultBranch || undefined,
+                              tagsJson: item.tagsJson || undefined,
+                              project: item.projectName ? { id: 0, name: item.projectName } : undefined,
+                              template: item.templateType ? { id: 0, name: item.templateType, templateType: item.templateType } : undefined,
+                            } as PipelineSummary).catch(() => message.error('打开部署窗口失败'))}
                           >
                             部署
                           </Button>
                         )}
                         <Button
-                          disabled={!latestDeployment}
-                          onClick={() => latestDeployment && navigate(`/user/deployments/${latestDeployment.id}`, {
+                          disabled={!item.latestDeploymentId}
+                          onClick={() => item.latestDeploymentId && navigate(`/user/deployments/${item.latestDeploymentId}`, {
                             state: { from: '/user/pipelines', backLabel: '返回流水线大厅' },
                           })}
                         >
                           查看进度
                         </Button>
-                        <Button onClick={() => navigate(`/user/pipelines/${pipeline.id}/history`)}>
+                        <Button onClick={() => navigate(`/user/pipelines/${item.pipelineId}/history`)}>
                           部署记录
                         </Button>
                       </Space>
                       <div className="shrink-0 text-xs text-slate-500">
-                        耗时 {formatDeploymentElapsed(latestDeployment, tick)}
+                        耗时 {formatDeploymentElapsed({
+                          startedAt: item.latestStartedAt || undefined,
+                          createdAt: item.latestCreatedAt || undefined,
+                          finishedAt: item.latestFinishedAt || undefined,
+                          status: item.latestStatus || undefined,
+                        }, tick)}
                       </div>
                     </div>
                   </Card>
@@ -543,8 +480,8 @@ export default function UserPipelinesPage() {
         onOk={() => createDeployment().catch(() => message.error('触发部署失败'))}
         destroyOnClose
       >
-        <div className="space-y-4">
-          {deployingPipeline && deployments.some((item) => item.pipeline?.id === deployingPipeline.id && item.status && ACTIVE_DEPLOYMENT_STATUSES.includes(item.status)) ? (
+          <div className="space-y-4">
+          {deployingPipeline && hallItems.some((item) => item.pipelineId === deployingPipeline.id && item.latestStatus && ACTIVE_DEPLOYMENT_STATUSES.includes(item.latestStatus)) ? (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
               检测到当前流水线还有部署中的任务。继续部署会先停止前一个正在运行的任务。
             </div>

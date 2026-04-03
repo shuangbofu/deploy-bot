@@ -196,6 +196,27 @@ export interface PipelineSummary {
   tagsJson?: string | string[];
 }
 
+export interface PipelineHallSummary {
+  pipelineId: number;
+  pipelineName: string;
+  pipelineDescription?: string | null;
+  defaultBranch?: string | null;
+  projectName?: string | null;
+  templateType?: string | null;
+  tagsJson?: string | string[] | null;
+  latestDeploymentId?: number | null;
+  latestDeploymentOrder?: number | null;
+  latestStatus?: DeploymentStatus | null;
+  latestBranchName?: string | null;
+  latestTriggeredBy?: string | null;
+  latestTriggeredByDisplayName?: string | null;
+  latestCreatedAt?: string | null;
+  latestStartedAt?: string | null;
+  latestFinishedAt?: string | null;
+  latestProgressPercent?: number | null;
+  latestProgressText?: string | null;
+}
+
 export interface NotificationBinding {
   notificationId: number;
   eventType: NotificationEventType;
@@ -289,6 +310,16 @@ export interface DeploymentSummary {
   rollbackFromDeploymentId?: number | null;
   /** 被监控的进程 PID。 */
   monitoredPid?: number | null;
+}
+
+export interface UserRecentPipelineSummary {
+  pipelineId: number;
+  pipelineName: string;
+  projectName?: string | null;
+  defaultBranch?: string | null;
+  templateType?: string | null;
+  count: number;
+  latestDeploymentAt?: string | null;
 }
 
 export interface ServiceSummary {

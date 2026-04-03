@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import top.fusb.deploybot.dto.Result;
 import top.fusb.deploybot.notification.dto.NotificationTemplateRequest;
 import top.fusb.deploybot.notification.model.NotificationTemplateEntity;
 import top.fusb.deploybot.security.AdminOnly;
@@ -28,22 +29,23 @@ public class NotificationTemplateController {
     }
 
     @GetMapping
-    public List<NotificationTemplateEntity> list() {
-        return service.findAll();
+    public Result<List<NotificationTemplateEntity>> list() {
+        return Result.success(service.findAll());
     }
 
     @PostMapping
-    public NotificationTemplateEntity create(@Valid @RequestBody NotificationTemplateRequest request) {
-        return service.save(request, null);
+    public Result<NotificationTemplateEntity> create(@Valid @RequestBody NotificationTemplateRequest request) {
+        return Result.success(service.save(request, null));
     }
 
     @PutMapping("/{id}")
-    public NotificationTemplateEntity update(@PathVariable Long id, @Valid @RequestBody NotificationTemplateRequest request) {
-        return service.save(request, id);
+    public Result<NotificationTemplateEntity> update(@PathVariable Long id, @Valid @RequestBody NotificationTemplateRequest request) {
+        return Result.success(service.save(request, id));
     }
 
     @DeleteMapping("/{id}")
-    public void delete(@PathVariable Long id) {
+    public Result<Void> delete(@PathVariable Long id) {
         service.delete(id);
+        return Result.success(null);
     }
 }

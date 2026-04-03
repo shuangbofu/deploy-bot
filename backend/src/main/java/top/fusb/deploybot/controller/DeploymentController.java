@@ -4,6 +4,7 @@ import top.fusb.deploybot.dto.DeploymentRequest;
 import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.model.DeploymentEntity;
 import top.fusb.deploybot.model.DeploymentStatus;
+import top.fusb.deploybot.dto.UserRecentPipelineSummary;
 import top.fusb.deploybot.service.DeploymentService;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
@@ -54,6 +55,11 @@ public class DeploymentController {
     @GetMapping("/mine")
     public List<DeploymentEntity> mine() {
         return service.findMine();
+    }
+
+    @GetMapping("/mine/recent-pipelines")
+    public List<UserRecentPipelineSummary> myRecentPipelines() {
+        return service.findMyRecentPipelines();
     }
 
     @GetMapping("/mine/page")

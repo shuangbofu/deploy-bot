@@ -1,6 +1,7 @@
 package top.fusb.deploybot.service;
 
 import top.fusb.deploybot.dto.PageResult;
+import top.fusb.deploybot.dto.PipelineHallSummary;
 import top.fusb.deploybot.dto.PipelineRequest;
 import top.fusb.deploybot.notification.dto.NotificationBinding;
 import top.fusb.deploybot.exception.BusinessException;
@@ -18,6 +19,7 @@ import top.fusb.deploybot.repo.DeploymentRepository;
 import top.fusb.deploybot.repo.ProjectRepository;
 import top.fusb.deploybot.repo.ServiceRepository;
 import top.fusb.deploybot.repo.TemplateRepository;
+import top.fusb.deploybot.repo.UserRepository;
 import jakarta.transaction.Transactional;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -42,6 +44,7 @@ public class PipelineService {
     private final HostService hostService;
     private final NotificationChannelRepository notificationChannelRepository;
     private final JsonMapper jsonMapper;
+    private final UserRepository userRepository;
 
     public PipelineService(
             PipelineRepository pipelineRepository,
@@ -54,7 +57,8 @@ public class PipelineService {
             MavenSettingsRepository mavenSettingsRepository,
             HostService hostService,
             NotificationChannelRepository notificationChannelRepository,
-            JsonMapper jsonMapper
+            JsonMapper jsonMapper,
+            UserRepository userRepository
     ) {
         this.pipelineRepository = pipelineRepository;
         this.projectRepository = projectRepository;
@@ -67,10 +71,60 @@ public class PipelineService {
         this.hostService = hostService;
         this.notificationChannelRepository = notificationChannelRepository;
         this.jsonMapper = jsonMapper;
+        this.userRepository = userRepository;
     }
 
     public List<PipelineEntity> findAll() {
         return pipelineRepository.findAll();
+    }
+
+    public List<PipelineHallSummary> findHallSummaries() {
+        return pipelineRepository.findAll(Sort.by(Sort.Order.desc("id"))).stream()
+                .map(pipeline -> {
+                    var latestDeployment = deploymentRepository.findFirstByPipelineIdOrderByCreatedAtDesc(pipeline.getId())
+                            .map(this::enrichTriggeredByDisplayName)
+                            .orElse(null);
+                    Long latestDeploymentOrder = latestDeployment == null ? null : deploymentRepository.countByPipelineId(pipeline.getId());
+                    return new PipelineHallSummary(
+                            pipeline.getId(),
+                            pipeline.getName(),
+                            pipeline.getDescription(),
+                            pipeline.getDefaultBranch(),
+                            pipeline.getProject() == null ? null : pipeline.getProject().getName(),
+                            pipeline.getTemplate() == null ? null : pipeline.getTemplate().getTemplateType(),
+                            pipeline.getTagsJson(),
+                            latestDeployment == null ? null : latestDeployment.getId(),
+                            latestDeploymentOrder,
+                            latestDeployment == null || latestDeployment.getStatus() == null ? null : latestDeployment.getStatus().name(),
+                            latestDeployment == null ? null : latestDeployment.getBranchName(),
+                            latestDeployment == null ? null : latestDeployment.getTriggeredBy(),
+                            latestDeployment == null ? null : latestDeployment.getTriggeredByDisplayName(),
+                            latestDeployment == null ? null : latestDeployment.getCreatedAt(),
+                            latestDeployment == null ? null : latestDeployment.getStartedAt(),
+                            latestDeployment == null ? null : latestDeployment.getFinishedAt(),
+                            latestDeployment == null ? null : latestDeployment.getProgressPercent(),
+                            latestDeployment == null ? null : latestDeployment.getProgressText()
+                    );
+                })
+                .toList();
+    }
+
+    private top.fusb.deploybot.model.DeploymentEntity enrichTriggeredByDisplayName(top.fusb.deploybot.model.DeploymentEntity entity) {
+        if (entity == null) {
+            return null;
+        }
+        entity.setTriggeredByDisplayName(resolveDisplayName(entity.getTriggeredBy()));
+        entity.setStoppedByDisplayName(resolveDisplayName(entity.getStoppedBy()));
+        return entity;
+    }
+
+    private String resolveDisplayName(String username) {
+        if (username == null || username.isBlank()) {
+            return "-";
+        }
+        return userRepository.findByUsername(username)
+                .map(item -> item.getDisplayName() == null || item.getDisplayName().isBlank() ? item.getUsername() : item.getDisplayName())
+                .orElse(username);
     }
 
     public PageResult<PipelineEntity> findPage(

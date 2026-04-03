@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import top.fusb.deploybot.dto.DeploymentRequest;
 import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.dto.TemplateVariable;
+import top.fusb.deploybot.dto.UserRecentPipelineSummary;
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorSubCode;
 import top.fusb.deploybot.model.DeploymentEntity;
@@ -44,6 +45,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Comparator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -105,6 +107,40 @@ public class DeploymentService {
         return enrichTriggeredByDisplayNames(
                 deploymentRepository.findByTriggeredByOrderByCreatedAtDesc(currentUser.username())
         );
+    }
+
+    public List<UserRecentPipelineSummary> findMyRecentPipelines() {
+        AuthenticatedUser currentUser = requireCurrentUser();
+        return deploymentRepository.findTop30ByTriggeredByOrderByCreatedAtDesc(currentUser.username()).stream()
+                .filter(item -> item.getPipeline() != null)
+                .collect(java.util.stream.Collectors.groupingBy(
+                        DeploymentEntity::getPipeline,
+                        java.util.LinkedHashMap::new,
+                        java.util.stream.Collectors.toList()
+                ))
+                .entrySet()
+                .stream()
+                .map(entry -> new UserRecentPipelineSummary(
+                        entry.getKey().getId(),
+                        entry.getKey().getName(),
+                        entry.getKey().getProject() == null ? null : entry.getKey().getProject().getName(),
+                        entry.getKey().getDefaultBranch(),
+                        entry.getKey().getTemplate() == null ? null : entry.getKey().getTemplate().getTemplateType(),
+                        entry.getValue().size(),
+                        entry.getValue().stream()
+                                .map(DeploymentEntity::getCreatedAt)
+                                .filter(Objects::nonNull)
+                                .max(LocalDateTime::compareTo)
+                                .orElse(null)
+                ))
+                .sorted(
+                        Comparator.comparingLong(UserRecentPipelineSummary::count).reversed()
+                                .thenComparing(
+                                        UserRecentPipelineSummary::latestDeploymentAt,
+                                        Comparator.nullsLast(Comparator.reverseOrder())
+                                )
+                )
+                .toList();
     }
 
     public PageResult<DeploymentEntity> findPage(

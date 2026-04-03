@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import top.fusb.deploybot.dto.Result;
 import top.fusb.deploybot.notification.dto.NotificationWebhookConfigRequest;
 import top.fusb.deploybot.notification.model.NotificationWebhookConfigEntity;
 import top.fusb.deploybot.notification.service.NotificationWebhookConfigService;
@@ -28,22 +29,23 @@ public class NotificationWebhookConfigController {
     }
 
     @GetMapping
-    public List<NotificationWebhookConfigEntity> list() {
-        return service.findAll();
+    public Result<List<NotificationWebhookConfigEntity>> list() {
+        return Result.success(service.findAll());
     }
 
     @PostMapping
-    public NotificationWebhookConfigEntity create(@Valid @RequestBody NotificationWebhookConfigRequest request) {
-        return service.save(request, null);
+    public Result<NotificationWebhookConfigEntity> create(@Valid @RequestBody NotificationWebhookConfigRequest request) {
+        return Result.success(service.save(request, null));
     }
 
     @PutMapping("/{id}")
-    public NotificationWebhookConfigEntity update(@PathVariable Long id, @Valid @RequestBody NotificationWebhookConfigRequest request) {
-        return service.save(request, id);
+    public Result<NotificationWebhookConfigEntity> update(@PathVariable Long id, @Valid @RequestBody NotificationWebhookConfigRequest request) {
+        return Result.success(service.save(request, id));
     }
 
     @DeleteMapping("/{id}")
-    public void delete(@PathVariable Long id) {
+    public Result<Void> delete(@PathVariable Long id) {
         service.delete(id);
+        return Result.success(null);
     }
 }
