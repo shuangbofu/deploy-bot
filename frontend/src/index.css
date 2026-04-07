@@ -604,6 +604,18 @@ body {
   overflow: auto;
 }
 
+.deployment-detail-variables-collapse.ant-collapse {
+  background: transparent;
+}
+
+.deployment-detail-variables-collapse.ant-collapse > .ant-collapse-item > .ant-collapse-header {
+  padding: 0 !important;
+}
+
+.deployment-detail-variables-collapse.ant-collapse > .ant-collapse-item > .ant-collapse-content > .ant-collapse-content-box {
+  padding: 0 !important;
+}
+
 .deployment-detail-log-card .ant-card-body {
   display: flex;
   flex: 1;

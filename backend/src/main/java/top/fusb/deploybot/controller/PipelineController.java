@@ -45,6 +45,11 @@ public class PipelineController {
         return service.findHallSummaries();
     }
 
+    @GetMapping("/hall/by-ids")
+    public List<PipelineHallSummary> hallByIds(@RequestParam List<Long> ids) {
+        return service.findHallSummariesByIds(ids);
+    }
+
     @GetMapping("/page")
     public PageResult<PipelineEntity> page(
             @RequestParam(defaultValue = "1") int page,

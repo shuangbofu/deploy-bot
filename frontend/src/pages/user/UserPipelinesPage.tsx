@@ -51,7 +51,7 @@ export default function UserPipelinesPage() {
     }
   };
 
-  /** 同步加载流水线列表和最新部署记录，用于拼装大厅卡片。 */
+  /** 首次加载或慢轮询时同步刷新大厅卡片和左侧最近部署。 */
   const loadData = async (silent = false) => {
     if (!silent) {
       setLoading(true);
@@ -70,6 +70,21 @@ export default function UserPipelinesPage() {
     }
   };
 
+  const refreshActiveHallItems = async () => {
+    const activeIds = hallItems
+      .filter((item) => item.latestStatus && ACTIVE_DEPLOYMENT_STATUSES.includes(item.latestStatus))
+      .map((item) => item.pipelineId);
+    if (activeIds.length === 0) {
+      return;
+    }
+    const nextActiveItems = await pipelinesApi.listHallByIds(activeIds);
+    if (nextActiveItems.length === 0) {
+      return;
+    }
+    const nextActiveMap = new Map(nextActiveItems.map((item) => [item.pipelineId, item]));
+    setHallItems((current) => current.map((item) => nextActiveMap.get(item.pipelineId) ?? item));
+  };
+
   useEffect(() => {
     loadData().catch(() => message.error('加载流水线失败'));
   }, []);
@@ -80,6 +95,10 @@ export default function UserPipelinesPage() {
     }
     const hasActiveDeployment = hallItems.some((item) => item.latestStatus && ACTIVE_DEPLOYMENT_STATUSES.includes(item.latestStatus));
     const interval = window.setInterval(() => {
+      if (hasActiveDeployment) {
+        refreshActiveHallItems().catch(() => {});
+        return;
+      }
       loadData(true).catch(() => {});
     }, hasActiveDeployment ? ACTIVE_POLL_INTERVAL : IDLE_POLL_INTERVAL);
     return () => window.clearInterval(interval);

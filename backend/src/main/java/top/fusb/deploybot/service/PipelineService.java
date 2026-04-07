@@ -79,7 +79,28 @@ public class PipelineService {
     }
 
     public List<PipelineHallSummary> findHallSummaries() {
-        return pipelineRepository.findAll(Sort.by(Sort.Order.desc("id"))).stream()
+        return buildHallSummaries(pipelineRepository.findAll(Sort.by(Sort.Order.desc("id"))));
+    }
+
+    public List<PipelineHallSummary> findHallSummariesByIds(List<Long> pipelineIds) {
+        if (pipelineIds == null || pipelineIds.isEmpty()) {
+            return List.of();
+        }
+        Set<Long> requestedIds = pipelineIds.stream()
+                .filter(id -> id != null && id > 0)
+                .collect(Collectors.toSet());
+        if (requestedIds.isEmpty()) {
+            return List.of();
+        }
+        return buildHallSummaries(
+                pipelineRepository.findAllById(requestedIds).stream()
+                        .sorted(Comparator.comparing(PipelineEntity::getId).reversed())
+                        .toList()
+        );
+    }
+
+    private List<PipelineHallSummary> buildHallSummaries(List<PipelineEntity> pipelines) {
+        return pipelines.stream()
                 .map(pipeline -> {
                     var latestDeployment = deploymentRepository.findFirstByPipelineIdOrderByCreatedAtDesc(pipeline.getId())
                             .map(this::enrichTriggeredByDisplayName)

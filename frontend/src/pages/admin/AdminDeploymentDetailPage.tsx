@@ -234,7 +234,7 @@ export default function AdminDeploymentDetailPage() {
                 )}
               </Descriptions>
               <Collapse
-                className="mt-4"
+                className="mt-4 deployment-detail-variables-collapse"
                 ghost
                 items={[
                   {

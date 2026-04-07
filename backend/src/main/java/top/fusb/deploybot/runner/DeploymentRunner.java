@@ -207,8 +207,9 @@ public class DeploymentRunner {
                 }
             }
             runningProcesses.remove(deploymentId);
+            LocalDateTime finishedAt = LocalDateTime.now();
             deployment = refreshDeploymentState(deployment);
-            deployment.setFinishedAt(LocalDateTime.now());
+            deployment.setFinishedAt(finishedAt);
             if (deployment.getStatus() == DeploymentStatus.STOPPED) {
                 appendSystemLog(logFile, "部署已停止。");
                 deploymentRepository.save(deployment);
@@ -225,6 +226,7 @@ public class DeploymentRunner {
                     );
                     Long monitoredPid = verifyMonitoredProcess(deployment, targetHost, pidsDir, deploymentId, logFile);
                     deployment = refreshDeploymentState(deployment);
+                    deployment.setFinishedAt(finishedAt);
                     if (deployment.getStatus() == DeploymentStatus.STOPPED) {
                         appendSystemLog(logFile, "部署已停止。");
                         deploymentRepository.save(deployment);

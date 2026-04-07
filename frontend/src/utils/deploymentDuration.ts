@@ -1,4 +1,5 @@
 import type { DashboardDeploymentSummary, DeploymentSummary } from '../types/domain';
+import { ACTIVE_DEPLOYMENT_STATUSES } from '../constants/deployment';
 
 /**
  * 部署耗时既用于已完成任务，也用于运行中任务的实时滚动展示。
@@ -9,7 +10,10 @@ export function formatDeploymentElapsed(deployment?: DeploymentSummary | Dashboa
   }
 
   const startedAt = new Date(deployment.startedAt).getTime();
-  const finishedAt = deployment.finishedAt ? new Date(deployment.finishedAt).getTime() : now;
+  const isActive = deployment.status ? ACTIVE_DEPLOYMENT_STATUSES.includes(deployment.status) : false;
+  const finishedAt = deployment.finishedAt
+    ? new Date(deployment.finishedAt).getTime()
+    : (isActive ? now : startedAt);
   if (Number.isNaN(startedAt) || Number.isNaN(finishedAt) || finishedAt < startedAt) {
     return '-';
   }
