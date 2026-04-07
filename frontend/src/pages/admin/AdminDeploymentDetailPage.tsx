@@ -100,6 +100,35 @@ export default function AdminDeploymentDetailPage() {
       value: String(value ?? '-'),
     }));
   }, [executionSnapshot]);
+  const snapshotFields = useMemo(() => {
+    const items: Array<{ label: string; value: string }> = [];
+    const pushField = (label: string, value?: unknown) => {
+      const text = String(value ?? '').trim();
+      if (!text || text === '-') {
+        return;
+      }
+      items.push({ label, value: text });
+    };
+    const envText = (env?: { name?: string; version?: string } | null) => {
+      const name = String(env?.name ?? '').trim();
+      const version = String(env?.version ?? '').trim();
+      return [name, version].filter(Boolean).join(' ');
+    };
+
+    pushField('模板', executionSnapshot?.templateName);
+    pushField('模板类型', executionSnapshot?.templateType);
+    pushField('目标主机', executionSnapshot?.targetHost);
+    pushField('应用名', executionSnapshot?.applicationName);
+    pushField('Spring Profile', executionSnapshot?.springProfile);
+    pushField('启动关键字', executionSnapshot?.startupKeyword);
+    pushField('启动超时', executionSnapshot?.startupTimeoutSeconds);
+    pushField('构建 Java', envText(executionSnapshot?.javaEnvironment as { name?: string; version?: string } | undefined));
+    pushField('构建 Node', envText(executionSnapshot?.nodeEnvironment as { name?: string; version?: string } | undefined));
+    pushField('构建 Maven', envText(executionSnapshot?.mavenEnvironment as { name?: string; version?: string } | undefined));
+    pushField('运行 Java', envText(executionSnapshot?.runtimeJavaEnvironment as { name?: string; version?: string } | undefined));
+
+    return items;
+  }, [executionSnapshot]);
 
   useLayoutEffect(() => {
     if (!contentRef.current) {
@@ -182,6 +211,7 @@ export default function AdminDeploymentDetailPage() {
                 <Descriptions.Item label="项目">{deployment?.pipeline?.project?.name || '-'}</Descriptions.Item>
                 <Descriptions.Item label="分支">{deployment?.branchName || '-'}</Descriptions.Item>
                 <Descriptions.Item label="触发人">{deployment?.triggeredByDisplayName || deployment?.triggeredBy || '-'}</Descriptions.Item>
+                <Descriptions.Item label="停止人">{deployment?.stoppedByDisplayName || deployment?.stoppedBy || '-'}</Descriptions.Item>
                 <Descriptions.Item label="部署时间">{formatDeploymentTimeline(deployment, tick)}</Descriptions.Item>
                 <Descriptions.Item label="产物目录">{deployment?.artifactPath || '-'}</Descriptions.Item>
                 <Descriptions.Item label="重发来源">
@@ -192,22 +222,16 @@ export default function AdminDeploymentDetailPage() {
                   ) : '-'}
                 </Descriptions.Item>
                 <Descriptions.Item label="监控 PID">{deployment?.monitoredPid || '-'}</Descriptions.Item>
-                <Descriptions.Item label="错误信息">{deployment?.errorMessage || '-'}</Descriptions.Item>
+                <Descriptions.Item label="错误信息">{deployment?.status === 'STOPPED' ? '-' : (deployment?.errorMessage || '-')}</Descriptions.Item>
               </Descriptions>
             </Card>
             <Card className="app-card deployment-detail-snapshot-card" title="部署快照">
               <Descriptions column={1} size="small">
-                <Descriptions.Item label="模板">{String(executionSnapshot?.templateName || '-')}</Descriptions.Item>
-                <Descriptions.Item label="模板类型">{String(executionSnapshot?.templateType || '-')}</Descriptions.Item>
-                <Descriptions.Item label="目标主机">{String(executionSnapshot?.targetHost || '-')}</Descriptions.Item>
-                <Descriptions.Item label="应用名">{String(executionSnapshot?.applicationName || '-')}</Descriptions.Item>
-                <Descriptions.Item label="Spring Profile">{String(executionSnapshot?.springProfile || '-')}</Descriptions.Item>
-                <Descriptions.Item label="启动关键字">{String(executionSnapshot?.startupKeyword || '-')}</Descriptions.Item>
-                <Descriptions.Item label="启动超时">{String(executionSnapshot?.startupTimeoutSeconds || '-')}</Descriptions.Item>
-                <Descriptions.Item label="构建 Java">{String((executionSnapshot?.javaEnvironment as { version?: string; name?: string } | undefined)?.name || '-')} {String((executionSnapshot?.javaEnvironment as { version?: string } | undefined)?.version || '')}</Descriptions.Item>
-                <Descriptions.Item label="构建 Node">{String((executionSnapshot?.nodeEnvironment as { version?: string; name?: string } | undefined)?.name || '-')} {String((executionSnapshot?.nodeEnvironment as { version?: string } | undefined)?.version || '')}</Descriptions.Item>
-                <Descriptions.Item label="构建 Maven">{String((executionSnapshot?.mavenEnvironment as { version?: string; name?: string } | undefined)?.name || '-')} {String((executionSnapshot?.mavenEnvironment as { version?: string } | undefined)?.version || '')}</Descriptions.Item>
-                <Descriptions.Item label="运行 Java">{String((executionSnapshot?.runtimeJavaEnvironment as { version?: string; name?: string } | undefined)?.name || '-')} {String((executionSnapshot?.runtimeJavaEnvironment as { version?: string } | undefined)?.version || '')}</Descriptions.Item>
+                {snapshotFields.length > 0 ? snapshotFields.map((item) => (
+                  <Descriptions.Item key={item.label} label={item.label}>{item.value}</Descriptions.Item>
+                )) : (
+                  <Descriptions.Item label="快照信息">-</Descriptions.Item>
+                )}
               </Descriptions>
               <Collapse
                 className="mt-4"

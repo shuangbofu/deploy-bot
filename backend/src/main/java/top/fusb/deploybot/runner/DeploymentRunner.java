@@ -25,6 +25,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.BufferedWriter;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
@@ -156,6 +157,12 @@ public class DeploymentRunner {
                     deploymentId
             );
             log.info("部署 {} 构建阶段结束，退出码={}.", deploymentId, exitCode);
+            deployment = refreshDeploymentState(deployment);
+            if (deployment.getStatus() == DeploymentStatus.STOPPED) {
+                appendSystemLog(logFile, "部署已停止。");
+                deploymentRepository.save(deployment);
+                return;
+            }
             if (exitCode == 0 && deployment.getRenderedDeployScript() != null && !deployment.getRenderedDeployScript().isBlank()) {
                 if (Boolean.TRUE.equals(deployment.getPipeline().getTemplate().getMonitorProcess())) {
                     ServiceEntity stoppedService = serviceManager.stopManagedServiceBeforeDeploy(deployment.getPipeline().getId());
@@ -192,8 +199,15 @@ public class DeploymentRunner {
                     );
                 }
                 log.info("部署 {} 发布阶段结束，退出码={}.", deploymentId, exitCode);
+                deployment = refreshDeploymentState(deployment);
+                if (deployment.getStatus() == DeploymentStatus.STOPPED) {
+                    appendSystemLog(logFile, "部署已停止。");
+                    deploymentRepository.save(deployment);
+                    return;
+                }
             }
             runningProcesses.remove(deploymentId);
+            deployment = refreshDeploymentState(deployment);
             deployment.setFinishedAt(LocalDateTime.now());
             if (deployment.getStatus() == DeploymentStatus.STOPPED) {
                 appendSystemLog(logFile, "部署已停止。");
@@ -210,6 +224,12 @@ public class DeploymentRunner {
                             deployment.getPipeline().getStartupTimeoutSeconds()
                     );
                     Long monitoredPid = verifyMonitoredProcess(deployment, targetHost, pidsDir, deploymentId, logFile);
+                    deployment = refreshDeploymentState(deployment);
+                    if (deployment.getStatus() == DeploymentStatus.STOPPED) {
+                        appendSystemLog(logFile, "部署已停止。");
+                        deploymentRepository.save(deployment);
+                        return;
+                    }
                     if (monitoredPid == null) {
                         deployment.setStatus(DeploymentStatus.FAILED);
                         deployment.setErrorMessage(ErrorSubCode.DEPLOYMENT_MONITORED_PROCESS_NOT_RUNNING.getMessage());
@@ -336,7 +356,7 @@ public class DeploymentRunner {
             deployment.setStatus(DeploymentStatus.STOPPED);
             deployment.setStoppedBy(stoppedBy);
             deployment.setFinishedAt(LocalDateTime.now());
-            deployment.setErrorMessage("任务已手动停止");
+            deployment.setErrorMessage(null);
             Path logFile = resolveOrCreateLogFile(null, deployment.getLogPath(), deploymentId);
             if (logFile != null) {
                 try {
@@ -345,7 +365,12 @@ public class DeploymentRunner {
                 } catch (Exception ignored) {
                 }
             }
-            deploymentRepository.save(deployment);
+            deploymentRepository.saveAndFlush(deployment);
+            try {
+                stopRuntimeProcessIfPresent(deployment);
+            } catch (Exception ex) {
+                log.warn("部署 {} 在手动停止时清理运行中服务失败：{}", deploymentId, ex.getMessage());
+            }
             deploymentNotificationAsyncService.notifyAsync(deployment.getId(), NotificationEventType.DEPLOYMENT_FINISHED);
         });
         runningProcesses.remove(deploymentId);
@@ -646,6 +671,13 @@ public class DeploymentRunner {
         }
         log.info("部署 {} 开始检测服务 PID。{}", deploymentId, buildPidDiscoveryBanner(deployment, targetHost));
         while (System.currentTimeMillis() <= deadline) {
+            if (isStopRequested(deploymentId)) {
+                try {
+                    appendSystemLog(logFile, "已收到手动停止请求，结束服务 PID 检测。");
+                } catch (Exception ignored) {
+                }
+                return null;
+            }
             attempt++;
             Long monitoredPid = readMonitoredPid(deployment, targetHost, pidsDir, deploymentId);
             if (monitoredPid != null) {
@@ -749,6 +781,13 @@ public class DeploymentRunner {
                 startupKeyword
         );
         while (System.currentTimeMillis() <= deadline) {
+            if (isStopRequested(deployment.getId())) {
+                try {
+                    appendSystemLog(logFile, "已收到手动停止请求，结束启动观察。");
+                } catch (Exception ignored) {
+                }
+                return null;
+            }
             attempt++;
             StartupLogReadResult logReadResult = readRuntimeLogDelta(logCursor, targetHost);
             logCursor = logReadResult.cursor();
@@ -1041,7 +1080,19 @@ public class DeploymentRunner {
              InputStreamReader reader = new InputStreamReader(stream, StandardCharsets.UTF_8)) {
             char[] buffer = new char[2048];
             int len;
-            while ((len = reader.read(buffer)) != -1) {
+            while (true) {
+                try {
+                    len = reader.read(buffer);
+                } catch (IOException ex) {
+                    if (isStopInterruption(deploymentId, ex)) {
+                        log.info("部署 {} 的日志流在手动停止后关闭，按正常停止处理。", deploymentId);
+                        break;
+                    }
+                    throw ex;
+                }
+                if (len == -1) {
+                    break;
+                }
                 writer.write(buffer, 0, len);
                 writer.flush();
             }
@@ -1049,6 +1100,78 @@ public class DeploymentRunner {
         int exitCode = process.waitFor();
         log.info("部署 {} 的进程执行结束，退出码={}。", deploymentId, exitCode);
         return exitCode;
+    }
+
+    private boolean isStopInterruption(Long deploymentId, IOException ex) {
+        if (ex == null || ex.getMessage() == null) {
+            return false;
+        }
+        if (!"Stream closed".equalsIgnoreCase(ex.getMessage().trim())) {
+            return false;
+        }
+        return deploymentRepository.findById(deploymentId)
+                .map(item -> item.getStatus() == DeploymentStatus.STOPPED)
+                .orElse(false);
+    }
+
+    private DeploymentEntity refreshDeploymentState(DeploymentEntity deployment) {
+        if (deployment == null || deployment.getId() == null) {
+            return deployment;
+        }
+        return deploymentRepository.findById(deployment.getId()).orElse(deployment);
+    }
+
+    private boolean isStopRequested(Long deploymentId) {
+        if (deploymentId == null) {
+            return false;
+        }
+        return deploymentRepository.findById(deploymentId)
+                .map(item -> item.getStatus() == DeploymentStatus.STOPPED)
+                .orElse(false);
+    }
+
+    private void stopRuntimeProcessIfPresent(DeploymentEntity deployment) {
+        if (deployment == null) {
+            return;
+        }
+        HostEntity targetHost = deployment.getPipeline() == null ? null : deployment.getPipeline().getTargetHost();
+        Path buildWorkspaceRoot = resolveLocalWorkspaceRoot();
+        Path deployWorkspaceRoot = resolveTargetWorkspaceRoot(targetHost, buildWorkspaceRoot);
+        Long pid = deployment.getMonitoredPid();
+        if (pid == null) {
+            pid = readMonitoredPid(
+                    deployment,
+                    targetHost,
+                    deployWorkspaceRoot.resolve(PID_DIR),
+                    deployment.getId()
+            );
+        }
+        if (pid == null) {
+            return;
+        }
+        if (targetHost != null && targetHost.getType() == HostType.SSH) {
+            try {
+                hostService.executeRemoteScript(
+                        targetHost.getId(),
+                        "kill " + pid + " >/dev/null 2>&1 || true\n",
+                        8
+                );
+            } catch (Exception ex) {
+                log.warn("远程停止部署 {} 的运行进程 {} 失败：{}", deployment.getId(), pid, ex.getMessage());
+            }
+            return;
+        }
+        ProcessHandle.of(pid).ifPresent(process -> {
+            process.destroy();
+            try {
+                Thread.sleep(300);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+            if (process.isAlive()) {
+                process.destroyForcibly();
+            }
+        });
     }
 
     private void syncArtifactsToRemote(
