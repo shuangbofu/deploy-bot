@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Col, DatePicker, Input, Row, Select, Space, Table, message } from 'antd';
+import { Button, Card, Col, DatePicker, Input, Popconfirm, Row, Select, Space, Table, message } from 'antd';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { deploymentsApi } from '../../api/deployments';
 import { pipelinesApi } from '../../api/pipelines';
 import EmptyPane from '../../components/EmptyPane';
 import PageHeaderBar from '../../components/PageHeaderBar';
 import StatusTag from '../../components/StatusTag';
-import { DEPLOYMENT_STATUS_OPTIONS } from '../../constants/deployment';
+import { ACTIVE_DEPLOYMENT_STATUSES, DEPLOYMENT_STATUS_OPTIONS } from '../../constants/deployment';
 import type { DeploymentSummary, PipelineHistoryFilters, PipelineSummary } from '../../types/domain';
 import { formatDateTime } from '../../utils/datetime';
 import { formatDeploymentElapsed } from '../../utils/deploymentDuration';
@@ -156,7 +156,17 @@ export default function UserPipelineHistoryPage() {
             onChange: (current, pageSize) => setPagination({ current, pageSize }),
           }}
           columns={[
-              { title: '编号', dataIndex: 'id' },
+              {
+                title: '编号',
+                render: (_, row) => (
+                  <Space size={6} wrap>
+                    <span>#{row.id}</span>
+                    {row.rollbackFromDeploymentId ? (
+                      <span className="deployment-rollback-tag">回滚</span>
+                    ) : null}
+                  </Space>
+                ),
+              },
               { title: '项目', render: (_, row) => row.pipeline?.project?.name || '-' },
               { title: '流水线', render: (_, row) => row.pipeline?.name || '-' },
               { title: '分支', dataIndex: 'branchName' },
@@ -168,17 +178,47 @@ export default function UserPipelineHistoryPage() {
               { title: '耗时', render: (_, row) => formatDeploymentElapsed(row, tick) },
               {
                 title: '操作',
-                width: 140,
+                width: 220,
                 render: (_, row) => (
-                  <Button
-                    size="small"
-                    type="primary"
-                    onClick={() => navigate(`/user/deployments/${row.id}`, {
-                      state: { from: location.pathname, backLabel: '返回部署记录' },
-                    })}
-                  >
-                    查看详情
-                  </Button>
+                  <Space wrap>
+                    <Button
+                      size="small"
+                      type="primary"
+                      onClick={() => navigate(`/user/deployments/${row.id}`, {
+                        state: { from: location.pathname, backLabel: '返回部署记录' },
+                      })}
+                    >
+                      查看详情
+                    </Button>
+                    {row.status === 'SUCCESS' && row.artifactPath ? (
+                      <Popconfirm
+                        title="确认重新发布"
+                        description="会直接复用这次部署保留下来的构建产物重新发布，不会重新走构建流程。"
+                        okText="确认"
+                        cancelText="取消"
+                        onConfirm={() => deploymentsApi.rollback(row.id).then((response) => {
+                          message.success('重新发布任务已创建');
+                          navigate(`/user/deployments/${response.id}`, {
+                            state: { from: location.pathname, backLabel: '返回部署记录' },
+                          });
+                        }).catch(() => message.error('创建回滚任务失败'))}
+                      >
+                        <Button size="small">回滚</Button>
+                      </Popconfirm>
+                    ) : null}
+                    {row.status && ACTIVE_DEPLOYMENT_STATUSES.includes(row.status) ? (
+                      <Button
+                        size="small"
+                        danger
+                        onClick={() => deploymentsApi.stop(row.id).then(() => {
+                          message.success('部署已停止');
+                          return loadDeployments();
+                        }).catch(() => message.error('停止部署失败'))}
+                      >
+                        停止
+                      </Button>
+                    ) : null}
+                  </Space>
                 ),
               },
           ]}

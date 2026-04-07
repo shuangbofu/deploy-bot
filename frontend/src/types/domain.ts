@@ -400,6 +400,52 @@ export interface DashboardTrendItem {
   success: number;
 }
 
+export interface DashboardDeploymentSummary {
+  id: number;
+  pipelineName?: string | null;
+  projectName?: string | null;
+  branchName?: string | null;
+  triggeredBy?: string | null;
+  triggeredByDisplayName?: string | null;
+  status?: DeploymentStatus | null;
+  createdAt?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  progressPercent?: number | null;
+  progressText?: string | null;
+}
+
+export interface DashboardServiceSummary {
+  id: number;
+  serviceName?: string | null;
+  status?: string | null;
+  pipelineName?: string | null;
+  targetHostName?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface DashboardStatsSummary {
+  projects: number;
+  templates: number;
+  pipelines: number;
+  deployments: number;
+  hosts: number;
+  services: number;
+  users: number;
+  runningServices: number;
+  successRate: number;
+  runningDeployments: number;
+  failedDeployments: number;
+}
+
+export interface DashboardSummary {
+  stats: DashboardStatsSummary;
+  trend: DashboardTrendItem[];
+  latestDeployments: DashboardDeploymentSummary[];
+  attentionDeployments: DashboardDeploymentSummary[];
+  services: DashboardServiceSummary[];
+}
+
 export interface DeploymentRecordFilters {
   /** 项目名称筛选。 */
   projectName?: string;

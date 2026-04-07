@@ -10,15 +10,27 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
+import java.time.LocalDateTime;
 
 public interface DeploymentRepository extends JpaRepository<DeploymentEntity, Long>, JpaSpecificationExecutor<DeploymentEntity> {
     List<DeploymentEntity> findAllByOrderByCreatedAtDesc();
     List<DeploymentEntity> findByTriggeredByOrderByCreatedAtDesc(String triggeredBy);
     List<DeploymentEntity> findTop30ByTriggeredByOrderByCreatedAtDesc(String triggeredBy);
+    List<DeploymentEntity> findTop5ByOrderByCreatedAtDesc();
+    List<DeploymentEntity> findTop5ByTriggeredByOrderByCreatedAtDesc(String triggeredBy);
+    List<DeploymentEntity> findTop5ByStatusInOrderByCreatedAtDesc(List<DeploymentStatus> statuses);
+    List<DeploymentEntity> findTop5ByTriggeredByAndStatusInOrderByCreatedAtDesc(String triggeredBy, List<DeploymentStatus> statuses);
+    List<DeploymentEntity> findByCreatedAtGreaterThanEqualOrderByCreatedAtDesc(LocalDateTime createdAt);
+    List<DeploymentEntity> findByTriggeredByAndCreatedAtGreaterThanEqualOrderByCreatedAtDesc(String triggeredBy, LocalDateTime createdAt);
     java.util.Optional<DeploymentEntity> findFirstByPipelineIdOrderByCreatedAtDesc(Long pipelineId);
     List<DeploymentEntity> findByPipelineIdAndStatusInOrderByCreatedAtDesc(Long pipelineId, List<DeploymentStatus> statuses);
     Optional<DeploymentEntity> findFirstByPipelineIdAndStatusOrderByCreatedAtDesc(Long pipelineId, DeploymentStatus status);
     long countByPipelineId(Long pipelineId);
+    long countByTriggeredBy(String triggeredBy);
+    long countByStatus(DeploymentStatus status);
+    long countByTriggeredByAndStatus(String triggeredBy, DeploymentStatus status);
+    long countByStatusIn(List<DeploymentStatus> statuses);
+    long countByTriggeredByAndStatusIn(String triggeredBy, List<DeploymentStatus> statuses);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("update DeploymentEntity d set d.pipeline = null where d.pipeline.id = :pipelineId")

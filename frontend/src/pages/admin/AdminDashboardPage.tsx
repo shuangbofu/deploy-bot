@@ -1,102 +1,124 @@
 import { Card, Col, Empty, Progress, Row, message } from 'antd';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { dashboardApi } from '../../api/dashboard';
 import DashboardConsole from '../../components/DashboardConsole';
-import { ACTIVE_DEPLOYMENT_STATUSES, FINISHED_DEPLOYMENT_STATUSES } from '../../constants/deployment';
-import { deploymentsApi } from '../../api/deployments';
 import { hostsApi } from '../../api/hosts';
-import { pipelinesApi } from '../../api/pipelines';
-import { projectsApi } from '../../api/projects';
-import { servicesApi } from '../../api/services';
-import { templatesApi } from '../../api/templates';
-import { usersApi } from '../../api/users';
-import type { DeploymentSummary, HostResourceSnapshot, HostSummary, PipelineSummary, ProjectSummary, ServiceSummary, TemplateSummary, UserSummary } from '../../types/domain';
+import type { DashboardSummary, HostResourceSnapshot, HostSummary } from '../../types/domain';
+
+type HostResourceView = HostResourceSnapshot & { loading?: boolean };
 
 interface DashboardData {
-  projects: ProjectSummary[];
-  templates: TemplateSummary[];
-  pipelines: PipelineSummary[];
-  deployments: DeploymentSummary[];
+  summary?: DashboardSummary;
   hosts: HostSummary[];
-  services: ServiceSummary[];
-  resources: HostResourceSnapshot[];
-  users: UserSummary[];
+  resources: HostResourceView[];
 }
 
 export default function AdminDashboardPage() {
   const [loading, setLoading] = useState(false);
+  const [resourceLoading, setResourceLoading] = useState(false);
   const [data, setData] = useState<DashboardData>({
-    projects: [],
-    templates: [],
-    pipelines: [],
-    deployments: [],
     hosts: [],
-    services: [],
     resources: [],
-    users: [],
   });
 
   const load = async () => {
     setLoading(true);
     try {
-      const [projects, templates, pipelines, deployments, hosts, services, users] = await Promise.all([
-        projectsApi.list(),
-        templatesApi.list(),
-        pipelinesApi.list(),
-        deploymentsApi.list(),
-        hostsApi.list(),
-        servicesApi.list(),
-        usersApi.list(),
-      ]);
-      const resources = await Promise.all(
-        hosts.map((host) => hostsApi.previewResources(host.id).catch(() => ({
-          hostId: host.id,
-          hostName: host.name,
-          workspaceRoot: host.workspaceRoot,
-          preview: '资源采集失败',
-        } as HostResourceSnapshot))),
-      );
-      setData({ projects, templates, pipelines, deployments, hosts, services, resources, users });
+      const summary = await dashboardApi.summary();
+      setData((previous) => ({
+        ...previous,
+        summary,
+      }));
     } finally {
       setLoading(false);
     }
+    void loadHostsAndResources();
+  };
+
+  const loadHostsAndResources = async () => {
+    try {
+      const hosts = await hostsApi.list();
+      setData((previous) => ({ ...previous, hosts }));
+      void loadResources(hosts);
+    } catch {
+      message.error('加载主机资源失败');
+    }
+  };
+
+  const loadResources = async (hosts: HostSummary[]) => {
+    setResourceLoading(true);
+    if (hosts.length === 0) {
+      setData((previous) => ({ ...previous, resources: [] }));
+      setResourceLoading(false);
+      return;
+    }
+    setData((previous) => ({
+      ...previous,
+      resources: hosts.map((host) => ({
+        hostId: host.id,
+        hostName: host.name,
+        workspaceRoot: host.workspaceRoot,
+        loading: true,
+      })),
+    }));
+
+    let pending = hosts.length;
+    hosts.forEach((host) => {
+      hostsApi.previewResources(host.id)
+        .then((resource) => {
+          setData((previous) => ({
+            ...previous,
+            resources: previous.resources.map((item) => (item.hostId === host.id ? { ...resource, loading: false } : item)),
+          }));
+        })
+        .catch(() => {
+          setData((previous) => ({
+            ...previous,
+            resources: previous.resources.map((item) => (item.hostId === host.id ? {
+              hostId: host.id,
+              hostName: host.name,
+              workspaceRoot: host.workspaceRoot,
+              preview: '资源采集失败',
+              loading: false,
+            } : item)),
+          }));
+        })
+        .finally(() => {
+          pending -= 1;
+          if (pending <= 0) {
+            setResourceLoading(false);
+          }
+        });
+    });
   };
 
   useEffect(() => {
     load().catch(() => message.error('加载控制台数据失败'));
   }, []);
 
-  const formatMemoryMb = (value?: number | null) => {
-    if (value == null) return '-';
-    if (value >= 1024) return `${(value / 1024).toFixed(value >= 10240 ? 0 : 1)} GB`;
-    return `${value} MB`;
-  };
-
-  const stats = useMemo(() => {
-    const running = data.deployments.filter((item) => item.status && ACTIVE_DEPLOYMENT_STATUSES.includes(item.status)).length;
-    const success = data.deployments.filter((item) => item.status === 'SUCCESS').length;
-    const totalFinished = data.deployments.filter((item) => item.status && FINISHED_DEPLOYMENT_STATUSES.includes(item.status)).length;
-    const successRate = totalFinished > 0 ? Math.round((success * 100) / totalFinished) : 0;
-    return {
-      projects: data.projects.length,
-      templates: data.templates.length,
-      pipelines: data.pipelines.length,
-      deployments: data.deployments.length,
-      hosts: data.hosts.length,
-      services: data.services.length,
-      users: data.users.length,
-      runningServices: data.services.filter((item) => item.status === 'RUNNING').length,
-      successRate,
-    };
-  }, [data]);
-
   return (
     <DashboardConsole
       title="控制台"
       description="查看平台概览、部署趋势、最近部署记录和异常情况。"
       loading={loading}
-      stats={stats}
-      deployments={data.deployments}
-      services={data.services}
+      resourceLoading={resourceLoading}
+      stats={data.summary?.stats ?? {
+        projects: 0,
+        templates: 0,
+        pipelines: 0,
+        deployments: 0,
+        hosts: 0,
+        services: 0,
+        users: 0,
+        runningServices: 0,
+        successRate: 0,
+        runningDeployments: 0,
+        failedDeployments: 0,
+      }}
+      trend={data.summary?.trend ?? []}
+      latestDeployments={data.summary?.latestDeployments ?? []}
+      attentionDeployments={data.summary?.attentionDeployments ?? []}
+      services={data.summary?.services ?? []}
       resources={data.resources}
       isAdmin
       detailBasePath="/admin/deployments"

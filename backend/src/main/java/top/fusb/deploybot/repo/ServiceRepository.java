@@ -1,6 +1,7 @@
 package top.fusb.deploybot.repo;
 
 import top.fusb.deploybot.model.ServiceEntity;
+import top.fusb.deploybot.model.ServiceStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -12,6 +13,8 @@ import java.util.Optional;
 public interface ServiceRepository extends JpaRepository<ServiceEntity, Long> {
     Optional<ServiceEntity> findFirstByPipelineId(Long pipelineId);
     List<ServiceEntity> findAllByOrderByUpdatedAtDesc();
+    List<ServiceEntity> findTop6ByOrderByUpdatedAtDesc();
+    long countByStatus(ServiceStatus status);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("delete from ServiceEntity s where s.pipeline.id = :pipelineId")

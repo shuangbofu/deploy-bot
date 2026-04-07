@@ -312,17 +312,28 @@ export default function NotificationAdminPage() {
             locale={{ emptyText: <EmptyPane description="还没有通知记录。" /> }}
             pagination={{ showSizeChanger: true, showTotal: (total) => `共 ${total} 条` }}
             columns={[
-              { title: '时间', render: (_, record) => formatDateTime(record.createdAt), width: 170 },
+              { title: '编号', dataIndex: 'id', width: 90 },
+              { title: '通知时间', render: (_, record) => formatDateTime(record.createdAt), width: 200 },
               { title: '通知配置', render: (_, record) => record.channelName || record.channel?.name || '-', width: 180 },
               { title: '通知渠道类型', render: (_, record) => record.channel?.type ? getNotificationChannelTypeLabel(record.channel.type) : '-', width: 140 },
               { title: '通知类型', render: (_, record) => getNotificationEventTypeLabel(record.eventType), width: 140 },
+              {
+                title: '通知人',
+                render: (_, record) => record.deployment?.triggeredByDisplayName || record.deployment?.triggeredBy || '-',
+                width: 140,
+              },
               { title: '流水线', render: (_, record) => record.pipelineName || record.deployment?.pipeline?.name || '-', width: 180 },
               { title: '结果', render: (_, record) => record.status === 'SUCCESS' ? '成功' : '失败', width: 100 },
               {
-                title: '失败原因 / 响应',
+                title: '失败详情',
                 render: (_, record) => (
                   <div className="whitespace-pre-wrap break-all text-xs text-slate-600">
-                    {record.errorMessage || record.responseMessage || '-'}
+                    {record.errorMessage || record.responseMessage ? (
+                      <>
+                        {record.errorMessage ? <div><span className="font-semibold text-slate-700">失败原因：</span>{record.errorMessage}</div> : null}
+                        {record.responseMessage ? <div><span className="font-semibold text-slate-700">响应信息：</span>{record.responseMessage}</div> : null}
+                      </>
+                    ) : '-'}
                   </div>
                 ),
               },

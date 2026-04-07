@@ -182,6 +182,15 @@ public class DeploymentEntity {
 
     @Transient
     public String getProgressText() {
+        if (status == DeploymentStatus.SUCCESS) {
+            return "部署完成";
+        }
+        if (status == DeploymentStatus.FAILED) {
+            return "部署失败";
+        }
+        if (status == DeploymentStatus.STOPPED) {
+            return "已停止";
+        }
         ProgressSnapshot snapshot = readProgressSnapshot();
         if (snapshot == null) {
             return null;

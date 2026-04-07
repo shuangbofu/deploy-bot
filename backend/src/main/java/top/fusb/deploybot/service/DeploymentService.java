@@ -244,16 +244,6 @@ public class DeploymentService {
                 .orElseThrow(() -> new BusinessException(ErrorSubCode.PIPELINE_NOT_FOUND));
         AuthenticatedUser currentUser = requireCurrentUser();
         log.info("Creating deployment for pipeline {} with requested branch {}.", pipeline.getName(), request.branchName());
-        if (Boolean.TRUE.equals(pipeline.getTemplate().getMonitorProcess())) {
-            ServiceEntity stoppedService = serviceManager.stopManagedServiceBeforeDeploy(pipeline.getId());
-            if (stoppedService != null) {
-                log.info(
-                        "流水线 '{}' 在新部署前已由系统停止旧服务：serviceId={}。",
-                        pipeline.getName(),
-                        stoppedService.getId()
-                );
-            }
-        }
         List<DeploymentEntity> activeDeployments = deploymentRepository.findByPipelineIdAndStatusInOrderByCreatedAtDesc(
                 pipeline.getId(),
                 List.of(DeploymentStatus.PENDING, DeploymentStatus.RUNNING)
@@ -910,8 +900,6 @@ public class DeploymentService {
             String logPath = escapeShell(targetDir + "/" + variables.getOrDefault("applicationName", "application") + ".log");
             lines.add("if [ -f \"" + logPath + "\" ]; then");
             lines.add("  echo \"[系统] 应用日志文件状态：$(ls -l \"" + logPath + "\")\"");
-            lines.add("  echo \"[系统] 应用日志最新 20 行：\"");
-            lines.add("  tail -n 20 \"" + logPath + "\" || true");
             lines.add("else");
             lines.add("  echo \"[系统] 应用日志尚未生成：" + logPath + "\"");
             lines.add("fi");

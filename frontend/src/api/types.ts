@@ -1,4 +1,9 @@
 import type {
+  DashboardDeploymentSummary,
+  DashboardServiceSummary,
+  DashboardStatsSummary,
+  DashboardSummary,
+  DashboardTrendItem,
   DeploymentSummary,
   HostConnectionTestResult,
   HostResourceSnapshot,

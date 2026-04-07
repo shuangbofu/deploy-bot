@@ -155,7 +155,17 @@ export default function DeploymentRecordsPage() {
             onChange: (current, pageSize) => setPagination({ current, pageSize }),
           }}
           columns={[
-              { title: '编号', dataIndex: 'id' },
+              {
+                title: '编号',
+                render: (_, row) => (
+                  <Space size={6} wrap>
+                    <span>#{row.id}</span>
+                    {row.rollbackFromDeploymentId ? (
+                      <span className="deployment-rollback-tag">回滚</span>
+                    ) : null}
+                  </Space>
+                ),
+              },
               { title: '项目', render: (_, row) => row.pipeline?.project?.name || '-' },
               { title: '流水线', render: (_, row) => row.pipeline?.name },
               { title: '分支', dataIndex: 'branchName' },

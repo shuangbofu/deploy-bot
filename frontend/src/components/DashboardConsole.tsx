@@ -7,37 +7,31 @@ import {
   RadarChartOutlined,
   TeamOutlined,
 } from '@ant-design/icons';
-import { Card, Col, Empty, Progress, Row, Statistic, Tooltip } from 'antd';
-import { useMemo } from 'react';
+import { Card, Col, Empty, Progress, Row, Skeleton, Statistic, Tooltip } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import PageHeaderBar from './PageHeaderBar';
 import StatusTag from './StatusTag';
-import { ACTIVE_DEPLOYMENT_STATUSES, FINISHED_DEPLOYMENT_STATUSES } from '../constants/deployment';
-import type { DeploymentSummary, HostResourceSnapshot, ServiceSummary } from '../types/domain';
-import { buildSevenDayTrend, buildTrendAreaPath, buildTrendPoints, buildTrendSmoothPath } from '../utils/dashboard';
+import type {
+  DashboardDeploymentSummary,
+  DashboardServiceSummary,
+  DashboardStatsSummary,
+  DashboardTrendItem,
+  HostResourceSnapshot,
+} from '../types/domain';
+import { buildTrendAreaPath, buildTrendPoints, buildTrendSmoothPath } from '../utils/dashboard';
 import { formatDateTime } from '../utils/datetime';
 import { formatDeploymentElapsed } from '../utils/deploymentDuration';
-import { formatDeploymentTimeline } from '../utils/deploymentTimeline';
-
-interface DashboardConsoleStats {
-  projects: number;
-  templates: number;
-  pipelines: number;
-  deployments: number;
-  hosts: number;
-  services: number;
-  users: number;
-  runningServices: number;
-  successRate: number;
-}
 
 interface DashboardConsoleProps {
   title: string;
   description: string;
   loading: boolean;
-  stats: DashboardConsoleStats;
-  deployments: DeploymentSummary[];
-  services: ServiceSummary[];
+  resourceLoading?: boolean;
+  stats: DashboardStatsSummary;
+  trend: DashboardTrendItem[];
+  latestDeployments: DashboardDeploymentSummary[];
+  attentionDeployments: DashboardDeploymentSummary[];
+  services: DashboardServiceSummary[];
   resources?: HostResourceSnapshot[];
   isAdmin: boolean;
   detailBasePath: string;
@@ -52,8 +46,11 @@ export default function DashboardConsole({
   title,
   description,
   loading,
+  resourceLoading = false,
   stats,
-  deployments,
+  trend,
+  latestDeployments,
+  attentionDeployments,
   services,
   resources = [],
   isAdmin,
@@ -65,31 +62,13 @@ export default function DashboardConsole({
   tick,
 }: DashboardConsoleProps) {
   const navigate = useNavigate();
-
-  const derived = useMemo(() => {
-    const running = deployments.filter((item) => item.status && ACTIVE_DEPLOYMENT_STATUSES.includes(item.status)).length;
-    const failed = deployments.filter((item) => item.status === 'FAILED').length;
-    const totalFinished = deployments.filter((item) => item.status && FINISHED_DEPLOYMENT_STATUSES.includes(item.status)).length;
-    const success = deployments.filter((item) => item.status === 'SUCCESS').length;
-    return {
-      running,
-      failed,
-      successRate: totalFinished > 0 ? Math.round((success * 100) / totalFinished) : 0,
-    };
-  }, [deployments]);
-
-  const trend = useMemo(() => buildSevenDayTrend(deployments), [deployments]);
-  const trendAxisMax = useMemo(() => Math.max(...trend.map((item) => item.total), 1), [trend]);
-  const totalTrendPoints = useMemo(() => buildTrendPoints(trend.map((item) => item.total), 560, 220, 18, trendAxisMax), [trend, trendAxisMax]);
-  const successTrendPoints = useMemo(() => buildTrendPoints(trend.map((item) => item.success), 560, 220, 18, trendAxisMax), [trend, trendAxisMax]);
-  const totalTrendPath = useMemo(() => buildTrendSmoothPath(totalTrendPoints), [totalTrendPoints]);
-  const successTrendPath = useMemo(() => buildTrendSmoothPath(successTrendPoints), [successTrendPoints]);
-  const totalTrendArea = useMemo(() => buildTrendAreaPath(totalTrendPoints, 220), [totalTrendPoints]);
-  const successTrendArea = useMemo(() => buildTrendAreaPath(successTrendPoints, 220), [successTrendPoints]);
-  const latestDeployments = deployments.slice(0, 5);
-  const attentionDeployments = deployments
-    .filter((item) => item.status === 'FAILED' || item.status === 'RUNNING' || item.status === 'PENDING')
-    .slice(0, 5);
+  const trendAxisMax = Math.max(...trend.map((item) => item.total), 1);
+  const totalTrendPoints = buildTrendPoints(trend.map((item) => item.total), 560, 220, 18, trendAxisMax);
+  const successTrendPoints = buildTrendPoints(trend.map((item) => item.success), 560, 220, 18, trendAxisMax);
+  const totalTrendPath = buildTrendSmoothPath(totalTrendPoints);
+  const successTrendPath = buildTrendSmoothPath(successTrendPoints);
+  const totalTrendArea = buildTrendAreaPath(totalTrendPoints, 220);
+  const successTrendArea = buildTrendAreaPath(successTrendPoints, 220);
 
   const formatMemoryMb = (value?: number | null) => {
     if (value == null) return '-';
@@ -116,7 +95,7 @@ export default function DashboardConsole({
     { key: 'users', title: '用户数', value: stats.users, prefix: <TeamOutlined style={{ color: '#ca8a04' }} /> },
   ];
 
-  const renderDeploymentList = (items: DeploymentSummary[], emptyText: string) => {
+  const renderDeploymentList = (items: DashboardDeploymentSummary[], emptyText: string) => {
     if (items.length === 0) return <Empty description={emptyText} />;
     return (
       <div className="dashboard-recent-list">
@@ -128,14 +107,14 @@ export default function DashboardConsole({
           >
             <div>
               <div className="dashboard-recent-title">
-                <span>{item.pipeline?.name || `部署 #${item.id}`}</span>
-                <StatusTag status={item.status} />
+                <span>{item.pipelineName || `部署 #${item.id}`}</span>
+                <StatusTag status={item.status ?? undefined} />
               </div>
               <div className="dashboard-recent-meta">
-                {item.pipeline?.project?.name || '-'} · {item.branchName || '-'}
+                {item.projectName || '-'} · {item.branchName || '-'}
                 {item.triggeredByDisplayName || item.triggeredBy ? ` · ${item.triggeredByDisplayName || item.triggeredBy}` : ''}
               </div>
-              <div className="dashboard-recent-timeline" title={formatDeploymentTimeline(item, tick)}>
+              <div className="dashboard-recent-timeline">
                 <div>{formatDateTime(item.startedAt || item.createdAt)} ~ {formatDateTime(item.finishedAt)}</div>
                 <div>{formatDeploymentElapsed(item, tick)}</div>
               </div>
@@ -175,28 +154,39 @@ export default function DashboardConsole({
                             <div className="dashboard-recent-title">
                               <span>{resource.hostName}</span>
                             </div>
-                            <div className="dashboard-recent-meta">
-                              {resource.osType || '-'} · CPU {resource.cpuCores ?? '-'} 核 · 负载 {resource.loadAverage ?? '-'} · 工作空间 {resource.workspaceRoot || '-'}
-                            </div>
-                            <div className="mt-3">
-                              <div className="mb-1 text-xs text-slate-500">CPU 使用率</div>
-                              <Progress percent={resource.cpuUsagePercent ?? 0} size="small" strokeColor={getUsageColor(resource.cpuUsagePercent)} />
-                              <div className="mt-1 text-xs text-slate-500">CPU {resource.cpuUsagePercent ?? '-'}%</div>
-                            </div>
-                            <div className="mt-3">
-                              <div className="mb-1 text-xs text-slate-500">内存使用率</div>
-                              <Progress percent={resource.memoryUsagePercent ?? 0} size="small" strokeColor={getUsageColor(resource.memoryUsagePercent)} />
-                              <div className="mt-1 text-xs text-slate-500">
-                                {formatMemoryMb(resource.memoryUsedMb)} / {formatMemoryMb(resource.memoryTotalMb)}
+                            {resource.loading ? (
+                              <div className="mt-2 space-y-3">
+                                <Skeleton.Input active block size="small" style={{ height: 14 }} />
+                                <Skeleton.Input active block size="small" style={{ height: 14 }} />
+                                <Skeleton.Input active block size="small" style={{ height: 14 }} />
+                                <Skeleton.Input active block size="small" style={{ height: 14 }} />
                               </div>
-                            </div>
-                            <div className="mt-2">
-                              <div className="mb-1 text-xs text-slate-500">磁盘使用率</div>
-                              <Progress percent={resource.diskUsagePercent ?? 0} size="small" strokeColor={getUsageColor(resource.diskUsagePercent)} />
-                              <div className="mt-1 text-xs text-slate-500">
-                                {resource.diskUsedGb ?? '-'} / {resource.diskTotalGb ?? '-'} GB
-                              </div>
-                            </div>
+                            ) : (
+                              <>
+                                <div className="dashboard-recent-meta">
+                                  {resource.osType || '-'} · CPU {resource.cpuCores ?? '-'} 核 · 负载 {resource.loadAverage ?? '-'} · 工作空间 {resource.workspaceRoot || '-'}
+                                </div>
+                                <div className="mt-3">
+                                  <div className="mb-1 text-xs text-slate-500">CPU 使用率</div>
+                                  <Progress percent={resource.cpuUsagePercent ?? 0} size="small" strokeColor={getUsageColor(resource.cpuUsagePercent)} />
+                                  <div className="mt-1 text-xs text-slate-500">CPU {resource.cpuUsagePercent ?? '-'}%</div>
+                                </div>
+                                <div className="mt-3">
+                                  <div className="mb-1 text-xs text-slate-500">内存使用率</div>
+                                  <Progress percent={resource.memoryUsagePercent ?? 0} size="small" strokeColor={getUsageColor(resource.memoryUsagePercent)} />
+                                  <div className="mt-1 text-xs text-slate-500">
+                                    {formatMemoryMb(resource.memoryUsedMb)} / {formatMemoryMb(resource.memoryTotalMb)}
+                                  </div>
+                                </div>
+                                <div className="mt-2">
+                                  <div className="mb-1 text-xs text-slate-500">磁盘使用率</div>
+                                  <Progress percent={resource.diskUsagePercent ?? 0} size="small" strokeColor={getUsageColor(resource.diskUsagePercent)} />
+                                  <div className="mt-1 text-xs text-slate-500">
+                                    {resource.diskUsedGb ?? '-'} / {resource.diskTotalGb ?? '-'} GB
+                                  </div>
+                                </div>
+                              </>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -216,23 +206,23 @@ export default function DashboardConsole({
                 <div className="dashboard-circle-wrap">
                   <Progress
                     type="circle"
-                    percent={derived.successRate}
+                    percent={stats.successRate}
                     strokeColor="#16a34a"
                     trailColor="#dbe5f0"
-                    format={() => `${derived.successRate}%`}
+                    format={() => `${stats.successRate}%`}
                   />
                   <div className="dashboard-status-legend">
                     <div className="dashboard-status-row">
                       <span>部署中</span>
-                      <strong>{derived.running}</strong>
+                      <strong>{stats.runningDeployments}</strong>
                     </div>
                     <div className="dashboard-status-row">
                       <span>失败</span>
-                      <strong>{derived.failed}</strong>
+                      <strong>{stats.failedDeployments}</strong>
                     </div>
                     <div className="dashboard-status-row">
                       <span>总记录</span>
-                      <strong>{deployments.length}</strong>
+                      <strong>{stats.deployments}</strong>
                     </div>
                   </div>
                 </div>
@@ -320,10 +310,10 @@ export default function DashboardConsole({
                         <div>
                           <div className="dashboard-recent-title">
                             <span>{service.serviceName || `服务 #${service.id}`}</span>
-                            <StatusTag status={service.status} />
+                            <StatusTag status={(service.status as never) || undefined} />
                           </div>
                           <div className="dashboard-recent-meta">
-                            {service.pipeline?.name || '-'} · {service.pipeline?.targetHost?.name || '本机'}
+                            {service.pipelineName || '-'} · {service.targetHostName || '本机'}
                           </div>
                           <div className="dashboard-recent-timeline">
                             <div>{formatDateTime(service.updatedAt)}</div>

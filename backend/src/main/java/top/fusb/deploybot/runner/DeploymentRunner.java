@@ -7,6 +7,7 @@ import top.fusb.deploybot.model.DeploymentStatus;
 import top.fusb.deploybot.model.HostEntity;
 import top.fusb.deploybot.model.HostSshAuthType;
 import top.fusb.deploybot.model.HostType;
+import top.fusb.deploybot.model.ServiceEntity;
 import top.fusb.deploybot.notification.model.NotificationEventType;
 import top.fusb.deploybot.repo.DeploymentRepository;
 import top.fusb.deploybot.service.DeploymentBackupService;
@@ -23,6 +24,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.BufferedWriter;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
@@ -31,8 +33,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -50,8 +50,7 @@ public class DeploymentRunner {
     private static final long PID_DISCOVERY_TIMEOUT_MILLIS = 30_000L;
     private static final long DEFAULT_STARTUP_TIMEOUT_MILLIS = 30_000L;
     private static final long MONITOR_INTERVAL_MILLIS = 2_000L;
-    private static final Pattern LOG_TIMESTAMP_PATTERN = Pattern.compile("^(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2})");
-    private static final DateTimeFormatter LOG_TIMESTAMP_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
+    private static final int STARTUP_LOG_BUFFER_LIMIT = 256 * 1024;
 
     private final DeploymentRepository deploymentRepository;
     private final ServiceManager serviceManager;
@@ -63,6 +62,12 @@ public class DeploymentRunner {
     private final DeploymentNotificationAsyncService deploymentNotificationAsyncService;
     private final Path defaultWorkspaceRoot;
     private final Map<Long, Process> runningProcesses = new ConcurrentHashMap<>();
+
+    private record StartupLogCursor(String runtimeLogPath, long nextOffset) {
+    }
+
+    private record StartupLogReadResult(StartupLogCursor cursor, String content) {
+    }
 
     public DeploymentRunner(
             DeploymentRepository deploymentRepository,
@@ -152,6 +157,17 @@ public class DeploymentRunner {
             );
             log.info("部署 {} 构建阶段结束，退出码={}.", deploymentId, exitCode);
             if (exitCode == 0 && deployment.getRenderedDeployScript() != null && !deployment.getRenderedDeployScript().isBlank()) {
+                if (Boolean.TRUE.equals(deployment.getPipeline().getTemplate().getMonitorProcess())) {
+                    ServiceEntity stoppedService = serviceManager.stopManagedServiceBeforeDeploy(deployment.getPipeline().getId());
+                    if (stoppedService != null) {
+                        appendSystemLog(logFile, "本次发布前已停止旧服务，serviceId=" + stoppedService.getId() + "。");
+                        log.info(
+                                "流水线 '{}' 在构建成功后、发布开始前已由系统停止旧服务：serviceId={}。",
+                                deployment.getPipeline().getName(),
+                                stoppedService.getId()
+                        );
+                    }
+                }
                 appendSystemLog(logFile, "本机构建完成，开始发布阶段。");
                 log.info("部署 {} 发布阶段开始。", deploymentId);
                 if (targetHost != null && targetHost.getType() == HostType.SSH) {
@@ -198,7 +214,6 @@ public class DeploymentRunner {
                         deployment.setStatus(DeploymentStatus.FAILED);
                         deployment.setErrorMessage(ErrorSubCode.DEPLOYMENT_MONITORED_PROCESS_NOT_RUNNING.getMessage());
                         appendSystemLog(logFile, "部署失败：服务启动后未检测到可用进程。");
-                        appendRuntimeLogTail(logFile, deployment, targetHost);
                         log.warn("部署 {} 在服务监测阶段失败，未确认到稳定可接管的进程。", deploymentId);
                     } else {
                         deployment.setMonitoredPid(monitoredPid);
@@ -722,23 +737,24 @@ public class DeploymentRunner {
         long startedAt = System.currentTimeMillis();
         long deadline = startedAt + resolveStartupTimeoutMillis(deployment);
         int attempt = 0;
-        String emittedRuntimeLog = "";
+        String startupKeyword = deployment.getPipeline().getStartupKeyword();
+        boolean keywordRequired = startupKeyword != null && !startupKeyword.isBlank();
+        StringBuilder startupOutputBuffer = new StringBuilder();
+        StartupLogCursor logCursor = initializeStartupLogCursor(deployment, targetHost);
         log.info(
                 "部署 {} 开始启动观察，PID={}，超时时间={}毫秒，启动关键字='{}'。",
                 deployment.getId(),
                 monitoredPid,
                 resolveStartupTimeoutMillis(deployment),
-                deployment.getPipeline().getStartupKeyword()
+                startupKeyword
         );
         while (System.currentTimeMillis() <= deadline) {
             attempt++;
-            appendRuntimeLogIncrementally(logFile, deployment, targetHost, emittedRuntimeLog);
-            String latestRuntimeLog = loadFilteredRuntimeLog(deployment, targetHost);
-            if (latestRuntimeLog != null) {
-                emittedRuntimeLog = latestRuntimeLog;
-            }
+            StartupLogReadResult logReadResult = readRuntimeLogDelta(logCursor, targetHost);
+            logCursor = logReadResult.cursor();
+            appendRuntimeLogDelta(logFile, logReadResult.content());
+            appendStartupOutput(startupOutputBuffer, logReadResult.content());
             boolean alive = isProcessAlive(targetHost, monitoredPid);
-            boolean startupKeywordMatched = matchesStartupKeyword(deployment, targetHost, monitoredPid);
             if (!alive) {
                 try {
                     appendSystemLog(logFile, "启动观察失败：PID " + monitoredPid + " 已退出。");
@@ -747,17 +763,21 @@ public class DeploymentRunner {
                 log.warn("部署 {} 启动观察失败：PID {} 在第 {} 次检测时已退出。", deployment.getId(), monitoredPid, attempt);
                 return null;
             }
-            if (!startupKeywordMatched) {
+            if (keywordRequired && startupOutputBuffer.toString().contains(startupKeyword)) {
                 try {
-                    appendSystemLog(logFile, "启动观察失败：PID " + monitoredPid + " 未通过启动关键字校验。");
+                    appendSystemLog(logFile, "启动关键字已命中，服务启动成功。");
                 } catch (Exception ignored) {
                 }
-                log.warn("部署 {} 启动观察失败：PID {} 在第 {} 次检测时未通过启动关键字校验。", deployment.getId(), monitoredPid, attempt);
-                return null;
+                log.info("部署 {} 启动观察成功，关键字 '{}' 已命中。", deployment.getId(), startupKeyword);
+                return monitoredPid;
             }
             try {
                 long elapsedSeconds = (System.currentTimeMillis() - startedAt) / 1000;
-                appendSystemLog(logFile, "第 " + attempt + " 次启动观察通过，PID " + monitoredPid + " 已稳定运行 " + elapsedSeconds + " 秒。");
+                if (keywordRequired) {
+                    appendSystemLog(logFile, "第 " + attempt + " 次启动观察：PID " + monitoredPid + " 已运行 " + elapsedSeconds + " 秒，仍在等待启动关键字。");
+                } else {
+                    appendSystemLog(logFile, "第 " + attempt + " 次启动观察通过，PID " + monitoredPid + " 已稳定运行 " + elapsedSeconds + " 秒。");
+                }
             } catch (Exception ignored) {
             }
             log.info("部署 {} 启动观察第 {} 次通过，PID={}。", deployment.getId(), attempt, monitoredPid);
@@ -771,7 +791,17 @@ public class DeploymentRunner {
                 return null;
             }
         }
-        appendRuntimeLogIncrementally(logFile, deployment, targetHost, emittedRuntimeLog);
+        StartupLogReadResult finalLogReadResult = readRuntimeLogDelta(logCursor, targetHost);
+        appendRuntimeLogDelta(logFile, finalLogReadResult.content());
+        appendStartupOutput(startupOutputBuffer, finalLogReadResult.content());
+        if (keywordRequired) {
+            try {
+                appendSystemLog(logFile, "启动观察失败：在超时时间内未检测到启动关键字。");
+            } catch (Exception ignored) {
+            }
+            log.warn("部署 {} 启动观察失败：关键字 '{}' 在超时时间内未命中。", deployment.getId(), startupKeyword);
+            return null;
+        }
         try {
             appendSystemLog(logFile, "服务监测通过，PID " + monitoredPid + " 已完成启动观察窗口。");
         } catch (Exception ignored) {
@@ -815,33 +845,6 @@ public class DeploymentRunner {
         }
     }
 
-    private boolean matchesStartupKeyword(DeploymentEntity deployment, HostEntity targetHost, Long pid) {
-        String keyword = deployment.getPipeline().getStartupKeyword();
-        if (keyword == null || keyword.isBlank()) {
-            return true;
-        }
-        String escapedKeyword = keyword.replace("\"", "\\\"");
-        try {
-            String output;
-            if (targetHost != null && targetHost.getType() == HostType.SSH) {
-                output = hostService.executeRemoteScript(
-                        targetHost.getId(),
-                        buildMonitorMatchScript(pid, escapedKeyword, keyword),
-                        8
-                );
-            } else {
-                Process process = new ProcessBuilder("bash", "-lc", buildMonitorMatchScript(pid, escapedKeyword, keyword))
-                        .redirectErrorStream(true)
-                        .start();
-                output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-                process.waitFor();
-            }
-            return output.contains("MATCH");
-        } catch (Exception ex) {
-            return false;
-        }
-    }
-
     private String resolvePidDiscoveryKeyword(DeploymentEntity deployment) {
         Map<String, String> variables = jsonMapper.toStringMap(deployment.getVariablesJson());
         String startCommand = variables.get("startCommand");
@@ -870,52 +873,139 @@ public class DeploymentRunner {
         return Math.max(5L, startupTimeoutSeconds.longValue()) * 1_000L;
     }
 
-    private String buildMonitorMatchScript(Long pid, String escapedKeyword, String rawKeyword) {
-        StringBuilder script = new StringBuilder();
-        script.append("ARGS=$(ps -p ").append(pid).append(" -o args= 2>/dev/null || true)\n");
-        script.append("if printf '%s' \"$ARGS\" | grep -F \"").append(escapedKeyword).append("\" >/dev/null 2>&1; then echo MATCH; exit 0; fi\n");
-        if (rawKeyword.endsWith(".jar")) {
-            script.append("if command -v jps >/dev/null 2>&1; then\n");
-            script.append("  JPS_ARGS=$(jps -lv 2>/dev/null | awk '$1==\"").append(pid).append("\" { $1=\"\"; sub(/^ /,\"\"); print }')\n");
-            script.append("  if printf '%s' \"$JPS_ARGS\" | grep -F \"").append(escapedKeyword).append("\" >/dev/null 2>&1; then echo MATCH; exit 0; fi\n");
-            script.append("fi\n");
+    private StartupLogCursor initializeStartupLogCursor(DeploymentEntity deployment, HostEntity targetHost) {
+        String runtimeLogPath = resolveRuntimeLogPath(deployment);
+        if (runtimeLogPath == null) {
+            return null;
         }
-        script.append("echo MISMATCH\n");
-        return script.toString();
+        return new StartupLogCursor(runtimeLogPath, resolveRuntimeLogSize(targetHost, runtimeLogPath));
     }
 
-    private void appendRuntimeLogTail(Path logFile, DeploymentEntity deployment, HostEntity targetHost) {
+    private StartupLogReadResult readRuntimeLogDelta(StartupLogCursor cursor, HostEntity targetHost) {
+        if (cursor == null || cursor.runtimeLogPath() == null || cursor.runtimeLogPath().isBlank()) {
+            return new StartupLogReadResult(cursor, "");
+        }
         try {
-            String filteredRuntimeLog = loadFilteredRuntimeLog(deployment, targetHost);
-            if (filteredRuntimeLog != null && !filteredRuntimeLog.isBlank()) {
-                log.info("Deployment {} captured filtered runtime log excerpt with {} characters.", deployment.getId(), filteredRuntimeLog.length());
-                appendSystemLog(logFile, "应用运行日志摘录：");
-                Files.writeString(logFile, filteredRuntimeLog + System.lineSeparator(), StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-            } else {
-                log.info("Deployment {} did not find fresh runtime log content after deployment start.", deployment.getId());
-                appendSystemLog(logFile, "应用日志中未找到本次部署开始后的新内容。");
+            if (targetHost != null && targetHost.getType() == HostType.SSH) {
+                String output = hostService.executeRemoteScript(
+                        targetHost.getId(),
+                        buildRuntimeLogDeltaScript(cursor.runtimeLogPath(), cursor.nextOffset()),
+                        8
+                );
+                return parseRemoteRuntimeLogDelta(cursor.runtimeLogPath(), output, cursor.nextOffset());
+            }
+            Path logPath = Path.of(cursor.runtimeLogPath());
+            if (!Files.exists(logPath)) {
+                return new StartupLogReadResult(cursor, "");
+            }
+            long size = Files.size(logPath);
+            long offset = cursor.nextOffset();
+            if (size < offset) {
+                offset = 0L;
+            }
+            if (size == offset) {
+                return new StartupLogReadResult(new StartupLogCursor(cursor.runtimeLogPath(), size), "");
+            }
+            try (InputStream inputStream = Files.newInputStream(logPath)) {
+                inputStream.skip(offset);
+                ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+                inputStream.transferTo(outputStream);
+                return new StartupLogReadResult(
+                        new StartupLogCursor(cursor.runtimeLogPath(), size),
+                        outputStream.toString(StandardCharsets.UTF_8)
+                );
             }
         } catch (Exception ignored) {
+            return new StartupLogReadResult(cursor, "");
         }
     }
 
-    private void appendRuntimeLogIncrementally(Path logFile, DeploymentEntity deployment, HostEntity targetHost, String emittedRuntimeLog) {
+    private String buildRuntimeLogDeltaScript(String runtimeLogPath, long offset) {
+        String escapedPath = runtimeLogPath.replace("\"", "\\\"");
+        return """
+                FILE="%s"
+                OFFSET=%d
+                if [ ! -f "$FILE" ]; then
+                  echo "__DEPLOYBOT_LOG_SIZE__:0"
+                  exit 0
+                fi
+                SIZE=$(wc -c < "$FILE" | tr -d '[:space:]')
+                if [ -z "$SIZE" ]; then SIZE=0; fi
+                if [ "$SIZE" -lt "$OFFSET" ]; then OFFSET=0; fi
+                echo "__DEPLOYBOT_LOG_SIZE__:$SIZE"
+                if [ "$SIZE" -gt "$OFFSET" ]; then
+                  tail -c +$((OFFSET + 1)) "$FILE"
+                fi
+                """.formatted(escapedPath, Math.max(0L, offset));
+    }
+
+    private StartupLogReadResult parseRemoteRuntimeLogDelta(String runtimeLogPath, String output, long previousOffset) {
+        if (output == null) {
+            return new StartupLogReadResult(new StartupLogCursor(runtimeLogPath, previousOffset), "");
+        }
+        String marker = "__DEPLOYBOT_LOG_SIZE__:";
+        String[] lines = output.split("\\R", -1);
+        long size = previousOffset;
+        int contentStart = 0;
+        for (int index = 0; index < lines.length; index++) {
+            if (lines[index].startsWith(marker)) {
+                size = parseLongSafely(lines[index].substring(marker.length()), previousOffset);
+                contentStart = index + 1;
+                break;
+            }
+        }
+        String content = contentStart >= lines.length
+                ? ""
+                : String.join(System.lineSeparator(), java.util.Arrays.copyOfRange(lines, contentStart, lines.length));
+        return new StartupLogReadResult(new StartupLogCursor(runtimeLogPath, size), content);
+    }
+
+    private long resolveRuntimeLogSize(HostEntity targetHost, String runtimeLogPath) {
         try {
-            String latestRuntimeLog = loadFilteredRuntimeLog(deployment, targetHost);
-            if (latestRuntimeLog == null || latestRuntimeLog.isBlank()) {
-                return;
+            if (targetHost != null && targetHost.getType() == HostType.SSH) {
+                String output = hostService.executeRemoteScript(
+                        targetHost.getId(),
+                        "if [ -f \"" + runtimeLogPath.replace("\"", "\\\"") + "\" ]; then wc -c < \"" + runtimeLogPath.replace("\"", "\\\"") + "\" | tr -d '[:space:]'; else echo 0; fi\n",
+                        8
+                );
+                return parseLongSafely(output, 0L);
             }
-            String delta = latestRuntimeLog;
-            if (emittedRuntimeLog != null && !emittedRuntimeLog.isBlank() && latestRuntimeLog.startsWith(emittedRuntimeLog)) {
-                delta = latestRuntimeLog.substring(emittedRuntimeLog.length());
-            }
-            delta = delta.strip();
-            if (delta.isBlank()) {
-                return;
-            }
+            Path logPath = Path.of(runtimeLogPath);
+            return Files.exists(logPath) ? Files.size(logPath) : 0L;
+        } catch (Exception ignored) {
+            return 0L;
+        }
+    }
+
+    private long parseLongSafely(String value, long fallback) {
+        try {
+            return Long.parseLong(value == null ? "" : value.trim());
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
+    private String resolveRuntimeLogPath(DeploymentEntity deployment) {
+        Map<String, String> variables = jsonMapper.toStringMap(deployment.getVariablesJson());
+        String targetDir = variables.get("targetDir");
+        if (targetDir == null || targetDir.isBlank()) {
+            return null;
+        }
+        String applicationName = variables.get("applicationName");
+        if (applicationName == null || applicationName.isBlank()) {
+            applicationName = "application";
+        }
+        return targetDir + "/" + applicationName + ".log";
+    }
+
+    private void appendRuntimeLogDelta(Path logFile, String delta) {
+        if (delta == null || delta.isBlank()) {
+            return;
+        }
+        try {
             Files.writeString(
                     logFile,
-                    delta + System.lineSeparator(),
+                    delta + (delta.endsWith(System.lineSeparator()) ? "" : System.lineSeparator()),
                     StandardCharsets.UTF_8,
                     StandardOpenOption.CREATE,
                     StandardOpenOption.APPEND
@@ -924,75 +1014,13 @@ public class DeploymentRunner {
         }
     }
 
-    private String loadFilteredRuntimeLog(DeploymentEntity deployment, HostEntity targetHost) {
-        try {
-            Map<String, String> variables = jsonMapper.toStringMap(deployment.getVariablesJson());
-            String targetDir = variables.get("targetDir");
-            if (targetDir == null || targetDir.isBlank()) {
-                return null;
-            }
-            String applicationName = variables.get("applicationName");
-            if (applicationName == null || applicationName.isBlank()) {
-                applicationName = "application";
-            }
-            String runtimeLogPath = targetDir + "/" + applicationName + ".log";
-            String runtimeLog;
-            if (targetHost != null && targetHost.getType() == HostType.SSH) {
-                runtimeLog = hostService.executeRemoteScript(
-                        targetHost.getId(),
-                        "if [ -f \"" + runtimeLogPath.replace("\"", "\\\"") + "\" ]; then tail -n 200 \"" + runtimeLogPath.replace("\"", "\\\"") + "\"; fi\n",
-                        8
-                );
-            } else {
-                Path appLog = Path.of(runtimeLogPath);
-                if (!Files.exists(appLog)) {
-                    return null;
-                }
-                List<String> lines = Files.readAllLines(appLog, StandardCharsets.UTF_8);
-                int fromIndex = Math.max(0, lines.size() - 200);
-                runtimeLog = String.join(System.lineSeparator(), lines.subList(fromIndex, lines.size()));
-            }
-            return filterRuntimeLogSinceDeploymentStart(runtimeLog, deployment.getStartedAt());
-        } catch (Exception ignored) {
-            return null;
+    private void appendStartupOutput(StringBuilder buffer, String delta) {
+        if (delta == null || delta.isBlank()) {
+            return;
         }
-    }
-
-    private String filterRuntimeLogSinceDeploymentStart(String runtimeLog, LocalDateTime startedAt) {
-        if (runtimeLog == null || runtimeLog.isBlank()) {
-            return null;
-        }
-        if (startedAt == null) {
-            return runtimeLog;
-        }
-        LocalDateTime threshold = startedAt.minusSeconds(3);
-        List<String> lines = runtimeLog.lines().toList();
-        int startIndex = -1;
-        for (int index = 0; index < lines.size(); index++) {
-            LocalDateTime lineTimestamp = parseLogTimestamp(lines.get(index));
-            if (lineTimestamp != null && !lineTimestamp.isBefore(threshold)) {
-                startIndex = index;
-                break;
-            }
-        }
-        if (startIndex < 0) {
-            return null;
-        }
-        return String.join(System.lineSeparator(), lines.subList(startIndex, lines.size()));
-    }
-
-    private LocalDateTime parseLogTimestamp(String line) {
-        if (line == null || line.isBlank()) {
-            return null;
-        }
-        Matcher matcher = LOG_TIMESTAMP_PATTERN.matcher(line);
-        if (!matcher.find()) {
-            return null;
-        }
-        try {
-            return LocalDateTime.parse(matcher.group(1), LOG_TIMESTAMP_FORMATTER);
-        } catch (DateTimeParseException ex) {
-            return null;
+        buffer.append(delta);
+        if (buffer.length() > STARTUP_LOG_BUFFER_LIMIT) {
+            buffer.delete(0, buffer.length() - STARTUP_LOG_BUFFER_LIMIT);
         }
     }
 

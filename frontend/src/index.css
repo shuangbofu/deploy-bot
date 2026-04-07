@@ -186,6 +186,17 @@ body {
   color: #fff;
 }
 
+.deployment-rollback-tag {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: #d97706;
+  padding: 2px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #fff;
+}
+
 .dashboard-panel-card {
   height: 100%;
 }
