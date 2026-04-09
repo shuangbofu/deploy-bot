@@ -242,6 +242,9 @@ public class DeploymentService {
         // 1. 读取并校验流水线。
         PipelineEntity pipeline = pipelineRepository.findById(request.pipelineId())
                 .orElseThrow(() -> new BusinessException(ErrorSubCode.PIPELINE_NOT_FOUND));
+        if (pipeline.getMavenSettings() != null && Boolean.TRUE.equals(pipeline.getMavenSettings().getDeleted())) {
+            throw new BusinessException(ErrorSubCode.MAVEN_SETTINGS_NOT_FOUND, "当前流水线绑定的 Maven settings.xml 已被删除，请重新选择。");
+        }
         AuthenticatedUser currentUser = requireCurrentUser();
         log.info("Creating deployment for pipeline {} with requested branch {}.", pipeline.getName(), request.branchName());
         List<DeploymentEntity> activeDeployments = deploymentRepository.findByPipelineIdAndStatusInOrderByCreatedAtDesc(
@@ -277,7 +280,6 @@ public class DeploymentService {
         variables.put("springProfile", pipeline.getSpringProfile() == null ? "" : pipeline.getSpringProfile());
         variables.put("runtimeConfigYaml", pipeline.getRuntimeConfigYaml() == null ? "" : pipeline.getRuntimeConfigYaml());
         variables.put("runtimeConfigYamlBase64", encodeRuntimeConfigYaml(pipeline.getRuntimeConfigYaml()));
-        variables.put("mavenSettingsXmlBase64", encodeMavenSettingsXml(pipeline));
         variables.put("workspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
         variables.put("buildWorkspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
         variables.put("deployWorkspaceRoot", deployWorkspaceRoot.toAbsolutePath().normalize().toString());
@@ -310,6 +312,7 @@ public class DeploymentService {
         Map<String, String> buildVariables = new LinkedHashMap<>(variables);
         buildVariables.put("artifactDir", localArtifactDir.toString());
         buildVariables.put("workspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
+        applyResolvedMavenSettingsFilePath(buildVariables, buildWorkspaceRoot, entity.getId());
 
         Map<String, String> deployVariables = new LinkedHashMap<>(variables);
         deployVariables.put("artifactDir", targetArtifactDir.toString());
@@ -382,7 +385,7 @@ public class DeploymentService {
         putEnvironmentVariables(variables, "JAVA", pipeline.getJavaEnvironment(), "JAVA_HOME");
         putEnvironmentVariables(variables, "NODE", pipeline.getNodeEnvironment(), "NODE_HOME");
         putEnvironmentVariables(variables, "MAVEN", pipeline.getMavenEnvironment(), "MAVEN_HOME");
-        augmentMavenBuildCommands(variables);
+        augmentMavenBuildCommands(variables, pipeline);
     }
 
     private void applyDeployRuntimeEnvironmentVariables(Map<String, String> variables, PipelineEntity pipeline) {
@@ -441,9 +444,10 @@ public class DeploymentService {
             appendActivationScript(lines, "JAVA", variables);
             appendActivationScript(lines, "NODE", variables);
             appendActivationScript(lines, "MAVEN", variables);
-            lines.add("if [ -n \"" + valueOf(variables, "MAVEN_SETTINGS_XML_BASE64") + "\" ]; then");
+            String settingsXmlBase64 = encodeMavenSettingsXml(pipeline);
+            lines.add("if [ -n \"" + escapeShell(settingsXmlBase64) + "\" ]; then");
             lines.add("  mkdir -p \"$(dirname \"" + escapeShell(valueOf(variables, "MAVEN_SETTINGS_FILE_PATH")) + "\")\"");
-            lines.add("  printf '%s' '" + escapeShell(valueOf(variables, "MAVEN_SETTINGS_XML_BASE64")) + "' | base64 --decode > \"" + escapeShell(valueOf(variables, "MAVEN_SETTINGS_FILE_PATH")) + "\"");
+            lines.add("  printf '%s' '" + escapeShell(settingsXmlBase64) + "' | base64 --decode > \"" + escapeShell(valueOf(variables, "MAVEN_SETTINGS_FILE_PATH")) + "\"");
             lines.add("fi");
         } else {
             lines.add("if [ -n \"" + valueOf(variables, "JAVA_HOME") + "\" ]; then");
@@ -484,15 +488,14 @@ public class DeploymentService {
         return String.join("\n", lines);
     }
 
-    private void augmentMavenBuildCommands(Map<String, String> variables) {
-        String settingsXmlBase64 = variables.get("mavenSettingsXmlBase64");
-        if (settingsXmlBase64 == null || settingsXmlBase64.isBlank()) {
+    private void augmentMavenBuildCommands(Map<String, String> variables, PipelineEntity pipeline) {
+        if (pipeline == null || pipeline.getMavenSettings() == null || pipeline.getMavenSettings().getContentXml() == null
+                || pipeline.getMavenSettings().getContentXml().isBlank()) {
             return;
         }
         String settingsFilePath = "{{workspaceRoot}}/config/maven-settings-{{deploymentId}}.xml";
         variables.put("mavenSettingsFilePath", settingsFilePath);
         variables.put("MAVEN_SETTINGS_FILE_PATH", settingsFilePath);
-        variables.put("MAVEN_SETTINGS_XML_BASE64", settingsXmlBase64);
         rewriteMavenCommandVariable(variables, "buildCommand", settingsFilePath);
         rewriteMavenCommandVariable(variables, "backendBuildCommand", settingsFilePath);
     }
@@ -506,6 +509,24 @@ public class DeploymentService {
             return;
         }
         variables.put(key, command.replaceAll("(^|\\s|&&|\\|\\|)(mvn)(?=\\s|$)", "$1$2 -s \"" + Matcher.quoteReplacement(settingsFilePath) + "\""));
+    }
+
+    private void applyResolvedMavenSettingsFilePath(Map<String, String> variables, Path workspaceRoot, Long deploymentId) {
+        if (variables == null || workspaceRoot == null || deploymentId == null) {
+            return;
+        }
+        if (!variables.containsKey("mavenSettingsFilePath") && !variables.containsKey("MAVEN_SETTINGS_FILE_PATH")) {
+            return;
+        }
+        String resolvedPath = workspaceRoot.resolve("config")
+                .resolve("maven-settings-" + deploymentId + ".xml")
+                .toAbsolutePath()
+                .normalize()
+                .toString();
+        variables.put("mavenSettingsFilePath", resolvedPath);
+        variables.put("MAVEN_SETTINGS_FILE_PATH", resolvedPath);
+        rewriteMavenCommandVariable(variables, "buildCommand", resolvedPath);
+        rewriteMavenCommandVariable(variables, "backendBuildCommand", resolvedPath);
     }
 
     private void appendPath(StringBuilder pathBuilder, String path) {
@@ -625,6 +646,9 @@ public class DeploymentService {
         }
 
         PipelineEntity pipeline = source.getPipeline();
+        if (pipeline.getMavenSettings() != null && Boolean.TRUE.equals(pipeline.getMavenSettings().getDeleted())) {
+            throw new BusinessException(ErrorSubCode.MAVEN_SETTINGS_NOT_FOUND, "当前流水线绑定的 Maven settings.xml 已被删除，请重新选择。");
+        }
         Map<String, String> variables = new LinkedHashMap<>(jsonMapper.toStringMap(source.getVariablesJson()));
         Path buildWorkspaceRoot = resolveBuildWorkspaceRoot();
         Path deployWorkspaceRoot = resolveDeployWorkspaceRoot(pipeline.getTargetHost(), buildWorkspaceRoot);
@@ -638,7 +662,6 @@ public class DeploymentService {
         variables.put("springProfile", pipeline.getSpringProfile() == null ? "" : pipeline.getSpringProfile());
         variables.put("runtimeConfigYaml", pipeline.getRuntimeConfigYaml() == null ? "" : pipeline.getRuntimeConfigYaml());
         variables.put("runtimeConfigYamlBase64", encodeRuntimeConfigYaml(pipeline.getRuntimeConfigYaml()));
-        variables.put("mavenSettingsXmlBase64", encodeMavenSettingsXml(pipeline));
         variables.put("workspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
         variables.put("buildWorkspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
         variables.put("deployWorkspaceRoot", deployWorkspaceRoot.toAbsolutePath().normalize().toString());
@@ -668,6 +691,7 @@ public class DeploymentService {
         Map<String, String> buildVariables = new LinkedHashMap<>(variables);
         buildVariables.put("artifactDir", localArtifactDir.toString());
         buildVariables.put("workspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
+        applyResolvedMavenSettingsFilePath(buildVariables, buildWorkspaceRoot, entity.getId());
 
         Map<String, String> deployVariables = new LinkedHashMap<>(variables);
         deployVariables.put("artifactDir", targetArtifactDir.toString());

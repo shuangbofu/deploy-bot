@@ -6,6 +6,7 @@ import top.fusb.deploybot.model.MavenSettingsEntity;
 import java.util.List;
 
 public interface MavenSettingsRepository extends JpaRepository<MavenSettingsEntity, Long> {
-    List<MavenSettingsEntity> findByRuntimeEnvironmentIdOrderByIsDefaultDescNameAsc(Long runtimeEnvironmentId);
-    boolean existsByIdAndRuntimeEnvironmentId(Long id, Long runtimeEnvironmentId);
+    List<MavenSettingsEntity> findByRuntimeEnvironmentIdAndDeletedFalseOrderByIsDefaultDescNameAsc(Long runtimeEnvironmentId);
+    boolean existsByIdAndRuntimeEnvironmentIdAndDeletedFalse(Long id, Long runtimeEnvironmentId);
+    java.util.Optional<MavenSettingsEntity> findByIdAndDeletedFalse(Long id);
 }

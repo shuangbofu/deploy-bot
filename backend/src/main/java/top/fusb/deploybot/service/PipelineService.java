@@ -238,7 +238,7 @@ public class PipelineService {
         if (mavenSettingsId == null) {
             return null;
         }
-        MavenSettingsEntity settings = mavenSettingsRepository.findById(mavenSettingsId)
+        MavenSettingsEntity settings = mavenSettingsRepository.findByIdAndDeletedFalse(mavenSettingsId)
                 .orElseThrow(() -> new BusinessException(ErrorSubCode.MAVEN_SETTINGS_NOT_FOUND));
         RuntimeEnvironmentEntity mavenEnvironment = settings.getRuntimeEnvironment();
         if (mavenEnvironment == null || mavenEnvironment.getType() != top.fusb.deploybot.model.RuntimeEnvironmentType.MAVEN) {

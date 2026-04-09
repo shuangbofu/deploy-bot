@@ -45,4 +45,7 @@ public class MavenSettingsEntity {
 
     @Column(name = "is_default", nullable = false)
     private Boolean isDefault = Boolean.FALSE;
+
+    @Column(nullable = false)
+    private Boolean deleted = Boolean.FALSE;
 }

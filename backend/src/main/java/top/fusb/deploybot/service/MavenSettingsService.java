@@ -27,7 +27,7 @@ public class MavenSettingsService {
         if (runtimeEnvironmentId == null) {
             return List.of();
         }
-        return repository.findByRuntimeEnvironmentIdOrderByIsDefaultDescNameAsc(runtimeEnvironmentId);
+        return repository.findByRuntimeEnvironmentIdAndDeletedFalseOrderByIsDefaultDescNameAsc(runtimeEnvironmentId);
     }
 
     public MavenSettingsEntity save(Long runtimeEnvironmentId, MavenSettingsRequest request, Long id) {
@@ -37,7 +37,7 @@ public class MavenSettingsService {
             throw new BusinessException(ErrorSubCode.MAVEN_SETTINGS_NOT_FOUND, "只能给 Maven 环境配置 settings.xml。");
         }
 
-        MavenSettingsEntity entity = id == null ? new MavenSettingsEntity() : repository.findById(id)
+        MavenSettingsEntity entity = id == null ? new MavenSettingsEntity() : repository.findByIdAndDeletedFalse(id)
                 .orElseThrow(() -> new BusinessException(ErrorSubCode.MAVEN_SETTINGS_NOT_FOUND));
         if (id != null && (entity.getRuntimeEnvironment() == null || !entity.getRuntimeEnvironment().getId().equals(runtimeEnvironmentId))) {
             throw new BusinessException(ErrorSubCode.MAVEN_SETTINGS_NOT_FOUND);
@@ -49,6 +49,7 @@ public class MavenSettingsService {
         entity.setContentXml(request.contentXml().replace("\r\n", "\n").trim());
         entity.setEnabled(request.enabled() == null ? Boolean.TRUE : request.enabled());
         entity.setIsDefault(request.isDefault() == null ? Boolean.FALSE : request.isDefault());
+        entity.setDeleted(Boolean.FALSE);
         MavenSettingsEntity saved = repository.save(entity);
 
         if (Boolean.TRUE.equals(saved.getIsDefault())) {
@@ -58,14 +59,19 @@ public class MavenSettingsService {
     }
 
     public void delete(Long runtimeEnvironmentId, Long id) {
-        if (!repository.existsByIdAndRuntimeEnvironmentId(id, runtimeEnvironmentId)) {
+        MavenSettingsEntity entity = repository.findByIdAndDeletedFalse(id)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.MAVEN_SETTINGS_NOT_FOUND));
+        if (entity.getRuntimeEnvironment() == null || !entity.getRuntimeEnvironment().getId().equals(runtimeEnvironmentId)) {
             throw new BusinessException(ErrorSubCode.MAVEN_SETTINGS_NOT_FOUND);
         }
-        repository.deleteById(id);
+        entity.setDeleted(Boolean.TRUE);
+        entity.setEnabled(Boolean.FALSE);
+        entity.setIsDefault(Boolean.FALSE);
+        repository.save(entity);
     }
 
     private void clearOtherDefaults(Long runtimeEnvironmentId, Long currentId) {
-        List<MavenSettingsEntity> settings = repository.findByRuntimeEnvironmentIdOrderByIsDefaultDescNameAsc(runtimeEnvironmentId);
+        List<MavenSettingsEntity> settings = repository.findByRuntimeEnvironmentIdAndDeletedFalseOrderByIsDefaultDescNameAsc(runtimeEnvironmentId);
         settings.stream()
                 .filter(item -> !item.getId().equals(currentId) && Boolean.TRUE.equals(item.getIsDefault()))
                 .forEach(item -> {
