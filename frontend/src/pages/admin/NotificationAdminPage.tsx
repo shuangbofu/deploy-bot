@@ -59,6 +59,8 @@ export default function NotificationAdminPage() {
 
   const [recordChannelTypeFilter, setRecordChannelTypeFilter] = useState<'FEISHU' | undefined>(undefined);
   const [recordEventTypeFilter, setRecordEventTypeFilter] = useState<'DEPLOYMENT_STARTED' | 'DEPLOYMENT_FINISHED' | undefined>(undefined);
+  const [recordPagination, setRecordPagination] = useState({ current: 1, pageSize: 10 });
+  const [recordTotal, setRecordTotal] = useState(0);
 
   const loadTemplates = async () => {
     setTemplates(await notificationTemplatesApi.list());
@@ -80,7 +82,14 @@ export default function NotificationAdminPage() {
   const loadRecords = async () => {
     setRecordsLoading(true);
     try {
-      setRecords(await notificationRecordsApi.list());
+      const result = await notificationRecordsApi.listPage({
+        page: recordPagination.current,
+        pageSize: recordPagination.pageSize,
+        channelType: recordChannelTypeFilter,
+        eventType: recordEventTypeFilter,
+      });
+      setRecords(result.items);
+      setRecordTotal(result.total);
     } finally {
       setRecordsLoading(false);
     }
@@ -90,8 +99,11 @@ export default function NotificationAdminPage() {
     loadTemplates().catch(() => message.error('加载通知模板失败'));
     loadWebhookConfigs().catch(() => message.error('加载 Webhook 配置失败'));
     loadNotifications().catch(() => message.error('加载通知配置失败'));
-    loadRecords().catch(() => message.error('加载通知记录失败'));
   }, []);
+
+  useEffect(() => {
+    loadRecords().catch(() => message.error('加载通知记录失败'));
+  }, [recordPagination.current, recordPagination.pageSize, recordChannelTypeFilter, recordEventTypeFilter]);
 
   const filteredNotifications = useMemo(() => notifications.filter((item) => {
     const normalizedKeyword = channelKeyword.trim().toLowerCase();
@@ -118,16 +130,6 @@ export default function NotificationAdminPage() {
     }
     return true;
   }), [notifications, channelKeyword, channelTypeFilter, channelEventTypeFilter, channelEnabledFilter]);
-
-  const filteredRecords = useMemo(() => records.filter((item) => {
-    if (recordChannelTypeFilter && item.channel?.type !== recordChannelTypeFilter) {
-      return false;
-    }
-    if (recordEventTypeFilter && item.eventType !== recordEventTypeFilter) {
-      return false;
-    }
-    return true;
-  }), [records, recordChannelTypeFilter, recordEventTypeFilter]);
 
   const openCreateChannel = () => {
     setEditingChannelId(undefined);
@@ -286,19 +288,26 @@ export default function NotificationAdminPage() {
               value={recordChannelTypeFilter}
               placeholder="筛选通知渠道类型"
               options={[{ label: '飞书', value: 'FEISHU' }]}
-              onChange={setRecordChannelTypeFilter}
+              onChange={(value) => {
+                setRecordChannelTypeFilter(value);
+                setRecordPagination((previous) => ({ ...previous, current: 1 }));
+              }}
             />
             <Select
               allowClear
               value={recordEventTypeFilter}
               placeholder="筛选通知类型"
               options={notificationEventTypeOptions}
-              onChange={setRecordEventTypeFilter}
+              onChange={(value) => {
+                setRecordEventTypeFilter(value);
+                setRecordPagination((previous) => ({ ...previous, current: 1 }));
+              }}
             />
             <div className="flex items-center">
               <Button onClick={() => {
                 setRecordChannelTypeFilter(undefined);
                 setRecordEventTypeFilter(undefined);
+                setRecordPagination((previous) => ({ ...previous, current: 1 }));
               }}
               >
                 重置条件
@@ -308,9 +317,16 @@ export default function NotificationAdminPage() {
                     <Table
             rowKey="id"
             loading={recordsLoading}
-            dataSource={filteredRecords}
+            dataSource={records}
             locale={{ emptyText: <EmptyPane description="还没有通知记录。" /> }}
-            pagination={{ showSizeChanger: true, showTotal: (total) => `共 ${total} 条` }}
+            pagination={{
+              current: recordPagination.current,
+              pageSize: recordPagination.pageSize,
+              total: recordTotal,
+              showSizeChanger: true,
+              showTotal: (total) => `共 ${total} 条`,
+              onChange: (current, pageSize) => setRecordPagination({ current, pageSize }),
+            }}
             columns={[
               { title: '编号', dataIndex: 'id', width: 90 },
               { title: '通知时间', render: (_, record) => formatDateTime(record.createdAt), width: 200 },

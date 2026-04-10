@@ -203,6 +203,10 @@ export default function PipelineAdminPage() {
   const [form, setForm] = useState<PipelineFormState>(emptyPipeline);
   const [editingId, setEditingId] = useState<number>();
   const [modalOpen, setModalOpen] = useState(false);
+  const [duplicateModalOpen, setDuplicateModalOpen] = useState(false);
+  const [duplicateSource, setDuplicateSource] = useState<PipelineSummary>();
+  const [duplicateName, setDuplicateName] = useState('');
+  const [duplicating, setDuplicating] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [keyword, setKeyword] = useState('');
   const [projectFilter, setProjectFilter] = useState<number>();
@@ -306,6 +310,56 @@ export default function PipelineAdminPage() {
     });
     setCurrentStep(0);
     setModalOpen(true);
+  };
+
+  const openDuplicate = (record: PipelineSummary) => {
+    setDuplicateSource(record);
+    setDuplicateName(`${record.name} 副本`);
+    setDuplicateModalOpen(true);
+  };
+
+  const buildPayloadFromRecord = (record: PipelineSummary, name: string): PipelinePayload => ({
+    name,
+    description: record.description || '',
+    projectId: record.project?.id || undefined,
+    templateId: record.template?.id || undefined,
+    targetHostId: record.targetHost?.id || undefined,
+    defaultBranch: record.defaultBranch || 'main',
+    variablesJson: JSON.stringify(parseVariablesJson(record.variablesJson), null, 2),
+    tagsJson: JSON.stringify(parseTagsJson(record.tagsJson), null, 2),
+    javaEnvironmentId: record.javaEnvironment?.id || undefined,
+    nodeEnvironmentId: record.nodeEnvironment?.id || undefined,
+    mavenEnvironmentId: record.mavenEnvironment?.id || undefined,
+    mavenSettingsId: record.mavenSettings?.id || undefined,
+    runtimeJavaEnvironmentId: record.runtimeJavaEnvironment?.id || undefined,
+    applicationName: record.applicationName || '',
+    springProfile: record.springProfile || '',
+    runtimeConfigYaml: record.runtimeConfigYaml || '',
+    startupKeyword: record.startupKeyword || '',
+    startupTimeoutSeconds: record.startupTimeoutSeconds || 30,
+    notificationBindingsJson: JSON.stringify(parseNotificationBindings(record.notificationBindingsJson), null, 2),
+  });
+
+  const duplicatePipeline = async () => {
+    if (!duplicateSource) {
+      return;
+    }
+    const name = duplicateName.trim();
+    if (!name) {
+      message.error('请输入复制后的流水线名称');
+      return;
+    }
+    setDuplicating(true);
+    try {
+      await pipelinesApi.create(buildPayloadFromRecord(duplicateSource, name));
+      setDuplicateModalOpen(false);
+      setDuplicateSource(undefined);
+      setDuplicateName('');
+      await Promise.all([loadMeta(), loadPipelines()]);
+      message.success('流水线已复制');
+    } finally {
+      setDuplicating(false);
+    }
   };
 
   const savePipeline = async () => {
@@ -698,10 +752,11 @@ export default function PipelineAdminPage() {
               },
               {
                 title: '操作',
-                width: 180,
+                width: 240,
                 render: (_, record) => (
                   <Space>
                     <Button size="small" onClick={() => openEdit(record)}>编辑</Button>
+                    <Button size="small" onClick={() => openDuplicate(record)}>复制</Button>
                     <Popconfirm
                       title="确认删除这条流水线吗？"
                       okText="确认"
@@ -1053,6 +1108,30 @@ export default function PipelineAdminPage() {
             ) : null}
           </div>
         </div>
+      </Modal>
+      <Modal
+        title="复制流水线"
+        open={duplicateModalOpen}
+        okText="确认复制"
+        cancelText="取消"
+        confirmLoading={duplicating}
+        onCancel={() => {
+          setDuplicateModalOpen(false);
+          setDuplicateSource(undefined);
+          setDuplicateName('');
+        }}
+        onOk={() => duplicatePipeline().catch(() => message.error('复制流水线失败'))}
+        destroyOnClose
+      >
+        <Form layout="vertical">
+          <Form.Item label="新流水线名称">
+            <Input
+              value={duplicateName}
+              onChange={(event) => setDuplicateName(event.target.value)}
+              placeholder="请输入复制后的流水线名称"
+            />
+          </Form.Item>
+        </Form>
       </Modal>
     </>
   );

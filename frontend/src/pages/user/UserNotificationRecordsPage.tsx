@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Card, Select, Table, message } from 'antd';
 import { notificationRecordsApi } from '../../api/notificationRecords';
 import type { NotificationDeliveryRecordSummary } from '../../api/types';
@@ -16,11 +16,20 @@ export default function UserNotificationRecordsPage() {
   const [loading, setLoading] = useState(false);
   const [channelTypeFilter, setChannelTypeFilter] = useState<'FEISHU' | undefined>(undefined);
   const [eventTypeFilter, setEventTypeFilter] = useState<'DEPLOYMENT_STARTED' | 'DEPLOYMENT_FINISHED' | undefined>(undefined);
+  const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
+  const [total, setTotal] = useState(0);
 
   const loadRecords = async () => {
     setLoading(true);
     try {
-      setRecords(await notificationRecordsApi.listMine());
+      const result = await notificationRecordsApi.listMinePage({
+        page: pagination.current,
+        pageSize: pagination.pageSize,
+        channelType: channelTypeFilter,
+        eventType: eventTypeFilter,
+      });
+      setRecords(result.items);
+      setTotal(result.total);
     } finally {
       setLoading(false);
     }
@@ -28,17 +37,7 @@ export default function UserNotificationRecordsPage() {
 
   useEffect(() => {
     loadRecords().catch(() => message.error('加载通知记录失败'));
-  }, []);
-
-  const filteredRecords = useMemo(() => records.filter((item) => {
-    if (channelTypeFilter && item.channel?.type !== channelTypeFilter) {
-      return false;
-    }
-    if (eventTypeFilter && item.eventType !== eventTypeFilter) {
-      return false;
-    }
-    return true;
-  }), [records, channelTypeFilter, eventTypeFilter]);
+  }, [pagination.current, pagination.pageSize, channelTypeFilter, eventTypeFilter]);
 
   return (
     <>
@@ -55,20 +54,27 @@ export default function UserNotificationRecordsPage() {
               value={channelTypeFilter}
               placeholder="筛选通知渠道类型"
               options={[{ label: '飞书', value: 'FEISHU' }]}
-              onChange={setChannelTypeFilter}
+              onChange={(value) => {
+                setChannelTypeFilter(value);
+                setPagination((previous) => ({ ...previous, current: 1 }));
+              }}
             />
             <Select
               allowClear
               value={eventTypeFilter}
               placeholder="筛选通知类型"
               options={eventTypeOptions.map((item) => ({ label: item.label, value: item.value }))}
-              onChange={setEventTypeFilter}
+              onChange={(value) => {
+                setEventTypeFilter(value);
+                setPagination((previous) => ({ ...previous, current: 1 }));
+              }}
             />
             <div className="flex items-center">
               <Button
                 onClick={() => {
                   setChannelTypeFilter(undefined);
                   setEventTypeFilter(undefined);
+                  setPagination((previous) => ({ ...previous, current: 1 }));
                 }}
               >
                 重置条件
@@ -78,9 +84,16 @@ export default function UserNotificationRecordsPage() {
           <Table
             rowKey="id"
             loading={loading}
-            dataSource={filteredRecords}
+            dataSource={records}
             locale={{ emptyText: <EmptyPane description="还没有通知发送记录。" /> }}
-            pagination={{ showSizeChanger: true, showTotal: (total) => `共 ${total} 条` }}
+            pagination={{
+              current: pagination.current,
+              pageSize: pagination.pageSize,
+              total,
+              showSizeChanger: true,
+              showTotal: (total) => `共 ${total} 条`,
+              onChange: (current, pageSize) => setPagination({ current, pageSize }),
+            }}
             columns={[
               { title: '编号', dataIndex: 'id', width: 90 },
               { title: '通知时间', render: (_, record) => formatDateTime(record.createdAt), width: 200 },

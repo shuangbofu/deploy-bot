@@ -5,7 +5,7 @@ import { deploymentsApi } from '../../api/deployments';
 import { pipelinesApi } from '../../api/pipelines';
 import EmptyPane from '../../components/EmptyPane';
 import PageHeaderBar from '../../components/PageHeaderBar';
-import PipelineIcon from '../../components/PipelineIcon';
+import PipelineIcon, { templateTypeOptions } from '../../components/PipelineIcon';
 import StatusTag from '../../components/StatusTag';
 import { ACTIVE_DEPLOYMENT_STATUSES } from '../../constants/deployment';
 import type { PipelineHallSummary, PipelineSummary, UserRecentPipelineSummary } from '../../types/domain';
@@ -33,6 +33,7 @@ export default function UserPipelinesPage() {
   const [tick, setTick] = useState(() => Date.now());
   const [keyword, setKeyword] = useState('');
   const [tagFilter, setTagFilter] = useState<string[]>();
+  const [typeFilter, setTypeFilter] = useState<string>();
   const [selectedPipelineId, setSelectedPipelineId] = useState<number>();
   const navigate = useNavigate();
 
@@ -116,8 +117,16 @@ export default function UserPipelinesPage() {
 
   const frequentPipelines = useMemo(() => recentPipelines.slice(0, 8), [recentPipelines]);
 
+  const availableTypeOptions = useMemo(
+    () => templateTypeOptions.filter((option) => hallItems.some((item) => item.templateType === option.value)),
+    [hallItems],
+  );
+
   const filteredPipelineCards = useMemo(() => hallItems.filter((item) => {
     if (selectedPipelineId && item.pipelineId !== selectedPipelineId) {
+      return false;
+    }
+    if (typeFilter && item.templateType !== typeFilter) {
       return false;
     }
     const tags = parseTagsJson(item.tagsJson);
@@ -134,7 +143,7 @@ export default function UserPipelinesPage() {
       return false;
     }
     return true;
-  }), [hallItems, keyword, tagFilter, selectedPipelineId]);
+  }), [hallItems, keyword, tagFilter, selectedPipelineId, typeFilter]);
 
   /** 打开部署弹窗时顺便拉取可选分支。 */
   const openDeployModal = async (pipeline: PipelineSummary) => {
@@ -280,9 +289,32 @@ export default function UserPipelinesPage() {
                     placeholder="搜索名称 / 项目 / 分支"
                     onChange={(event) => setKeyword(event.target.value)}
                   />
+                  {availableTypeOptions.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {availableTypeOptions.map((option) => {
+                        const active = typeFilter === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            className={`pipeline-hall-shortcut pipeline-hall-type-shortcut${active ? ' pipeline-hall-shortcut--active' : ''}`}
+                            onClick={() => setTypeFilter((previous) => (previous === option.value ? undefined : option.value))}
+                          >
+                            <div className="flex flex-col items-center gap-1">
+                              <PipelineIcon type={option.value} />
+                              <span className="text-center text-[11px] font-medium text-slate-700">
+                                {option.value}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
                   <Button
                     onClick={() => {
                       setKeyword('');
+                      setTypeFilter(undefined);
                       setTagFilter(undefined);
                       setSelectedPipelineId(undefined);
                     }}

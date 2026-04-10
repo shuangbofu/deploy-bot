@@ -370,6 +370,26 @@ body {
   font-size: 11px;
 }
 
+.pipeline-hall-type-shortcut {
+  width: auto;
+  min-width: 0;
+  gap: 0;
+  border-radius: 12px;
+  padding: 6px 6px;
+}
+
+.pipeline-hall-type-shortcut .pipeline-icon {
+  transform: scale(0.76);
+  transform-origin: center;
+}
+
+.pipeline-hall-type-shortcut span {
+  font-size: 11px;
+  line-height: 1.1;
+  font-weight: 500;
+  color: #334155;
+}
+
 .pipeline-card .ant-card-body {
   padding: 18px;
 }
