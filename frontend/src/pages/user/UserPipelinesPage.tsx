@@ -528,7 +528,7 @@ export default function UserPipelinesPage() {
           setDeployingPipeline(undefined);
           setBranchOptions([]);
         }}
-        onOk={() => createDeployment().catch(() => message.error('触发部署失败'))}
+        onOk={() => createDeployment().catch(() => undefined)}
         destroyOnClose
       >
           <div className="space-y-4">

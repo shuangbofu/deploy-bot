@@ -71,7 +71,7 @@ public class DeploymentEntity {
     private String branchName;
 
     /** 本次部署实际使用的变量 JSON。 */
-    @Column(length = 4000)
+    @Lob
     private String variablesJson;
 
     /** 部署状态。 */

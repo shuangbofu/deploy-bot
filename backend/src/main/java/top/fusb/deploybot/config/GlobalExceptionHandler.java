@@ -73,12 +73,17 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Result<Void>> handleDataIntegrity(DataIntegrityViolationException ex, HttpServletRequest request) {
+        String rootMessage = ex.getMostSpecificCause() != null ? ex.getMostSpecificCause().getMessage() : ex.getMessage();
+        String userMessage = "数据存在关联引用，当前操作无法完成。";
+        if (rootMessage != null && rootMessage.contains("Value too long for column")) {
+            userMessage = "提交内容过长，已超出字段限制，请检查部署变量、脚本或快照内容。";
+        }
         log.warn("API data integrity error on {} {}: {}", request.getMethod(), request.getRequestURI(), ex.getMessage(), ex);
         return ResponseEntity.ok(Result.failure(
                 ErrorCode.DATA_INTEGRITY_ERROR.getCode(),
                 ErrorCode.DATA_INTEGRITY_ERROR.getDefaultMessage(),
                 "DATA-000",
-                "数据存在关联引用，当前操作无法完成。"
+                userMessage
         ));
     }
 
