@@ -52,6 +52,7 @@ public class DeploymentRunner {
     private static final long DEFAULT_STARTUP_TIMEOUT_MILLIS = 30_000L;
     private static final long MONITOR_INTERVAL_MILLIS = 2_000L;
     private static final int STARTUP_LOG_BUFFER_LIMIT = 256 * 1024;
+    private static final Pattern REDIRECTION_PATTERN = Pattern.compile("\\s(?:\\d?>>?|>>?)");
 
     private final DeploymentRepository deploymentRepository;
     private final ServiceManager serviceManager;
@@ -747,6 +748,7 @@ public class DeploymentRunner {
             if (keyword != null && !keyword.isBlank()) {
                 String escapedKeyword = keyword.replace("\"", "\\\"");
                 lines.add("echo \"[系统] 远程 PID 推导关键字：" + escapedKeyword + "\"");
+                lines.add("ps -efww | awk -v kw='" + escapedKeyword.replace("'", "'\"'\"'") + "' 'index($0, kw) && $0 !~ /awk -v kw/ {print}' || true");
                 lines.add("pgrep -af \"" + escapedKeyword + "\" || true");
                 lines.add("if command -v jps >/dev/null 2>&1; then echo \"[系统] 远程 jps 结果：\"; jps -lv | grep \"" + escapedKeyword + "\" || true; fi");
             }
@@ -853,7 +855,17 @@ public class DeploymentRunner {
 
     private String buildKeywordLookupScript(String escapedKeyword, String rawKeyword) {
         StringBuilder script = new StringBuilder();
-        script.append("PID=$(pgrep -f \"").append(escapedKeyword).append("\" | head -n 1 || true)\n");
+        String quotedKeyword = shellSingleQuote(rawKeyword);
+        script.append("PID=$(ps -efww | awk -v kw=").append(quotedKeyword)
+                .append(" '($8 ~ /(^|\\/)java$/) && index($0, kw) {print $2; exit}' || true)\n");
+        String jarName = resolveJarName(rawKeyword);
+        if (jarName != null && !jarName.isBlank()) {
+            script.append("if [ -z \"$PID\" ]; then PID=$(ps -efww | awk -v jar=").append(shellSingleQuote(jarName))
+                    .append(" '($8 ~ /(^|\\/)java$/) && index($0, jar) {print $2; exit}' || true); fi\n");
+        }
+        if (rawKeyword.endsWith(".jar")) {
+            script.append("if [ -z \"$PID\" ]; then PID=$(pgrep -f \"").append(escapedKeyword).append("\" | head -n 1 || true); fi\n");
+        }
         script.append("if [ -z \"$PID\" ]");
         if (rawKeyword.endsWith(".jar")) {
             script.append(" && command -v jps >/dev/null 2>&1");
@@ -865,6 +877,24 @@ public class DeploymentRunner {
         script.append("fi\n");
         script.append("if [ -n \"$PID\" ]; then echo \"$PID\"; fi\n");
         return script.toString();
+    }
+
+    private String resolveJarName(String keyword) {
+        if (keyword == null || keyword.isBlank()) {
+            return null;
+        }
+        Matcher matcher = Pattern.compile("-jar\\s+([^\\s]+\\.jar)").matcher(keyword);
+        if (matcher.find()) {
+            return Path.of(matcher.group(1)).getFileName().toString();
+        }
+        if (keyword.endsWith(".jar")) {
+            return Path.of(keyword).getFileName().toString();
+        }
+        return null;
+    }
+
+    private String shellSingleQuote(String value) {
+        return "'" + value.replace("'", "'\"'\"'") + "'";
     }
 
     private boolean isProcessAlive(HostEntity targetHost, Long pid) {
@@ -890,13 +920,9 @@ public class DeploymentRunner {
         Map<String, String> variables = jsonMapper.toStringMap(deployment.getVariablesJson());
         String startCommand = variables.get("startCommand");
         if (startCommand != null) {
-            Matcher javaMatcher = Pattern.compile("java\\s+-jar\\s+([^\\s]+)").matcher(startCommand);
-            if (javaMatcher.find()) {
-                return Path.of(javaMatcher.group(1)).getFileName().toString();
-            }
-            Matcher nodeMatcher = Pattern.compile("node\\s+([^\\s]+)").matcher(startCommand);
-            if (nodeMatcher.find()) {
-                return Path.of(nodeMatcher.group(1)).getFileName().toString();
+            String processCommand = normalizeStartCommandForPidDiscovery(startCommand);
+            if (processCommand != null && !processCommand.isBlank()) {
+                return processCommand;
             }
         }
         String jarPath = variables.get("jarPath");
@@ -904,6 +930,33 @@ public class DeploymentRunner {
             return Path.of(jarPath).getFileName().toString();
         }
         return null;
+    }
+
+    private String normalizeStartCommandForPidDiscovery(String startCommand) {
+        if (startCommand == null || startCommand.isBlank()) {
+            return null;
+        }
+        String command = startCommand.trim();
+        if (command.endsWith("&")) {
+            command = command.substring(0, command.length() - 1).trim();
+        }
+        Matcher redirectionMatcher = REDIRECTION_PATTERN.matcher(command);
+        if (redirectionMatcher.find()) {
+            command = command.substring(0, redirectionMatcher.start()).trim();
+        }
+        while (command.startsWith("nohup ")) {
+            command = command.substring("nohup ".length()).trim();
+        }
+        command = command.replaceAll("\\s+", " ");
+        Matcher javaJarMatcher = Pattern.compile("^(java(?:\\s+-(?!jar\\b)\\S+)*\\s+-jar\\s+[^\\s]+)").matcher(command);
+        if (javaJarMatcher.find()) {
+            return javaJarMatcher.group(1).trim();
+        }
+        Matcher nodeMatcher = Pattern.compile("^(node\\s+[^\\s]+)").matcher(command);
+        if (nodeMatcher.find()) {
+            return nodeMatcher.group(1).trim();
+        }
+        return command.isBlank() ? null : command;
     }
 
     private long resolveStartupTimeoutMillis(DeploymentEntity deployment) {
