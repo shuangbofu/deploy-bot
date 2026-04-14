@@ -208,6 +208,10 @@ export interface SystemSettingsPayload {
   gitSshPublicKey?: string;
   gitSshKnownHosts?: string;
   hostSshPublicKey?: string;
+  cleanupEnabled?: boolean;
+  artifactRetainSuccessCount?: number;
+  cleanRunsOnSuccess?: boolean;
+  failedRunRetainDays?: number;
 }
 
 export interface LogResponse {
@@ -262,6 +266,16 @@ export interface SystemSettingsResponse {
   gitSshPublicKey?: string;
   gitSshKnownHosts?: string;
   hostSshPublicKey?: string;
+  cleanupEnabled?: boolean;
+  artifactRetainSuccessCount?: number;
+  cleanRunsOnSuccess?: boolean;
+  failedRunRetainDays?: number;
+}
+
+export interface ServiceProcessSummary {
+  pid: number;
+  command?: string | null;
+  commandLine?: string | null;
 }
 
 export type {

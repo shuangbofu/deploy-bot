@@ -186,6 +186,27 @@ body {
   color: #fff;
 }
 
+.service-process-table .ant-table-tbody > tr > td {
+  transition: background-color 0.16s ease, color 0.16s ease;
+}
+
+.service-process-table .ant-table-tbody > tr:hover > td,
+.service-process-table .ant-table-tbody > tr.ant-table-row:hover > td {
+  background: #f1f7ff !important;
+  color: #173055 !important;
+}
+
+.service-process-table .ant-table-tbody > tr.ant-table-row-selected > td,
+.service-process-table .ant-table-tbody > tr.ant-table-row-selected:hover > td {
+  background: #dbeafe !important;
+  color: #173055 !important;
+}
+
+.service-process-table .ant-table-tbody > tr.ant-table-row-selected .text-slate-600,
+.service-process-table .ant-table-tbody > tr:hover .text-slate-600 {
+  color: #334155 !important;
+}
+
 .deployment-rollback-tag {
   display: inline-flex;
   align-items: center;

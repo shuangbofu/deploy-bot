@@ -27,6 +27,8 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Service
@@ -209,15 +211,18 @@ public class HostService {
         List<String> command = buildSshCommand(host, tempDir, timeoutSeconds);
         log.info("Executing remote script on host {} with timeout {}s.", host.getName(), timeoutSeconds);
         Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+        CompletableFuture<String> outputFuture = CompletableFuture.supplyAsync(() -> readProcessOutput(process));
         try (var writer = process.outputWriter(StandardCharsets.UTF_8)) {
             writer.write(script);
             writer.flush();
         }
-        String output;
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-            output = reader.lines().reduce("", (left, right) -> left + right + "\n");
+        if (!process.waitFor(Math.max(1, timeoutSeconds), TimeUnit.SECONDS)) {
+            process.destroyForcibly();
+            log.warn("主机 {} 的远程脚本执行超时，timeout={}s。", host.getName(), timeoutSeconds);
+            throw new BusinessException(ErrorSubCode.REMOTE_EXECUTION_FAILED, "远程命令执行超时。");
         }
-        int exitCode = process.waitFor();
+        String output = outputFuture.join();
+        int exitCode = process.exitValue();
         if (exitCode != 0) {
             log.warn("主机 {} 的远程脚本执行失败，退出码={}。", host.getName(), exitCode);
             throw new BusinessException(ErrorSubCode.REMOTE_EXECUTION_FAILED, output.isBlank() ? null : output.trim());
@@ -228,6 +233,14 @@ public class HostService {
                 previewOutput(output)
         );
         return output;
+    }
+
+    private String readProcessOutput(Process process) {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+            return reader.lines().reduce("", (left, right) -> left + right + "\n");
+        } catch (Exception ex) {
+            return "";
+        }
     }
 
     /**

@@ -1,5 +1,6 @@
 package top.fusb.deploybot.service;
 
+import top.fusb.deploybot.dto.ServiceProcessSummary;
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorSubCode;
 import top.fusb.deploybot.model.DeploymentEntity;
@@ -14,6 +15,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -128,6 +130,42 @@ public class ServiceManager {
         return serviceRepository.save(service);
     }
 
+    public List<ServiceProcessSummary> listProcessCandidates(Long id) {
+        ServiceEntity service = serviceRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.SERVICE_NOT_FOUND));
+        HostEntity targetHost = service.getPipeline() == null ? null : service.getPipeline().getTargetHost();
+        if (targetHost == null || targetHost.getType() == HostType.LOCAL) {
+            return ProcessHandle.allProcesses()
+                    .filter(ProcessHandle::isAlive)
+                    .map(this::toLocalProcessSummary)
+                    .filter(this::isSupportedMonitoredProcess)
+                    .sorted(Comparator.comparing(ServiceProcessSummary::pid).reversed())
+                    .limit(200)
+                    .toList();
+        }
+        return listRemoteProcessCandidates(targetHost);
+    }
+
+    public ServiceEntity bindProcess(Long id, Long pid) {
+        if (pid == null || pid <= 0) {
+            throw new BusinessException(ErrorSubCode.REMOTE_SERVICE_STOP_FAILED, "请选择要绑定的进程。");
+        }
+        ServiceEntity service = serviceRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.SERVICE_NOT_FOUND));
+        HostEntity targetHost = service.getPipeline() == null ? null : service.getPipeline().getTargetHost();
+        if (!isAlive(pid, targetHost)) {
+            throw new BusinessException(ErrorSubCode.REMOTE_SERVICE_STOP_FAILED, "进程不存在或已经退出，无法绑定。");
+        }
+        service.setCurrentPid(pid);
+        service.setStatus(ServiceStatus.RUNNING);
+        if (service.getActiveSince() == null) {
+            service.setActiveSince(LocalDateTime.now());
+        }
+        service.setLastHeartbeatAt(LocalDateTime.now());
+        service.setUpdatedAt(LocalDateTime.now());
+        return serviceRepository.save(service);
+    }
+
     public ServiceEntity refreshStatus(ServiceEntity service) {
         HostEntity targetHost = service.getPipeline() == null ? null : service.getPipeline().getTargetHost();
         boolean running = isAlive(service.getCurrentPid(), targetHost);
@@ -162,6 +200,64 @@ public class ServiceManager {
         } catch (Exception ex) {
             return false;
         }
+    }
+
+    private ServiceProcessSummary toLocalProcessSummary(ProcessHandle process) {
+        ProcessHandle.Info info = process.info();
+        String command = info.command().orElse("");
+        String commandLine = info.commandLine().orElse(command);
+        return new ServiceProcessSummary(process.pid(), command, commandLine);
+    }
+
+    private List<ServiceProcessSummary> listRemoteProcessCandidates(HostEntity host) {
+        try {
+            String output = hostService.executeRemoteScript(
+                    host.getId(),
+                    """
+                            ps -efww | awk '
+                            {
+                              pid=$2;
+                              line=$0;
+                              for (i=1; i<=7; i++) sub(/^[[:space:]]*[^[:space:]]+[[:space:]]+/, "", line);
+                              split(line, args, /[[:space:]]+/);
+                              comm=args[1];
+                              if (pid ~ /^[0-9]+$/ && line ~ /(^|[[:space:]\\/])java([[:space:]]|$)/ && line !~ /[a]wk/) {
+                                print pid "\\t" comm "\\t" line;
+                              }
+                            }'
+                            """,
+                    8
+            );
+            List<ServiceProcessSummary> result = new ArrayList<>();
+            output.lines().forEach(line -> {
+                String[] parts = line.split("\\t", 3);
+                if (parts.length < 3) {
+                    return;
+                }
+                try {
+                    result.add(new ServiceProcessSummary(Long.parseLong(parts[0].trim()), parts[1].trim(), parts[2].trim()));
+                } catch (NumberFormatException ignored) {
+                }
+            });
+            return result.stream()
+                    .filter(this::isSupportedMonitoredProcess)
+                    .limit(200)
+                    .toList();
+        } catch (Exception ex) {
+            throw new BusinessException(ErrorSubCode.REMOTE_EXECUTION_FAILED, "拉取远程进程列表失败：" + ex.getMessage(), ex);
+        }
+    }
+
+    private boolean isSupportedMonitoredProcess(ServiceProcessSummary process) {
+        if (process == null || process.commandLine() == null || process.commandLine().isBlank()) {
+            return false;
+        }
+        // 当前服务监控只接管 Java 进程；后续增加 Node 等类型时，在这里扩展规则即可。
+        String command = process.command() == null ? "" : process.command().trim();
+        if (command.equals("java") || command.endsWith("/java")) {
+            return true;
+        }
+        return process.commandLine().matches("(^|\\s)([^\\s]*/)?java(\\s|$).*");
     }
 
     private void stopProcess(Long pid, HostEntity host) {

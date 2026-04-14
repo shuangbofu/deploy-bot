@@ -15,6 +15,7 @@ import top.fusb.deploybot.notification.service.DeploymentNotificationAsyncServic
 import top.fusb.deploybot.service.GitCredentialService;
 import top.fusb.deploybot.service.HostService;
 import top.fusb.deploybot.service.JsonMapper;
+import top.fusb.deploybot.service.DeploymentCleanupService;
 import top.fusb.deploybot.service.ServiceManager;
 import top.fusb.deploybot.service.SystemSettingsService;
 import org.springframework.beans.factory.annotation.Value;
@@ -61,6 +62,7 @@ public class DeploymentRunner {
     private final DeploymentBackupService deploymentBackupService;
     private final JsonMapper jsonMapper;
     private final HostService hostService;
+    private final DeploymentCleanupService deploymentCleanupService;
     private final DeploymentNotificationAsyncService deploymentNotificationAsyncService;
     private final Path defaultWorkspaceRoot;
     private final Map<Long, Process> runningProcesses = new ConcurrentHashMap<>();
@@ -79,6 +81,7 @@ public class DeploymentRunner {
             DeploymentBackupService deploymentBackupService,
             JsonMapper jsonMapper,
             HostService hostService,
+            DeploymentCleanupService deploymentCleanupService,
             DeploymentNotificationAsyncService deploymentNotificationAsyncService,
             @Value("${deploybot.workspace-root:./runtime}") String workspaceRoot
     ) {
@@ -89,6 +92,7 @@ public class DeploymentRunner {
         this.deploymentBackupService = deploymentBackupService;
         this.jsonMapper = jsonMapper;
         this.hostService = hostService;
+        this.deploymentCleanupService = deploymentCleanupService;
         this.deploymentNotificationAsyncService = deploymentNotificationAsyncService;
         this.defaultWorkspaceRoot = Path.of(workspaceRoot);
     }
@@ -162,6 +166,7 @@ public class DeploymentRunner {
             if (deployment.getStatus() == DeploymentStatus.STOPPED) {
                 appendSystemLog(logFile, "部署已停止。");
                 deploymentRepository.save(deployment);
+                deploymentCleanupService.cleanupAfterDeployment(deployment, buildWorkspaceRoot);
                 return;
             }
             if (exitCode == 0 && deployment.getRenderedDeployScript() != null && !deployment.getRenderedDeployScript().isBlank()) {
@@ -204,6 +209,7 @@ public class DeploymentRunner {
                 if (deployment.getStatus() == DeploymentStatus.STOPPED) {
                     appendSystemLog(logFile, "部署已停止。");
                     deploymentRepository.save(deployment);
+                    deploymentCleanupService.cleanupAfterDeployment(deployment, buildWorkspaceRoot);
                     return;
                 }
             }
@@ -214,6 +220,7 @@ public class DeploymentRunner {
             if (deployment.getStatus() == DeploymentStatus.STOPPED) {
                 appendSystemLog(logFile, "部署已停止。");
                 deploymentRepository.save(deployment);
+                deploymentCleanupService.cleanupAfterDeployment(deployment, buildWorkspaceRoot);
                 return;
             }
             if (exitCode == 0) {
@@ -231,6 +238,7 @@ public class DeploymentRunner {
                     if (deployment.getStatus() == DeploymentStatus.STOPPED) {
                         appendSystemLog(logFile, "部署已停止。");
                         deploymentRepository.save(deployment);
+                        deploymentCleanupService.cleanupAfterDeployment(deployment, buildWorkspaceRoot);
                         return;
                     }
                     if (monitoredPid == null) {
@@ -259,6 +267,7 @@ public class DeploymentRunner {
                 log.warn("部署 {} 失败，脚本进程退出码={}。", deploymentId, exitCode);
             }
             deploymentRepository.save(deployment);
+            deploymentCleanupService.cleanupAfterDeployment(deployment, buildWorkspaceRoot);
             deploymentNotificationAsyncService.notifyAsync(deployment.getId(), NotificationEventType.DEPLOYMENT_FINISHED);
         } catch (Exception ex) {
             runningProcesses.remove(deploymentId);
@@ -277,6 +286,7 @@ public class DeploymentRunner {
                         deployment.setFinishedAt(LocalDateTime.now());
                     }
                     deploymentRepository.save(deployment);
+                    deploymentCleanupService.cleanupAfterDeployment(deployment, resolveLocalWorkspaceRoot());
                     return;
                 }
                 Path resolvedLogFile = resolveOrCreateLogFile(capturedLogFile, deployment.getLogPath(), deploymentId);
@@ -292,6 +302,7 @@ public class DeploymentRunner {
                 deployment.setStatus(DeploymentStatus.FAILED);
                 deployment.setErrorMessage(ex.getMessage());
                 deploymentRepository.save(deployment);
+                deploymentCleanupService.cleanupAfterDeployment(deployment, resolveLocalWorkspaceRoot());
                 deploymentNotificationAsyncService.notifyAsync(deployment.getId(), NotificationEventType.DEPLOYMENT_FINISHED);
             });
         }
@@ -340,18 +351,6 @@ public class DeploymentRunner {
 
     public void stop(Long deploymentId, String stoppedBy) {
         log.info("收到部署 {} 的手动停止请求。", deploymentId);
-        runningProcesses.computeIfPresent(deploymentId, (id, process) -> {
-            process.destroy();
-            try {
-                Thread.sleep(300);
-            } catch (InterruptedException ignored) {
-                Thread.currentThread().interrupt();
-            }
-            if (process.isAlive()) {
-                process.destroyForcibly();
-            }
-            return process;
-        });
         deploymentRepository.findById(deploymentId).ifPresent(deployment -> {
             if (deployment.getStatus() != DeploymentStatus.PENDING && deployment.getStatus() != DeploymentStatus.RUNNING) {
                 return;
@@ -369,11 +368,24 @@ public class DeploymentRunner {
                 }
             }
             deploymentRepository.saveAndFlush(deployment);
+            runningProcesses.computeIfPresent(deploymentId, (id, process) -> {
+                process.destroy();
+                try {
+                    Thread.sleep(300);
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
+                if (process.isAlive()) {
+                    process.destroyForcibly();
+                }
+                return process;
+            });
             try {
                 stopRuntimeProcessIfPresent(deployment);
             } catch (Exception ex) {
                 log.warn("部署 {} 在手动停止时清理运行中服务失败：{}", deploymentId, ex.getMessage());
             }
+            deploymentCleanupService.cleanupAfterDeployment(deployment, resolveLocalWorkspaceRoot());
             deploymentNotificationAsyncService.notifyAsync(deployment.getId(), NotificationEventType.DEPLOYMENT_FINISHED);
         });
         runningProcesses.remove(deploymentId);
@@ -1163,6 +1175,17 @@ public class DeploymentRunner {
         }
         if (!"Stream closed".equalsIgnoreCase(ex.getMessage().trim())) {
             return false;
+        }
+        for (int attempt = 0; attempt < 5; attempt++) {
+            if (isStopRequested(deploymentId)) {
+                return true;
+            }
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException interruptedException) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
         }
         return deploymentRepository.findById(deploymentId)
                 .map(item -> item.getStatus() == DeploymentStatus.STOPPED)

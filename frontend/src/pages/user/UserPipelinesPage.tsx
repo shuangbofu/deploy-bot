@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Col, Input, Modal, Progress, Row, Select, Skeleton, Space, Tag, Typography, message } from 'antd';
+import { Button, Card, Col, Input, Modal, Popconfirm, Progress, Row, Select, Skeleton, Space, Tag, Typography, message } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { deploymentsApi } from '../../api/deployments';
 import { pipelinesApi } from '../../api/pipelines';
@@ -457,19 +457,21 @@ export default function UserPipelinesPage() {
                     <div className="mt-1 flex items-end justify-between gap-3">
                       <Space>
                         {activeDeployment ? (
-                          <Button
-                            danger
-                            loading={submittingId === item.pipelineId}
-                            onClick={() => {
+                          <Popconfirm
+                            title="确认停止部署？"
+                            description="会中断当前部署任务，已启动的服务也会尝试停止。"
+                            okText="确认停止"
+                            cancelText="取消"
+                            onConfirm={() => {
                               setSubmittingId(item.pipelineId);
-                              stopDeployment(activeDeployment.latestDeploymentId!)
+                              return stopDeployment(activeDeployment.latestDeploymentId!)
                                 .then(() => message.success('部署已停止'))
                                 .catch(() => message.error('停止部署失败'))
                                 .finally(() => setSubmittingId(undefined));
                             }}
                           >
-                            停止
-                          </Button>
+                            <Button danger loading={submittingId === item.pipelineId}>停止</Button>
+                          </Popconfirm>
                         ) : (
                           <Button
                             type="primary"

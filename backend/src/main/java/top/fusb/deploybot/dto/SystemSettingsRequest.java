@@ -25,6 +25,14 @@ public record SystemSettingsRequest(
         /** 系统级主机 SSH 私钥。 */
         String hostSshPrivateKey,
         /** 系统级主机 SSH 公钥。 */
-        String hostSshPublicKey
+        String hostSshPublicKey,
+        /** 是否启用部署目录自动清理。 */
+        Boolean cleanupEnabled,
+        /** 每条流水线保留最近成功产物数量。 */
+        Integer artifactRetainSuccessCount,
+        /** 成功后是否立即清理 runs 工作区。 */
+        Boolean cleanRunsOnSuccess,
+        /** 失败/停止 runs 工作区保留天数。 */
+        Integer failedRunRetainDays
 ) {
 }

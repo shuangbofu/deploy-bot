@@ -181,16 +181,19 @@ export default function UserDeploymentDetailPage() {
             </Popconfirm>
           ) : null,
           stoppable ? (
-            <Button
+            <Popconfirm
               key="stop"
-              danger
-              onClick={() => deploymentsApi.stop(deploymentId || '').then(() => {
+              title="确认停止部署？"
+              description="会中断当前部署任务，已启动的服务也会尝试停止。"
+              okText="确认停止"
+              cancelText="取消"
+              onConfirm={() => deploymentsApi.stop(deploymentId || '').then(() => {
                 message.success('部署已停止');
                 return loadDetail();
               }).catch(() => message.error('停止部署失败'))}
             >
-              停止部署
-            </Button>
+              <Button danger>停止部署</Button>
+            </Popconfirm>
           ) : null,
           <Button key="refresh" type="primary" onClick={() => loadDetail().catch(() => message.error('刷新失败'))}>刷新</Button>,
         ]}

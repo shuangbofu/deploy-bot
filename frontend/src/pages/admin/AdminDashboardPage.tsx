@@ -93,12 +93,12 @@ export default function AdminDashboardPage() {
   };
 
   useEffect(() => {
-    load().catch(() => message.error('加载控制台数据失败'));
+    load().catch(() => message.error('加载仪表盘数据失败'));
   }, []);
 
   return (
     <DashboardConsole
-      title="控制台"
+      title="仪表盘"
       description="查看平台概览、部署趋势、最近部署记录和异常情况。"
       loading={loading}
       resourceLoading={resourceLoading}
@@ -124,7 +124,7 @@ export default function AdminDashboardPage() {
       detailBasePath="/admin/deployments"
       listPath="/admin/deployments"
       backFrom="/admin/dashboard"
-      backLabel="返回控制台"
+      backLabel="返回仪表盘"
       idPrefix="admin-dashboard"
     />
   );

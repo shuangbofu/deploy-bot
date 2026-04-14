@@ -38,7 +38,11 @@ public class SchemaMigrationBootstrap {
                 "ALTER TABLE IF EXISTS maven_settings ADD COLUMN IF NOT EXISTS runtime_environment_id BIGINT",
                 "ALTER TABLE IF EXISTS maven_settings ADD COLUMN IF NOT EXISTS is_default BOOLEAN DEFAULT FALSE",
                 "ALTER TABLE IF EXISTS maven_settings ADD COLUMN IF NOT EXISTS deleted BOOLEAN DEFAULT FALSE",
-                "ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS avatar VARCHAR(500)"
+                "ALTER TABLE IF EXISTS users ADD COLUMN IF NOT EXISTS avatar VARCHAR(500)",
+                "ALTER TABLE IF EXISTS system_settings ADD COLUMN IF NOT EXISTS cleanup_enabled BOOLEAN",
+                "ALTER TABLE IF EXISTS system_settings ADD COLUMN IF NOT EXISTS artifact_retain_success_count INTEGER",
+                "ALTER TABLE IF EXISTS system_settings ADD COLUMN IF NOT EXISTS clean_runs_on_success BOOLEAN",
+                "ALTER TABLE IF EXISTS system_settings ADD COLUMN IF NOT EXISTS failed_run_retain_days INTEGER"
         );
         statements.forEach(this::executeSilently);
     }

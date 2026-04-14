@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { resolveBackendAssetUrl } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
+import { resolvePortalSwitchPath } from '../utils/portalSwitch';
 import ChangePasswordModal from './ChangePasswordModal';
 import deployBotLogo from '../assets/deploy-bot-logo.svg';
 
@@ -11,10 +12,10 @@ const GITHUB_REPOSITORY_URL = 'https://github.com/shuangbofu/deploy-bot';
 
 /**
  * 管理端一级菜单配置。
- * 这里保持“控制台 -> 资源管理 -> 运行记录”的信息架构顺序。
+ * 这里保持“仪表盘 -> 资源管理 -> 运行记录”的信息架构顺序。
  */
 const menuItems = [
-  { key: '/admin/dashboard', icon: <AppstoreOutlined />, label: '控制台' },
+  { key: '/admin/dashboard', icon: <AppstoreOutlined />, label: '仪表盘' },
   { key: '/admin/projects', icon: <FolderOpenOutlined />, label: '项目' },
   { key: '/admin/hosts', icon: <CloudServerOutlined />, label: '主机' },
   { key: '/admin/templates', icon: <FileTextOutlined />, label: '模板' },
@@ -35,6 +36,7 @@ export default function AdminLayout() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const switchPath = resolvePortalSwitchPath(location.pathname, 'user');
 
   return (
     <Layout className="min-h-screen bg-app">
@@ -61,7 +63,7 @@ export default function AdminLayout() {
           className="admin-nav"
         />
         <Space>
-          <Link to="/user/pipelines">
+          <Link to={switchPath}>
             <Button>部署工作台</Button>
           </Link>
           <Dropdown

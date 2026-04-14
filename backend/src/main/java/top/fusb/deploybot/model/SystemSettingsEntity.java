@@ -69,4 +69,16 @@ public class SystemSettingsEntity {
     /** 系统级主机 SSH 公钥。 */
     @Column(length = 8000)
     private String hostSshPublicKey;
+
+    /** 是否启用部署目录自动清理。 */
+    private Boolean cleanupEnabled;
+
+    /** 每条流水线保留最近成功产物数量。 */
+    private Integer artifactRetainSuccessCount;
+
+    /** 成功后是否立即清理 runs 工作区。 */
+    private Boolean cleanRunsOnSuccess;
+
+    /** 失败/停止的 runs 工作区保留天数，0 表示结束后立即清理。 */
+    private Integer failedRunRetainDays;
 }

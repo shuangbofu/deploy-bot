@@ -19,7 +19,7 @@ export default function UserDashboardPage() {
   };
 
   useEffect(() => {
-    loadData().catch(() => message.error('加载控制台数据失败'));
+    loadData().catch(() => message.error('加载仪表盘数据失败'));
   }, []);
 
   useEffect(() => {
@@ -29,7 +29,7 @@ export default function UserDashboardPage() {
 
   return (
     <DashboardConsole
-      title="控制台"
+      title="仪表盘"
       description="查看可用流水线、近期部署趋势和当前部署情况。"
       loading={loading}
       stats={summary?.stats ?? {
@@ -54,7 +54,7 @@ export default function UserDashboardPage() {
       detailBasePath="/user/deployments"
       listPath="/user/deployments"
       backFrom="/user/dashboard"
-      backLabel="返回控制台"
+      backLabel="返回仪表盘"
       idPrefix="user-dashboard"
       tick={tick}
     />

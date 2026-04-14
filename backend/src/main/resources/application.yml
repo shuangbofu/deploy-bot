@@ -32,6 +32,18 @@ deploybot:
   workspace-root: ./runtime
   runtime-environment-presets: classpath:runtime-environment-presets.json
   default-templates: classpath:default-templates.json
+  # 部署目录清理策略：
+  # - runs 是临时构建工作区，包含源码、node_modules、target、dist 等大目录，默认部署结束后清理。
+  # - artifacts 是可重新发布的构建产物，按流水线保留最近成功版本。
+  cleanup:
+    # 是否启用自动清理。系统设置里保存的值优先级高于这里的默认值。
+    enabled: true
+    # 每条流水线保留最近 N 个成功产物；超过后会删除旧 artifacts，并清空对应部署记录的 artifactPath。
+    artifact-retain-success-count: 3
+    # 成功部署后是否立即删除 runs/{deploymentId}。
+    clean-runs-on-success: true
+    # 失败/停止部署的 runs 保留天数；0 表示结束后立即删除整个 runs/{deploymentId}。
+    failed-run-retain-days: 0
   user:
     default-password: 12345
 

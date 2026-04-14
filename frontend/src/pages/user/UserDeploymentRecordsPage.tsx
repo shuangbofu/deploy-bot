@@ -231,16 +231,18 @@ export default function UserDeploymentRecordsPage() {
                       </Popconfirm>
                     ) : null}
                     {row.status && ACTIVE_DEPLOYMENT_STATUSES.includes(row.status) ? (
-                      <Button
-                        size="small"
-                        danger
-                        onClick={() => deploymentsApi.stop(row.id).then(() => {
+                      <Popconfirm
+                        title="确认停止部署？"
+                        description="会中断当前部署任务，已启动的服务也会尝试停止。"
+                        okText="确认停止"
+                        cancelText="取消"
+                        onConfirm={() => deploymentsApi.stop(row.id).then(() => {
                           message.success('部署已停止');
                           return loadDeployments();
                         }).catch(() => message.error('停止部署失败'))}
                       >
-                        停止
-                      </Button>
+                        <Button size="small" danger>停止</Button>
+                      </Popconfirm>
                     ) : null}
                   </Space>
                 ),

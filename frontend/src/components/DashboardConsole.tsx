@@ -310,7 +310,7 @@ export default function DashboardConsole({
                         <div>
                           <div className="dashboard-recent-title">
                             <span>{service.serviceName || `服务 #${service.id}`}</span>
-                            <StatusTag status={(service.status as never) || undefined} />
+                            <StatusTag status={(service.status as never) || undefined} runningLabel="运行中" />
                           </div>
                           <div className="dashboard-recent-meta">
                             {service.pipelineName || '-'} · {service.targetHostName || '本机'}

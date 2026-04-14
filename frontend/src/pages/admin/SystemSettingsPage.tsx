@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Card, Collapse, Form, Input, Modal, Popconfirm, Select, Space, Switch, Table, Tabs, Typography, message } from 'antd';
+import { Button, Card, Collapse, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tabs, Typography, message } from 'antd';
 import { notificationTemplatesApi } from '../../api/notificationTemplates';
 import { notificationWebhookConfigsApi } from '../../api/notificationWebhookConfigs';
 import { systemSettingsApi } from '../../api/systemSettings';
@@ -20,6 +20,10 @@ const emptySettings: SystemSettingsPayload = {
   gitSshPublicKey: '',
   gitSshKnownHosts: '',
   hostSshPublicKey: '',
+  cleanupEnabled: true,
+  artifactRetainSuccessCount: 2,
+  cleanRunsOnSuccess: true,
+  failedRunRetainDays: 0,
 };
 
 const emptyWebhookConfig: NotificationWebhookConfigPayload = {
@@ -82,6 +86,10 @@ export default function SystemSettingsPage() {
       gitSshPublicKey: response.gitSshPublicKey || '',
       gitSshKnownHosts: response.gitSshKnownHosts || '',
       hostSshPublicKey: response.hostSshPublicKey || '',
+      cleanupEnabled: response.cleanupEnabled ?? true,
+      artifactRetainSuccessCount: response.artifactRetainSuccessCount ?? 2,
+      cleanRunsOnSuccess: response.cleanRunsOnSuccess ?? true,
+      failedRunRetainDays: response.failedRunRetainDays ?? 0,
     });
   };
 
@@ -398,6 +406,56 @@ export default function SystemSettingsPage() {
           <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-7 text-slate-600">
             这套密钥专门用于平台登录远程主机执行部署。请把上面的公钥添加到目标主机的 `authorized_keys`，不要和 Git 仓库的 SSH 密钥混用。
           </div>
+              </Form>
+            </Card>
+          </section>
+
+          <section className="space-y-4">
+            <div className="px-1">
+              <div className="text-lg font-semibold text-slate-900">清理</div>
+              <div className="mt-1 text-sm text-slate-500">控制构建工作区和历史产物的保留策略，避免源码、node_modules、target、dist 长期占用磁盘。</div>
+            </div>
+            <Card className="app-card">
+              <Form layout="vertical">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Form.Item label="自动清理">
+                    <Switch
+                      checked={form.cleanupEnabled ?? true}
+                      checkedChildren="开启"
+                      unCheckedChildren="关闭"
+                      onChange={(value) => setForm({ ...form, cleanupEnabled: value })}
+                    />
+                  </Form.Item>
+                  <Form.Item label="成功后清理 runs">
+                    <Switch
+                      checked={form.cleanRunsOnSuccess ?? true}
+                      checkedChildren="清理"
+                      unCheckedChildren="保留"
+                      onChange={(value) => setForm({ ...form, cleanRunsOnSuccess: value })}
+                    />
+                  </Form.Item>
+                  <Form.Item label="每条流水线保留成功产物数">
+                    <InputNumber
+                      min={0}
+                      precision={0}
+                      value={form.artifactRetainSuccessCount ?? 2}
+                      onChange={(value) => setForm({ ...form, artifactRetainSuccessCount: value ?? 0 })}
+                      className="!w-full"
+                    />
+                  </Form.Item>
+                  <Form.Item label="失败/停止 runs 保留天数">
+                    <InputNumber
+                      min={0}
+                      precision={0}
+                      value={form.failedRunRetainDays ?? 0}
+                      onChange={(value) => setForm({ ...form, failedRunRetainDays: value ?? 0 })}
+                      className="!w-full"
+                    />
+                  </Form.Item>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-7 text-slate-600">
+                  `runs` 是临时构建工作区，源码、`node_modules`、`target`、`dist` 都在里面，默认部署结束后直接删除整个目录。`artifacts` 是可重新发布的构建产物，只按流水线保留最近成功版本。
+                </div>
               </Form>
             </Card>
           </section>

@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Input, Select, Space, Table, message } from 'antd';
+import { Button, Card, Input, Modal, Select, Space, Table, message } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { servicesApi } from '../../api/services';
 import EmptyPane from '../../components/EmptyPane';
 import PageHeaderBar from '../../components/PageHeaderBar';
 import StatusTag from '../../components/StatusTag';
-import type { ServiceSummary } from '../../types/domain';
+import type { ServiceProcessSummary, ServiceSummary } from '../../api/types';
 import { formatDateTime } from '../../utils/datetime';
 import { formatDurationSince } from '../../utils/duration';
 
@@ -17,6 +17,12 @@ export default function ServiceManagementPage() {
   const [statusFilter, setStatusFilter] = useState<string>();
   const [hostFilter, setHostFilter] = useState<string>();
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
+  const [bindModalOpen, setBindModalOpen] = useState(false);
+  const [bindingService, setBindingService] = useState<ServiceSummary | null>(null);
+  const [processes, setProcesses] = useState<ServiceProcessSummary[]>([]);
+  const [processLoading, setProcessLoading] = useState(false);
+  const [processKeyword, setProcessKeyword] = useState('');
+  const [selectedPid, setSelectedPid] = useState<number>();
   const navigate = useNavigate();
 
   const loadServices = async () => {
@@ -53,6 +59,33 @@ export default function ServiceManagementPage() {
     }
   };
 
+  const openBindProcess = async (service: ServiceSummary) => {
+    setBindingService(service);
+    setBindModalOpen(true);
+    setProcessKeyword('');
+    setSelectedPid(undefined);
+    setProcessLoading(true);
+    try {
+      setProcesses(await servicesApi.listProcesses(service.id));
+    } finally {
+      setProcessLoading(false);
+    }
+  };
+
+  const bindProcess = async () => {
+    if (!bindingService || !selectedPid) {
+      message.warning('请选择要绑定的进程');
+      return;
+    }
+    await servicesApi.bindProcess(bindingService.id, selectedPid);
+    setBindModalOpen(false);
+    setBindingService(null);
+    setSelectedPid(undefined);
+    setProcesses([]);
+    await loadServices();
+    message.success('进程已绑定');
+  };
+
   const filteredServices = useMemo(() => services.filter((item) => {
     const normalizedKeyword = keyword.trim().toLowerCase();
     if (normalizedKeyword) {
@@ -75,6 +108,16 @@ export default function ServiceManagementPage() {
   const hostOptions = useMemo(() => Array.from(new Set(
     services.map((item) => item.pipeline?.targetHost?.name || '本机'),
   )).map((item) => ({ label: item, value: item })), [services]);
+
+  const filteredProcesses = useMemo(() => {
+    const normalizedKeyword = processKeyword.trim().toLowerCase();
+    if (!normalizedKeyword) {
+      return processes;
+    }
+    return processes.filter((item) => [item.pid, item.command, item.commandLine]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(normalizedKeyword)));
+  }, [processKeyword, processes]);
 
   return (
     <>
@@ -185,6 +228,13 @@ export default function ServiceManagementPage() {
                         </Button>
                       </>
                     ) : null}
+                    <Button
+                      size="small"
+                      onClick={() => openBindProcess(row).catch(() => message.error('加载进程列表失败'))}
+                      loading={actingId === row.id}
+                    >
+                      绑定进程
+                    </Button>
                     {row.status !== 'RUNNING' ? (
                       <Button
                         size="small"
@@ -208,6 +258,58 @@ export default function ServiceManagementPage() {
         />
       </Card>
       </div>
+      <Modal
+        width={880}
+        open={bindModalOpen}
+        title={bindingService ? `绑定进程：${bindingService.serviceName || bindingService.pipeline?.name || `服务 #${bindingService.id}`}` : '绑定进程'}
+        okText="绑定"
+        cancelText="取消"
+        onOk={() => bindProcess().catch(() => message.error('绑定进程失败'))}
+        onCancel={() => {
+          setBindModalOpen(false);
+          setBindingService(null);
+          setSelectedPid(undefined);
+          setProcesses([]);
+        }}
+      >
+        <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+          当前拉取主机：{bindingService?.pipeline?.targetHost?.name || '本机'}。请选择这台主机上已经存在的服务进程进行绑定。
+        </div>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <Input.Search
+            allowClear
+            value={processKeyword}
+            placeholder="搜索 PID / 命令 / 参数"
+            onChange={(event) => setProcessKeyword(event.target.value)}
+          />
+          <Button onClick={() => bindingService && openBindProcess(bindingService).catch(() => message.error('刷新进程列表失败'))}>
+            刷新
+          </Button>
+        </div>
+        <Table
+          className="service-process-table"
+          rowKey="pid"
+          size="small"
+          loading={processLoading}
+          scroll={{ x: 760, y: 360 }}
+          dataSource={filteredProcesses}
+          pagination={{ pageSize: 8, showSizeChanger: false, showTotal: (total) => `共 ${total} 个进程` }}
+          rowSelection={{
+            type: 'radio',
+            selectedRowKeys: selectedPid ? [selectedPid] : [],
+            onChange: (keys) => setSelectedPid(Number(keys[0])),
+          }}
+          columns={[
+            { title: 'PID', dataIndex: 'pid', width: 100 },
+            { title: '命令', dataIndex: 'command', width: 160, render: (value) => value || '-' },
+            {
+              title: '启动参数',
+              dataIndex: 'commandLine',
+              render: (value) => <div className="whitespace-pre-wrap break-all font-mono text-xs leading-5 text-slate-600">{value || '-'}</div>,
+            },
+          ]}
+        />
+      </Modal>
     </>
   );
 }

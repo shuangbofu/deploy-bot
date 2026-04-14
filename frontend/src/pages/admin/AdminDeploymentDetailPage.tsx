@@ -66,7 +66,7 @@ export default function AdminDeploymentDetailPage() {
       && deployment.status === 'SUCCESS',
   );
   const backPath = location.state?.from || (searchParams.get('from') === 'services' ? '/admin/services' : '/admin/deployments');
-  const backLabel = location.state?.backLabel || (backPath === '/admin/services' ? '返回服务管理' : backPath === '/admin/dashboard' ? '返回控制台' : '返回部署记录');
+  const backLabel = location.state?.backLabel || (backPath === '/admin/services' ? '返回服务管理' : backPath === '/admin/dashboard' ? '返回仪表盘' : '返回部署记录');
   const executionSnapshot = useMemo(() => {
     const raw = deployment?.executionSnapshotJson;
     if (!raw) {
@@ -178,16 +178,19 @@ export default function AdminDeploymentDetailPage() {
             </Popconfirm>
           ) : null,
           stoppable ? (
-            <Button
+            <Popconfirm
               key="stop"
-              danger
-              onClick={() => deploymentsApi.stop(String(deploymentId)).then(() => {
+              title="确认停止部署？"
+              description="会中断当前部署任务，已启动的服务也会尝试停止。"
+              okText="确认停止"
+              cancelText="取消"
+              onConfirm={() => deploymentsApi.stop(String(deploymentId)).then(() => {
                 message.success('部署已停止');
                 return loadDetail();
               }).catch(() => message.error('停止部署失败'))}
             >
-              停止部署
-            </Button>
+              <Button danger>停止部署</Button>
+            </Popconfirm>
           ) : null,
           <Button key="refresh" type="primary" onClick={() => loadDetail().catch(() => message.error('刷新失败'))}>刷新</Button>,
         ]}
