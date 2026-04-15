@@ -68,12 +68,27 @@ public class PipelineController {
         return service.findAllTags();
     }
 
+    @GetMapping("/favorites")
+    public List<Long> favorites() {
+        return service.findFavoritePipelineIds();
+    }
+
     /**
      * 分支下拉直接读取项目对应仓库的远端分支列表。
      */
     @GetMapping("/{id}/branches")
     public List<String> branches(@PathVariable Long id) {
         return gitBranchService.listBranches(id);
+    }
+
+    @PostMapping("/{id}/favorite")
+    public void favorite(@PathVariable Long id) {
+        service.favorite(id);
+    }
+
+    @DeleteMapping("/{id}/favorite")
+    public void unfavorite(@PathVariable Long id) {
+        service.unfavorite(id);
     }
 
     /**

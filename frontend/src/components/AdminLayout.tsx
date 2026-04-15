@@ -1,4 +1,4 @@
-import { AppstoreOutlined, DeploymentUnitOutlined, FileTextOutlined, FolderOpenOutlined, ProfileOutlined, RadarChartOutlined, SettingOutlined, CloudServerOutlined, TeamOutlined, LogoutOutlined, LockOutlined, GithubOutlined, RobotOutlined, NotificationOutlined } from '@ant-design/icons';
+import { DashboardOutlined, DeploymentUnitOutlined, FileTextOutlined, FolderOpenOutlined, ProfileOutlined, RadarChartOutlined, SettingOutlined, CloudServerOutlined, TeamOutlined, LogoutOutlined, LockOutlined, GithubOutlined, RobotOutlined, NotificationOutlined } from '@ant-design/icons';
 import { Avatar, Button, Dropdown, Layout, Menu, Space, Typography } from 'antd';
 import { useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -15,7 +15,7 @@ const GITHUB_REPOSITORY_URL = 'https://github.com/shuangbofu/deploy-bot';
  * 这里保持“仪表盘 -> 资源管理 -> 运行记录”的信息架构顺序。
  */
 const menuItems = [
-  { key: '/admin/dashboard', icon: <AppstoreOutlined />, label: '仪表盘' },
+  { key: '/admin/dashboard', icon: <DashboardOutlined />, label: '仪表盘' },
   { key: '/admin/projects', icon: <FolderOpenOutlined />, label: '项目' },
   { key: '/admin/hosts', icon: <CloudServerOutlined />, label: '主机' },
   { key: '/admin/templates', icon: <FileTextOutlined />, label: '模板' },

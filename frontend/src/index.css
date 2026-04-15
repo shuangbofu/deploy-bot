@@ -411,6 +411,77 @@ body {
   color: #334155;
 }
 
+.pipeline-hall-favorite-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 18px;
+  line-height: 1;
+  transition: color 0.18s ease, transform 0.18s ease;
+}
+
+.pipeline-hall-favorite-button:hover {
+  color: #f59e0b;
+  transform: scale(1.04);
+}
+
+.pipeline-hall-favorite-button--active {
+  color: #fbbf24;
+}
+
+.pipeline-hall-header-switch {
+  height: 38px;
+}
+
+.pipeline-hall-header-switch .ant-segmented-group {
+  height: 100%;
+}
+
+.pipeline-hall-header-switch .ant-segmented-item {
+  height: 100%;
+}
+
+.pipeline-hall-header-switch .ant-segmented-item-label {
+  min-height: 30px;
+  line-height: 30px;
+}
+
+.pipeline-hall-header-switch .ant-segmented-thumb {
+  height: 30px;
+}
+
+.pipeline-hall-view-switch {
+  border-radius: 12px;
+  background: #e2e8f0 !important;
+  padding: 4px !important;
+}
+
+.pipeline-hall-view-switch .ant-segmented-item-label {
+  padding: 0 10px;
+  color: #334155;
+  font-weight: 400;
+}
+
+.pipeline-hall-view-switch .ant-segmented-item:not(.ant-segmented-item-selected) .ant-segmented-item-label {
+  color: #334155;
+}
+
+.pipeline-hall-view-switch .ant-segmented-item-selected .ant-segmented-item-label {
+  color: #475569;
+}
+
+.pipeline-hall-view-switch .ant-segmented-thumb {
+  background: #f8fafc !important;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+}
+
 .pipeline-card .ant-card-body {
   padding: 18px;
 }
@@ -451,6 +522,10 @@ body {
 }
 
 .pipeline-card-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
   flex-shrink: 0;
   white-space: nowrap;
 }

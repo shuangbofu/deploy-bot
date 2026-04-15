@@ -215,6 +215,7 @@ export interface PipelineHallSummary {
   latestFinishedAt?: string | null;
   latestProgressPercent?: number | null;
   latestProgressText?: string | null;
+  favorited?: boolean | null;
 }
 
 export interface NotificationBinding {

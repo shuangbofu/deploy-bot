@@ -8,6 +8,9 @@ export const pipelinesApi = {
   list: async () => (await client.get<PipelineSummary[]>('/pipelines')).data,
   listHall: async () => (await client.get<PipelineHallSummary[]>('/pipelines/hall')).data,
   listHallByIds: async (ids: number[]) => (await client.get<PipelineHallSummary[]>('/pipelines/hall/by-ids', { params: { ids } })).data,
+  listFavorites: async () => (await client.get<number[]>('/pipelines/favorites')).data,
+  favorite: async (id: number) => client.post(`/pipelines/${id}/favorite`),
+  unfavorite: async (id: number) => client.delete(`/pipelines/${id}/favorite`),
   listPage: async (params: { page: number; pageSize: number; keyword?: string; projectId?: number; templateId?: number; hostId?: number; tags?: string[] }) =>
     (await client.get<PageResult<PipelineSummary>>('/pipelines/page', { params })).data,
   listTags: async () => (await client.get<string[]>('/pipelines/tags')).data,

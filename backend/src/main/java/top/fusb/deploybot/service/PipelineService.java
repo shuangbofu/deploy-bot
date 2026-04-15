@@ -10,6 +10,7 @@ import top.fusb.deploybot.model.HostEntity;
 import top.fusb.deploybot.model.MavenSettingsEntity;
 import top.fusb.deploybot.model.RuntimeEnvironmentEntity;
 import top.fusb.deploybot.model.PipelineEntity;
+import top.fusb.deploybot.model.UserFavoritePipelineEntity;
 import top.fusb.deploybot.notification.repo.NotificationChannelRepository;
 import top.fusb.deploybot.repo.HostRepository;
 import top.fusb.deploybot.repo.MavenSettingsRepository;
@@ -20,15 +21,20 @@ import top.fusb.deploybot.repo.ProjectRepository;
 import top.fusb.deploybot.repo.ServiceRepository;
 import top.fusb.deploybot.repo.TemplateRepository;
 import top.fusb.deploybot.repo.UserRepository;
+import top.fusb.deploybot.repo.UserFavoritePipelineRepository;
+import top.fusb.deploybot.security.AuthContextHolder;
+import top.fusb.deploybot.security.AuthenticatedUser;
 import jakarta.transaction.Transactional;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.time.LocalDateTime;
 
 @Service
 public class PipelineService {
@@ -45,6 +51,7 @@ public class PipelineService {
     private final NotificationChannelRepository notificationChannelRepository;
     private final JsonMapper jsonMapper;
     private final UserRepository userRepository;
+    private final UserFavoritePipelineRepository userFavoritePipelineRepository;
 
     public PipelineService(
             PipelineRepository pipelineRepository,
@@ -58,7 +65,8 @@ public class PipelineService {
             HostService hostService,
             NotificationChannelRepository notificationChannelRepository,
             JsonMapper jsonMapper,
-            UserRepository userRepository
+            UserRepository userRepository,
+            UserFavoritePipelineRepository userFavoritePipelineRepository
     ) {
         this.pipelineRepository = pipelineRepository;
         this.projectRepository = projectRepository;
@@ -72,6 +80,7 @@ public class PipelineService {
         this.notificationChannelRepository = notificationChannelRepository;
         this.jsonMapper = jsonMapper;
         this.userRepository = userRepository;
+        this.userFavoritePipelineRepository = userFavoritePipelineRepository;
     }
 
     public List<PipelineEntity> findAll() {
@@ -100,6 +109,9 @@ public class PipelineService {
     }
 
     private List<PipelineHallSummary> buildHallSummaries(List<PipelineEntity> pipelines) {
+        Set<Long> favoritePipelineIds = findFavoritePipelineIdSet(
+                pipelines.stream().map(PipelineEntity::getId).toList()
+        );
         return pipelines.stream()
                 .map(pipeline -> {
                     var latestDeployment = deploymentRepository.findFirstByPipelineIdOrderByCreatedAtDesc(pipeline.getId())
@@ -124,10 +136,41 @@ public class PipelineService {
                             latestDeployment == null ? null : latestDeployment.getStartedAt(),
                             latestDeployment == null ? null : latestDeployment.getFinishedAt(),
                             latestDeployment == null ? null : latestDeployment.getProgressPercent(),
-                            latestDeployment == null ? null : latestDeployment.getProgressText()
+                            latestDeployment == null ? null : latestDeployment.getProgressText(),
+                            favoritePipelineIds.contains(pipeline.getId())
                     );
                 })
                 .toList();
+    }
+
+    public List<Long> findFavoritePipelineIds() {
+        AuthenticatedUser currentUser = requireCurrentUser();
+        return userFavoritePipelineRepository.findByUserId(currentUser.id()).stream()
+                .map(item -> item.getPipeline().getId())
+                .toList();
+    }
+
+    @Transactional
+    public void favorite(Long pipelineId) {
+        AuthenticatedUser currentUser = requireCurrentUser();
+        PipelineEntity pipeline = pipelineRepository.findById(pipelineId)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.PIPELINE_NOT_FOUND));
+        if (userFavoritePipelineRepository.findByUserIdAndPipelineId(currentUser.id(), pipelineId).isPresent()) {
+            return;
+        }
+        UserFavoritePipelineEntity entity = new UserFavoritePipelineEntity();
+        entity.setUser(userRepository.findById(currentUser.id())
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.USER_NOT_FOUND)));
+        entity.setPipeline(pipeline);
+        entity.setCreatedAt(LocalDateTime.now());
+        userFavoritePipelineRepository.save(entity);
+    }
+
+    @Transactional
+    public void unfavorite(Long pipelineId) {
+        AuthenticatedUser currentUser = requireCurrentUser();
+        userFavoritePipelineRepository.findByUserIdAndPipelineId(currentUser.id(), pipelineId)
+                .ifPresent(userFavoritePipelineRepository::delete);
     }
 
     private top.fusb.deploybot.model.DeploymentEntity enrichTriggeredByDisplayName(top.fusb.deploybot.model.DeploymentEntity entity) {
@@ -146,6 +189,16 @@ public class PipelineService {
         return userRepository.findByUsername(username)
                 .map(item -> item.getDisplayName() == null || item.getDisplayName().isBlank() ? item.getUsername() : item.getDisplayName())
                 .orElse(username);
+    }
+
+    private Set<Long> findFavoritePipelineIdSet(List<Long> pipelineIds) {
+        AuthenticatedUser currentUser = requireCurrentUser();
+        if (pipelineIds == null || pipelineIds.isEmpty()) {
+            return Set.of();
+        }
+        return new HashSet<>(userFavoritePipelineRepository.findByUserIdAndPipelineIdIn(currentUser.id(), pipelineIds).stream()
+                .map(item -> item.getPipeline().getId())
+                .toList());
     }
 
     public PageResult<PipelineEntity> findPage(
@@ -294,6 +347,14 @@ public class PipelineService {
         }
         String trimmed = content.trim();
         return trimmed.isBlank() ? null : trimmed;
+    }
+
+    private AuthenticatedUser requireCurrentUser() {
+        AuthenticatedUser currentUser = AuthContextHolder.get();
+        if (currentUser == null) {
+            throw new BusinessException(ErrorSubCode.AUTH_REQUIRED);
+        }
+        return currentUser;
     }
 
     private String normalizeMultilineText(String content) {

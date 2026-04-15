@@ -192,18 +192,18 @@ export default function UserPipelineHistoryPage() {
                     </Button>
                     {row.status === 'SUCCESS' && row.artifactPath ? (
                       <Popconfirm
-                        title="确认重新发布"
-                        description="会直接复用这次部署保留下来的构建产物重新发布，不会重新走构建流程。"
-                        okText="确认"
+                        title="确认回滚到此版本"
+                        description="会直接复用这次部署保留下来的构建产物回滚到这个版本，不会重新走构建流程。"
+                        okText="确认回滚"
                         cancelText="取消"
                         onConfirm={() => deploymentsApi.rollback(row.id).then((response) => {
-                          message.success('重新发布任务已创建');
+                          message.success('回滚任务已创建');
                           navigate(`/user/deployments/${response.id}`, {
                             state: { from: location.pathname, backLabel: '返回部署记录' },
                           });
                         }).catch(() => message.error('创建回滚任务失败'))}
                       >
-                        <Button size="small">回滚</Button>
+                        <Button size="small">回滚到此版本</Button>
                       </Popconfirm>
                     ) : null}
                     {row.status && ACTIVE_DEPLOYMENT_STATUSES.includes(row.status) ? (

@@ -163,12 +163,12 @@ export default function UserDeploymentDetailPage() {
           rollbackable ? (
             <Popconfirm
               key="rollback"
-              title="确认重新发布"
-              description="会直接复用这次部署保留下来的构建产物重新发布，不会重新走构建流程。"
-              okText="确认重新发布"
+              title="确认回滚到此版本"
+              description="会直接复用这次部署保留下来的构建产物回滚到这个版本，不会重新走构建流程。"
+              okText="确认回滚"
               cancelText="取消"
               onConfirm={() => deploymentsApi.rollback(deploymentId || '').then((response) => {
-                message.success('重新发布任务已创建');
+                message.success('回滚任务已创建');
                 navigate(`/user/deployments/${response.id}`, {
                   state: {
                     from: backTarget,
@@ -177,7 +177,7 @@ export default function UserDeploymentDetailPage() {
                 });
               }).catch(() => message.error('创建回滚任务失败'))}
             >
-              <Button>重新发布此版本</Button>
+              <Button>回滚到此版本</Button>
             </Popconfirm>
           ) : null,
           stoppable ? (
