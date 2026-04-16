@@ -1,5 +1,7 @@
 package top.fusb.deploybot.dto;
 
+import top.fusb.deploybot.model.ServiceStatus;
+
 import java.time.LocalDateTime;
 
 public record PipelineHallRunningServiceSummary(
@@ -10,6 +12,7 @@ public record PipelineHallRunningServiceSummary(
         String templateType,
         String targetHostName,
         Long currentPid,
+        ServiceStatus status,
         LocalDateTime activeSince,
         LocalDateTime lastHeartbeatAt
 ) {

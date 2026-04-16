@@ -422,6 +422,10 @@ body {
   line-height: 1.1;
 }
 
+.pipeline-hall-running-item-duration--stopped {
+  color: #94a3b8;
+}
+
 .pipeline-hall-recent-card {
   flex: 1;
   min-height: 0;

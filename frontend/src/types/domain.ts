@@ -25,6 +25,7 @@ export type RuntimeEnvironmentType = 'JAVA' | 'NODE' | 'MAVEN';
 export type UserRole = 'ADMIN' | 'USER';
 export type NotificationChannelType = 'FEISHU';
 export type NotificationEventType = 'DEPLOYMENT_STARTED' | 'DEPLOYMENT_FINISHED';
+export type ServiceStatus = 'RUNNING' | 'STOPPED';
 
 export interface MavenSettingsSummary {
   id: number;
@@ -226,6 +227,7 @@ export interface PipelineHallRunningServiceSummary {
   templateType?: string | null;
   targetHostName?: string | null;
   currentPid?: number | null;
+  status?: ServiceStatus | null;
   activeSince?: string | null;
   lastHeartbeatAt?: string | null;
 }

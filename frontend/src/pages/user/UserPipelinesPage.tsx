@@ -28,6 +28,8 @@ export default function UserPipelinesPage() {
   const AUTO_OPEN_DEPLOYMENT_DETAIL_STORAGE_KEY = 'deploy-bot:user-pipelines-auto-open-detail';
   const PIN_ACTIVE_PIPELINES_STORAGE_KEY = 'deploy-bot:user-pipelines-pin-active';
   const STOP_CONFIRMATION_STORAGE_KEY = 'deploy-bot:user-pipelines-stop-confirmation';
+  const SHOW_RUNNING_SERVICES_STORAGE_KEY = 'deploy-bot:user-pipelines-show-running-services';
+  const HIDE_STOPPED_SERVICES_STORAGE_KEY = 'deploy-bot:user-pipelines-hide-stopped-services';
   const [hallItems, setHallItems] = useState<PipelineHallSummary[]>([]);
   const [recentPipelines, setRecentPipelines] = useState<UserRecentPipelineSummary[]>([]);
   const [runningServices, setRunningServices] = useState<PipelineHallRunningServiceSummary[]>([]);
@@ -77,6 +79,20 @@ export default function UserPipelinesPage() {
     const stored = window.localStorage.getItem(STOP_CONFIRMATION_STORAGE_KEY);
     return stored === null ? true : stored === 'true';
   });
+  const [showRunningServices, setShowRunningServices] = useState<boolean>(() => {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+    const stored = window.localStorage.getItem(SHOW_RUNNING_SERVICES_STORAGE_KEY);
+    return stored === null ? false : stored === 'true';
+  });
+  const [hideStoppedServices, setHideStoppedServices] = useState<boolean>(() => {
+    if (typeof window === 'undefined') {
+      return true;
+    }
+    const stored = window.localStorage.getItem(HIDE_STOPPED_SERVICES_STORAGE_KEY);
+    return stored === null ? true : stored === 'true';
+  });
   const navigate = useNavigate();
 
   const parseTagsJson = (content: unknown): string[] => {
@@ -99,9 +115,11 @@ export default function UserPipelinesPage() {
     if (!silent) {
       setHallLoading(true);
       setRecentLoading(true);
-      setRunningLoading(true);
+      if (showRunningServices) {
+        setRunningLoading(true);
+      }
     }
-    await Promise.allSettled([
+    const tasks: Promise<unknown>[] = [
       pipelinesApi.listHall()
         .then(setHallItems)
         .finally(() => {
@@ -116,14 +134,21 @@ export default function UserPipelinesPage() {
             setRecentLoading(false);
           }
         }),
-      pipelinesApi.listRunningServices()
-        .then(setRunningServices)
-        .finally(() => {
-          if (!silent) {
-            setRunningLoading(false);
-          }
-        }),
-    ]);
+    ];
+    if (showRunningServices) {
+      tasks.push(
+        pipelinesApi.listRunningServices()
+          .then(setRunningServices)
+          .finally(() => {
+            if (!silent) {
+              setRunningLoading(false);
+            }
+          }),
+      );
+    } else if (!silent) {
+      setRunningLoading(false);
+    }
+    await Promise.allSettled(tasks);
   };
 
   const refreshActiveHallItems = async () => {
@@ -145,16 +170,18 @@ export default function UserPipelinesPage() {
     setRunningServices(await pipelinesApi.listRunningServices());
   };
 
+  const hasLiveRunningServices = runningServices.some((item) => item.status === 'RUNNING');
+
   useEffect(() => {
     loadData().catch(() => message.error('加载流水线失败'));
-  }, []);
+  }, [showRunningServices]);
 
   useEffect(() => {
     if (hallLoading && hallItems.length === 0 && recentLoading && runningLoading) {
       return undefined;
     }
     const hasActiveDeployment = hallItems.some((item) => item.latestStatus && ACTIVE_DEPLOYMENT_STATUSES.includes(item.latestStatus));
-    const hasRunningServices = runningServices.length > 0;
+    const hasRunningServices = showRunningServices && hasLiveRunningServices;
     const interval = window.setInterval(() => {
       if (hasActiveDeployment) {
         refreshActiveHallItems().catch(() => {});
@@ -170,7 +197,7 @@ export default function UserPipelinesPage() {
       loadData(true).catch(() => {});
     }, hasActiveDeployment || hasRunningServices ? ACTIVE_POLL_INTERVAL : IDLE_POLL_INTERVAL);
     return () => window.clearInterval(interval);
-  }, [hallItems, hallLoading, recentLoading, runningLoading, runningServices.length]);
+  }, [hallItems, hallLoading, recentLoading, runningLoading, hasLiveRunningServices, showRunningServices]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setTick(Date.now()), 1000);
@@ -206,6 +233,18 @@ export default function UserPipelinesPage() {
       window.localStorage.setItem(STOP_CONFIRMATION_STORAGE_KEY, String(stopConfirmationEnabled));
     }
   }, [stopConfirmationEnabled]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(SHOW_RUNNING_SERVICES_STORAGE_KEY, String(showRunningServices));
+    }
+  }, [showRunningServices]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(HIDE_STOPPED_SERVICES_STORAGE_KEY, String(hideStoppedServices));
+    }
+  }, [hideStoppedServices]);
 
   const frequentPipelines = useMemo(() => recentPipelines.slice(0, 8), [recentPipelines]);
 
@@ -267,6 +306,12 @@ export default function UserPipelinesPage() {
 
   const visibleRunningServices = useMemo(
     () => runningServices.filter((item) => {
+      if (!showRunningServices) {
+        return false;
+      }
+      if (hideStoppedServices && item.status === 'STOPPED') {
+        return false;
+      }
       if (filterMode === 'favorites') {
         if (!item.pipelineId) {
           return false;
@@ -275,7 +320,7 @@ export default function UserPipelinesPage() {
       }
       return true;
     }),
-    [filterMode, hallItems, runningServices],
+    [filterMode, hallItems, hideStoppedServices, runningServices, showRunningServices],
   );
 
   const disabledTagSet = useMemo(() => {
@@ -527,7 +572,7 @@ export default function UserPipelinesPage() {
               ) : null}
             </div>
             <div className="pipeline-hall-content">
-              {initialRunningLoading ? (
+              {showRunningServices && initialRunningLoading ? (
                 <div className="pipeline-hall-running-strip mb-4">
                   {Array.from({ length: 4 }).map((_, index) => (
                     <div key={index} className="pipeline-hall-running-item">
@@ -544,7 +589,7 @@ export default function UserPipelinesPage() {
                     </div>
                   ))}
                 </div>
-              ) : visibleRunningServices.length > 0 ? (
+              ) : showRunningServices && visibleRunningServices.length > 0 ? (
                 <div className="pipeline-hall-running-strip mb-4">
                   {visibleRunningServices.map((item) => (
                     <button
@@ -558,7 +603,9 @@ export default function UserPipelinesPage() {
                         <div className="pipeline-hall-running-item-content">
                           <div className="pipeline-hall-running-item-name">{item.serviceName || item.pipelineName || `服务 #${item.serviceId}`}</div>
                           <div className="pipeline-hall-running-item-meta">{item.targetHostName || '本机'}{item.currentPid ? ` [${item.currentPid}]` : ''}</div>
-                          <div className="pipeline-hall-running-item-duration">{formatDurationSince(item.activeSince)}</div>
+                          <div className={`pipeline-hall-running-item-duration${item.status === 'STOPPED' ? ' pipeline-hall-running-item-duration--stopped' : ''}`}>
+                            {item.status === 'STOPPED' ? '已停止' : `运行中(${formatDurationSince(item.activeSince)})`}
+                          </div>
                         </div>
                       </div>
                     </button>
@@ -1042,6 +1089,51 @@ export default function UserPipelinesPage() {
               onClick={(_, event) => event?.stopPropagation()}
             />
           </button>
+          <button
+            type="button"
+            className="flex w-full items-center justify-between gap-4 rounded-2xl border border-slate-200 px-4 py-3 text-left transition-colors hover:border-slate-300 hover:bg-slate-50"
+            onClick={() => {
+              setShowRunningServices((previous) => {
+                const next = !previous;
+                if (!next) {
+                  setHideStoppedServices(true);
+                }
+                return next;
+              });
+            }}
+          >
+            <div>
+              <div className="text-sm font-medium text-slate-900">显示运行中的服务</div>
+              <div className="mt-1 text-sm text-slate-500">关闭后，大厅顶部不再显示服务状态条带。</div>
+            </div>
+            <Switch
+              checked={showRunningServices}
+              onChange={(checked) => {
+                setShowRunningServices(checked);
+                if (!checked) {
+                  setHideStoppedServices(true);
+                }
+              }}
+              onClick={(_, event) => event?.stopPropagation()}
+            />
+          </button>
+          {showRunningServices ? (
+            <button
+              type="button"
+              className="flex w-full items-center justify-between gap-4 rounded-2xl border border-slate-200 px-4 py-3 text-left transition-colors hover:border-slate-300 hover:bg-slate-50"
+              onClick={() => setHideStoppedServices((previous) => !previous)}
+            >
+              <div>
+                <div className="text-sm font-medium text-slate-900">隐藏已停止服务</div>
+                <div className="mt-1 text-sm text-slate-500">关闭后，顶部条带会同时显示运行中和已停止的服务。</div>
+              </div>
+              <Switch
+                checked={hideStoppedServices}
+                onChange={setHideStoppedServices}
+                onClick={(_, event) => event?.stopPropagation()}
+              />
+            </button>
+          ) : null}
           <button
             type="button"
             className="flex w-full items-center justify-between gap-4 rounded-2xl border border-slate-200 px-4 py-3 text-left transition-colors hover:border-slate-300 hover:bg-slate-50"

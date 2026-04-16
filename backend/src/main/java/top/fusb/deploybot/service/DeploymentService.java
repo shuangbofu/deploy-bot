@@ -15,6 +15,8 @@ import top.fusb.deploybot.model.PipelineEntity;
 import top.fusb.deploybot.model.RuntimeEnvironmentEntity;
 import top.fusb.deploybot.model.ServiceEntity;
 import top.fusb.deploybot.runner.DeploymentRunner;
+import top.fusb.deploybot.notification.model.NotificationEventType;
+import top.fusb.deploybot.notification.service.DeploymentNotificationAsyncService;
 import top.fusb.deploybot.repo.DeploymentRepository;
 import top.fusb.deploybot.repo.PipelineRepository;
 import top.fusb.deploybot.repo.ServiceRepository;
@@ -36,6 +38,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -67,6 +70,8 @@ public class DeploymentService {
     private final ServiceManager serviceManager;
     private final HostService hostService;
     private final UserRepository userRepository;
+    private final DeploymentNotificationAsyncService deploymentNotificationAsyncService;
+    private final DeploymentCleanupService deploymentCleanupService;
     private final Path defaultWorkspaceRoot;
 
     public DeploymentService(
@@ -81,6 +86,8 @@ public class DeploymentService {
             ServiceManager serviceManager,
             HostService hostService,
             UserRepository userRepository,
+            DeploymentNotificationAsyncService deploymentNotificationAsyncService,
+            DeploymentCleanupService deploymentCleanupService,
             @Value("${deploybot.workspace-root:./runtime}") String workspaceRoot
     ) {
         this.deploymentRepository = deploymentRepository;
@@ -94,12 +101,39 @@ public class DeploymentService {
         this.serviceManager = serviceManager;
         this.hostService = hostService;
         this.userRepository = userRepository;
+        this.deploymentNotificationAsyncService = deploymentNotificationAsyncService;
+        this.deploymentCleanupService = deploymentCleanupService;
         this.defaultWorkspaceRoot = Path.of(workspaceRoot);
     }
 
     public List<DeploymentEntity> findAll() {
         requireCurrentUser();
         return enrichTriggeredByDisplayNames(deploymentRepository.findAllByOrderByCreatedAtDesc());
+    }
+
+    @Transactional
+    public void failInterruptedDeploymentsOnStartup() {
+        List<DeploymentEntity> interruptedDeployments = deploymentRepository.findByStatusInOrderByCreatedAtDesc(
+                List.of(DeploymentStatus.PENDING, DeploymentStatus.RUNNING)
+        );
+        if (interruptedDeployments.isEmpty()) {
+            return;
+        }
+        log.warn("检测到 {} 条部署在系统重启前未正常结束，开始补偿为失败状态。", interruptedDeployments.size());
+        Path buildWorkspaceRoot = resolveBuildWorkspaceRoot();
+        interruptedDeployments.forEach(deployment -> {
+            try {
+                appendSystemLog(resolveOrCreateLogFile(deployment, buildWorkspaceRoot), "系统重启，当前部署任务已中断并自动标记为失败。");
+            } catch (Exception ex) {
+                log.warn("为部署 {} 追加系统重启日志失败：{}", deployment.getId(), ex.getMessage());
+            }
+            deployment.setStatus(DeploymentStatus.FAILED);
+            deployment.setFinishedAt(LocalDateTime.now());
+            deployment.setErrorMessage("部署平台重启，任务已中断。");
+            deploymentRepository.save(deployment);
+            deploymentCleanupService.cleanupAfterDeployment(deployment, buildWorkspaceRoot);
+            deploymentNotificationAsyncService.notifyAsync(deployment.getId(), NotificationEventType.DEPLOYMENT_FINISHED);
+        });
     }
 
     public List<DeploymentEntity> findMine() {
@@ -376,6 +410,32 @@ public class DeploymentService {
             return Path.of(targetHost.getWorkspaceRoot().trim());
         }
         return buildWorkspaceRoot;
+    }
+
+    private Path resolveOrCreateLogFile(DeploymentEntity deployment, Path buildWorkspaceRoot) throws IOException {
+        if (deployment.getLogPath() != null && !deployment.getLogPath().isBlank()) {
+            Path existingPath = Path.of(deployment.getLogPath());
+            if (existingPath.getParent() != null) {
+                Files.createDirectories(existingPath.getParent());
+            }
+            deployment.setLogPath(existingPath.toAbsolutePath().normalize().toString());
+            return existingPath;
+        }
+        Path fallbackLogsDir = buildWorkspaceRoot.resolve("logs");
+        Files.createDirectories(fallbackLogsDir);
+        Path fallbackLogFile = fallbackLogsDir.resolve("deploy-" + deployment.getId() + ".log");
+        deployment.setLogPath(fallbackLogFile.toAbsolutePath().normalize().toString());
+        return fallbackLogFile;
+    }
+
+    private void appendSystemLog(Path logFile, String message) throws IOException {
+        Files.writeString(
+                logFile,
+                "[系统] " + message + System.lineSeparator(),
+                StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.APPEND
+        );
     }
 
     /**

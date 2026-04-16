@@ -38,7 +38,9 @@ public class ServiceManager {
                     .thenComparing(ServiceEntity::getUpdatedAt, Comparator.nullsLast(Comparator.reverseOrder()))
                     .thenComparing(ServiceEntity::getId, Comparator.nullsLast(Comparator.reverseOrder()));
     private static final Comparator<ServiceEntity> RUNNING_HALL_COMPARATOR =
-            Comparator.comparing(ServiceEntity::getActiveSince, Comparator.nullsLast(Comparator.reverseOrder()))
+            Comparator.comparing((ServiceEntity service) -> service.getStatus() == ServiceStatus.RUNNING ? 0 : 1)
+                    .thenComparing(ServiceEntity::getActiveSince, Comparator.nullsLast(Comparator.reverseOrder()))
+                    .thenComparing(ServiceEntity::getLastHeartbeatAt, Comparator.nullsLast(Comparator.reverseOrder()))
                     .thenComparing(service -> service.getPipeline() == null ? null : service.getPipeline().getId(), Comparator.nullsLast(Comparator.naturalOrder()))
                     .thenComparing(ServiceEntity::getId, Comparator.nullsLast(Comparator.naturalOrder()));
 
@@ -59,7 +61,8 @@ public class ServiceManager {
     }
 
     public List<PipelineHallRunningServiceSummary> findRunningHallSummaries() {
-        return serviceRepository.findAllByStatusOrderByLastHeartbeatAtDescUpdatedAtDescIdDesc(ServiceStatus.RUNNING).stream()
+        return serviceRepository.findAllByOrderByUpdatedAtDesc().stream()
+                .filter(service -> service.getStatus() == ServiceStatus.RUNNING || service.getStatus() == ServiceStatus.STOPPED)
                 .sorted(RUNNING_HALL_COMPARATOR)
                 .limit(12)
                 .map(service -> new PipelineHallRunningServiceSummary(
@@ -70,6 +73,7 @@ public class ServiceManager {
                         service.getPipeline() != null && service.getPipeline().getTemplate() != null ? service.getPipeline().getTemplate().getTemplateType() : null,
                         service.getPipeline() != null && service.getPipeline().getTargetHost() != null ? service.getPipeline().getTargetHost().getName() : "本机",
                         service.getCurrentPid(),
+                        service.getStatus(),
                         service.getActiveSince(),
                         service.getLastHeartbeatAt()
                 ))
