@@ -202,7 +202,7 @@ export default function DashboardConsole({
         <Row gutter={[16, 16]}>
           <Col xs={24} xl={6}>
             <div className="flex flex-col gap-4">
-              <Card className="app-card" title="状态分布" loading={loading}>
+              <Card className="app-card dashboard-soft-card" title="状态分布" loading={loading}>
                 <div className="dashboard-circle-wrap">
                   <Progress
                     type="circle"
@@ -228,7 +228,7 @@ export default function DashboardConsole({
                 </div>
               </Card>
               <Card
-                className="app-card"
+                className="app-card dashboard-soft-card"
                 title="近 7 天部署趋势"
                 extra={(
                   <div className="dashboard-line-legend dashboard-line-legend--header">

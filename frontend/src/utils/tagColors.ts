@@ -1,5 +1,3 @@
-const TAG_PALETTE = ['#0f766e', '#1d4ed8', '#b45309', '#be123c', '#6d28d9', '#0f172a', '#0369a1', '#166534', '#9a3412', '#4338ca'];
-
 export const PHASE_LABEL_MAP = {
   build: '构建',
   deploy: '发布',
@@ -18,12 +16,69 @@ export const PHASE_SORT_ORDER = {
   shared: 2,
 } as const;
 
-export function getStableTagColor(tag: string) {
-  let hash = 0;
+const TAG_COLOR_STOPS: Array<[number, number, number]> = [
+  [239, 68, 68],
+  [249, 115, 22],
+  [250, 204, 21],
+  [132, 204, 22],
+  [45, 212, 191],
+  [56, 189, 248],
+  [96, 165, 250],
+  [129, 140, 248],
+  [168, 85, 247],
+  [244, 114, 182],
+  [239, 68, 68],
+];
+
+function interpolate(start: number, end: number, ratio: number) {
+  return Math.round(start + (end - start) * ratio);
+}
+
+function rgb([red, green, blue]: [number, number, number]) {
+  return `rgb(${red}, ${green}, ${blue})`;
+}
+
+function colorAtRatio(ratio: number) {
+  const scaled = ratio * (TAG_COLOR_STOPS.length - 1);
+  const leftIndex = Math.floor(scaled);
+  const rightIndex = Math.min(leftIndex + 1, TAG_COLOR_STOPS.length - 1);
+  const localRatio = scaled - leftIndex;
+  const start = TAG_COLOR_STOPS[leftIndex];
+  const end = TAG_COLOR_STOPS[rightIndex];
+  return rgb([
+    interpolate(start[0], end[0], localRatio),
+    interpolate(start[1], end[1], localRatio),
+    interpolate(start[2], end[2], localRatio),
+  ]);
+}
+
+function hashTag(tag: string) {
+  let hash = 2166136261;
   for (let index = 0; index < tag.length; index += 1) {
-    hash = (hash * 31 + tag.charCodeAt(index)) >>> 0;
+    hash ^= tag.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
   }
-  return TAG_PALETTE[hash % TAG_PALETTE.length];
+  return hash >>> 0;
+}
+
+function mixHash(hash: number) {
+  let mixed = hash >>> 0;
+  mixed ^= mixed >>> 16;
+  mixed = Math.imul(mixed, 0x7feb352d);
+  mixed ^= mixed >>> 15;
+  mixed = Math.imul(mixed, 0x846ca68b);
+  mixed ^= mixed >>> 16;
+  return mixed >>> 0;
+}
+
+export function getStableTagColor(tag: string) {
+  const mixed = mixHash(hashTag(tag));
+  const ratio = mixed / 0xffffffff;
+  return colorAtRatio(ratio);
+}
+
+export function sortTagNames(tags: string[]) {
+  return tags.slice().sort((left, right) => left.localeCompare(right, 'zh-CN'));
 }
 
 export function sortByPhase<T extends { phase?: 'build' | 'deploy' | 'shared' }>(items: T[]) {

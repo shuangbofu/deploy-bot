@@ -13,7 +13,7 @@ import PageHeaderBar from '../../components/PageHeaderBar';
 import PipelineVariablesEditor from '../../components/PipelineVariablesEditor';
 import PipelineIcon, { getRequiredEnvironmentTypes, getRequiredRuntimeEnvironmentTypes } from '../../components/PipelineIcon';
 import { copyText } from '../../utils/clipboard';
-import { getStableTagColor, PHASE_LABEL_MAP, PHASE_TAG_COLOR_MAP, sortByPhase } from '../../utils/tagColors';
+import { getStableTagColor, PHASE_LABEL_MAP, PHASE_TAG_COLOR_MAP, sortByPhase, sortTagNames } from '../../utils/tagColors';
 import type {
   HostSummary,
   NotificationBinding,
@@ -229,7 +229,7 @@ export default function PipelineAdminPage() {
     setTemplates(templateResponse);
     setRuntimeEnvironments(runtimeEnvironmentsResponse);
     setNotifications(notificationResponse);
-    setAvailableTags(tagResponse);
+    setAvailableTags(sortTagNames(tagResponse));
   };
 
   const loadPipelines = async () => {
@@ -559,10 +559,9 @@ export default function PipelineAdminPage() {
                 <Tag
                   key={tag}
                   style={{
-                    backgroundColor: getStableTagColor(tag),
-                    color: '#fff',
+                    backgroundColor: active ? getStableTagColor(tag) : '#e2e8f0',
+                    color: active ? '#fff' : '#475569',
                     borderColor: 'transparent',
-                    opacity: active ? 1 : 0.55,
                   }}
                   className="cursor-pointer select-none !border-0 !px-3 !py-1"
                   onClick={() => {
@@ -644,7 +643,7 @@ export default function PipelineAdminPage() {
                 render: (_, row) => row.parsedTags.length > 0
                   ? (
                     <Space wrap>
-                      {row.parsedTags.map((tag: string) => (
+                      {sortTagNames(row.parsedTags).map((tag: string) => (
                         <Tag
                           key={tag}
                           style={{
