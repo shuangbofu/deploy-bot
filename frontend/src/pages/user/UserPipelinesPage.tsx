@@ -9,10 +9,11 @@ import PageHeaderBar from '../../components/PageHeaderBar';
 import PipelineIcon, { templateTypeOptions } from '../../components/PipelineIcon';
 import StatusTag from '../../components/StatusTag';
 import { ACTIVE_DEPLOYMENT_STATUSES } from '../../constants/deployment';
-import type { PipelineHallSummary, PipelineSummary, UserRecentPipelineSummary } from '../../types/domain';
+import type { PipelineHallRunningServiceSummary, PipelineHallSummary, PipelineSummary, UserRecentPipelineSummary } from '../../types/domain';
 import { formatDateTime } from '../../utils/datetime';
 import { formatDeploymentElapsed } from '../../utils/deploymentDuration';
 import { getDeploymentProgress, getDeploymentProgressColor } from '../../utils/deploymentProgress';
+import { formatDurationSince } from '../../utils/duration';
 import { getStableTagColor, sortTagNames } from '../../utils/tagColors';
 
 /**
@@ -29,7 +30,10 @@ export default function UserPipelinesPage() {
   const STOP_CONFIRMATION_STORAGE_KEY = 'deploy-bot:user-pipelines-stop-confirmation';
   const [hallItems, setHallItems] = useState<PipelineHallSummary[]>([]);
   const [recentPipelines, setRecentPipelines] = useState<UserRecentPipelineSummary[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [runningServices, setRunningServices] = useState<PipelineHallRunningServiceSummary[]>([]);
+  const [hallLoading, setHallLoading] = useState(false);
+  const [recentLoading, setRecentLoading] = useState(false);
+  const [runningLoading, setRunningLoading] = useState(false);
   const [submittingId, setSubmittingId] = useState<number>();
   const [deployModalOpen, setDeployModalOpen] = useState(false);
   const [deployingPipeline, setDeployingPipeline] = useState<PipelineSummary>();
@@ -93,20 +97,33 @@ export default function UserPipelinesPage() {
   /** 首次加载或慢轮询时同步刷新大厅卡片和左侧最近部署。 */
   const loadData = async (silent = false) => {
     if (!silent) {
-      setLoading(true);
+      setHallLoading(true);
+      setRecentLoading(true);
+      setRunningLoading(true);
     }
-    try {
-      const [nextHallItems, nextRecentPipelines] = await Promise.all([
-        pipelinesApi.listHall(),
-        deploymentsApi.listMineRecentPipelines(),
-      ]);
-      setHallItems(nextHallItems);
-      setRecentPipelines(nextRecentPipelines);
-    } finally {
-      if (!silent) {
-        setLoading(false);
-      }
-    }
+    await Promise.allSettled([
+      pipelinesApi.listHall()
+        .then(setHallItems)
+        .finally(() => {
+          if (!silent) {
+            setHallLoading(false);
+          }
+        }),
+      deploymentsApi.listMineRecentPipelines()
+        .then(setRecentPipelines)
+        .finally(() => {
+          if (!silent) {
+            setRecentLoading(false);
+          }
+        }),
+      pipelinesApi.listRunningServices()
+        .then(setRunningServices)
+        .finally(() => {
+          if (!silent) {
+            setRunningLoading(false);
+          }
+        }),
+    ]);
   };
 
   const refreshActiveHallItems = async () => {
@@ -124,24 +141,36 @@ export default function UserPipelinesPage() {
     setHallItems((current) => current.map((item) => nextActiveMap.get(item.pipelineId) ?? item));
   };
 
+  const refreshRunningServices = async () => {
+    setRunningServices(await pipelinesApi.listRunningServices());
+  };
+
   useEffect(() => {
     loadData().catch(() => message.error('加载流水线失败'));
   }, []);
 
   useEffect(() => {
-    if (loading && hallItems.length === 0) {
+    if (hallLoading && hallItems.length === 0 && recentLoading && runningLoading) {
       return undefined;
     }
     const hasActiveDeployment = hallItems.some((item) => item.latestStatus && ACTIVE_DEPLOYMENT_STATUSES.includes(item.latestStatus));
+    const hasRunningServices = runningServices.length > 0;
     const interval = window.setInterval(() => {
       if (hasActiveDeployment) {
         refreshActiveHallItems().catch(() => {});
+        if (hasRunningServices) {
+          refreshRunningServices().catch(() => {});
+        }
+        return;
+      }
+      if (hasRunningServices) {
+        refreshRunningServices().catch(() => {});
         return;
       }
       loadData(true).catch(() => {});
-    }, hasActiveDeployment ? ACTIVE_POLL_INTERVAL : IDLE_POLL_INTERVAL);
+    }, hasActiveDeployment || hasRunningServices ? ACTIVE_POLL_INTERVAL : IDLE_POLL_INTERVAL);
     return () => window.clearInterval(interval);
-  }, [hallItems, loading]);
+  }, [hallItems, hallLoading, recentLoading, runningLoading, runningServices.length]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setTick(Date.now()), 1000);
@@ -236,6 +265,19 @@ export default function UserPipelinesPage() {
     [baseFilteredPipelineCards],
   );
 
+  const visibleRunningServices = useMemo(
+    () => runningServices.filter((item) => {
+      if (filterMode === 'favorites') {
+        if (!item.pipelineId) {
+          return false;
+        }
+        return hallItems.some((pipeline) => pipeline.pipelineId === item.pipelineId && pipeline.favorited);
+      }
+      return true;
+    }),
+    [filterMode, hallItems, runningServices],
+  );
+
   const disabledTagSet = useMemo(() => {
     const next = new Set<string>();
     availableTags.forEach((tag) => {
@@ -252,6 +294,12 @@ export default function UserPipelinesPage() {
     });
     return next;
   }, [availableTags, baseFilteredPipelineCards, tagFilter]);
+
+  const initialHallLoading = hallLoading && hallItems.length === 0;
+  const initialRecentLoading = recentLoading && recentPipelines.length === 0;
+  const initialRunningLoading = runningLoading && runningServices.length === 0;
+  const showHallEmpty = !initialHallLoading && hallItems.length === 0;
+  const loading = initialHallLoading || initialRecentLoading || initialRunningLoading;
 
   const toggleFavorite = async (pipelineId: number, favorited?: boolean | null) => {
     if (favorited) {
@@ -384,151 +432,74 @@ export default function UserPipelinesPage() {
           </Space>
         )}
       />
-      {loading ? (
-        <div className="pipeline-hall-layout">
-          <div className="pipeline-hall-sidebar">
-            <Card className="app-card h-fit">
-              <div className="space-y-3">
-                <Skeleton.Input active block style={{ height: 40 }} />
-                <Skeleton.Button active block style={{ height: 32 }} />
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {Array.from({ length: 8 }).map((_, index) => (
-                  <Skeleton.Button key={index} active size="small" style={{ width: 64, height: 28 }} />
-                ))}
-              </div>
-            </Card>
-            <Card className="app-card pipeline-hall-recent-card mt-4" title="最近部署">
-              <div className="space-y-2">
-                {Array.from({ length: 6 }).map((_, index) => (
-                  <Skeleton.Button key={index} active block style={{ height: 34 }} />
-                ))}
-              </div>
-            </Card>
-          </div>
-          <div className="pipeline-hall-content">
-            {viewMode === 'card' ? (
-              <Row gutter={[16, 16]}>
-                {Array.from({ length: 8 }).map((_, index) => (
-                  <Col xs={24} md={12} xl={8} xxl={6} key={index}>
-                    <Card className="pipeline-card" bordered={false}>
-                      <div className="pipeline-card-header">
-                        <div className="pipeline-card-content">
-                          <Skeleton.Avatar active shape="square" size={44} />
-                          <div className="min-w-0 flex-1">
-                            <Skeleton.Input active style={{ width: 88, height: 14 }} />
-                            <div className="mt-2">
-                              <Skeleton.Input active style={{ width: '70%', height: 24 }} />
-                            </div>
-                            <div className="mt-3 space-y-2">
-                              <Skeleton.Input active block style={{ height: 14 }} />
-                              <Skeleton.Input active style={{ width: '82%', height: 14 }} />
-                            </div>
-                          </div>
-                        </div>
-                        <Skeleton.Button active size="small" style={{ width: 70, height: 24 }} />
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {Array.from({ length: 3 }).map((__, tagIndex) => (
-                          <Skeleton.Button key={tagIndex} active size="small" style={{ width: 56, height: 24 }} />
-                        ))}
-                      </div>
-                      <div className="pipeline-meta-panel mt-4">
-                        {Array.from({ length: 6 }).map((__, rowIndex) => (
-                          <div className="pipeline-meta-row" key={rowIndex}>
-                            <Skeleton.Input active style={{ width: 64, height: 14 }} />
-                            <Skeleton.Input active style={{ width: 96, height: 14 }} />
-                          </div>
-                        ))}
-                        <div className="pt-2">
-                          <Skeleton.Input active block style={{ height: 16 }} />
-                        </div>
-                      </div>
-                      <Space>
-                        <Skeleton.Button active style={{ width: 72, height: 32 }} />
-                        <Skeleton.Button active style={{ width: 88, height: 32 }} />
-                        <Skeleton.Button active style={{ width: 88, height: 32 }} />
-                      </Space>
-                    </Card>
-                  </Col>
-                ))}
-              </Row>
-            ) : (
-              <Card className="app-card">
-                <div className="space-y-3">
-                  {Array.from({ length: 8 }).map((_, index) => (
-                    <div key={index} className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 px-4 py-3">
-                      <div className="flex min-w-0 flex-1 items-center gap-3">
-                        <Skeleton.Avatar active shape="square" size={40} />
-                        <div className="min-w-0 flex-1">
-                          <Skeleton.Input active style={{ width: 180, height: 16 }} />
-                          <div className="mt-2">
-                            <Skeleton.Input active style={{ width: 280, height: 14 }} />
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <Skeleton.Button active size="small" style={{ width: 72, height: 28 }} />
-                        <Skeleton.Button active size="small" style={{ width: 72, height: 28 }} />
-                        <Skeleton.Button active size="small" style={{ width: 72, height: 28 }} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            )}
-          </div>
-        </div>
-      ) : hallItems.length === 0 ? (
-        <Card className="app-card">
-          <EmptyPane description="当前没有可部署流水线，请先到管理端创建。" />
-        </Card>
-      ) : (
-        <>
-          <div className="pipeline-hall-layout">
+      <div className="pipeline-hall-layout">
             <div className="pipeline-hall-sidebar">
               <Card className="app-card h-fit">
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <Input
-                      value={keyword}
-                      placeholder="搜索名称 / 项目 / 分支"
-                      onChange={(event) => setKeyword(event.target.value)}
-                    />
-                    <Button
-                      onClick={() => {
-                        setKeyword('');
-                        setTypeFilter(undefined);
-                        setTagFilter(undefined);
-                        setSelectedPipelineId(undefined);
-                      }}
-                    >
-                      重置条件
-                    </Button>
-                  </div>
-                  {availableTypeOptions.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {availableTypeOptions.map((option) => {
-                        const active = typeFilter === option.value;
-                        return (
-                          <button
-                            key={option.value}
-                            type="button"
-                            className={`pipeline-hall-shortcut pipeline-hall-type-shortcut${active ? ' pipeline-hall-shortcut--active' : ''}`}
-                            onClick={() => setTypeFilter((previous) => (previous === option.value ? undefined : option.value))}
-                          >
-                            <div className="pipeline-hall-type-shortcut-content">
-                              <PipelineIcon type={option.value} />
-                              <span>{option.value}</span>
-                            </div>
-                          </button>
-                        );
-                      })}
+                {initialHallLoading ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <div className="min-w-0 flex-1">
+                        <Skeleton.Input active block style={{ height: 40 }} />
+                      </div>
+                      <Skeleton.Button active style={{ width: 76, height: 32, flexShrink: 0 }} />
                     </div>
-                  ) : null}
-                </div>
+                    <div className="flex flex-wrap gap-2">
+                      {Array.from({ length: 4 }).map((_, index) => (
+                        <Skeleton.Button key={index} active size="small" style={{ width: 108, height: 56 }} />
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={keyword}
+                        placeholder="搜索名称 / 项目 / 分支"
+                        onChange={(event) => setKeyword(event.target.value)}
+                      />
+                      <Button
+                        onClick={() => {
+                          setKeyword('');
+                          setTypeFilter(undefined);
+                          setTagFilter(undefined);
+                          setSelectedPipelineId(undefined);
+                        }}
+                      >
+                        重置条件
+                      </Button>
+                    </div>
+                    {availableTypeOptions.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {availableTypeOptions.map((option) => {
+                          const active = typeFilter === option.value;
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              className={`pipeline-hall-shortcut pipeline-hall-type-shortcut${active ? ' pipeline-hall-shortcut--active' : ''}`}
+                              onClick={() => setTypeFilter((previous) => (previous === option.value ? undefined : option.value))}
+                            >
+                              <div className="pipeline-hall-type-shortcut-content">
+                                <PipelineIcon type={option.value} />
+                                <span>{option.value}</span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                )}
               </Card>
-              {frequentPipelines.length > 0 ? (
+              {initialRecentLoading ? (
+                <Card className="app-card pipeline-hall-recent-card mt-4" title="最近部署">
+                  <div className="space-y-3">
+                    {Array.from({ length: 6 }).map((_, index) => (
+                      <Skeleton.Button key={index} active block style={{ height: 34 }} />
+                    ))}
+                  </div>
+                </Card>
+              ) : frequentPipelines.length > 0 ? (
                 <Card className="app-card pipeline-hall-recent-card mt-4" title="最近部署">
                   <div className="space-y-3">
                     {frequentPipelines.map((item) => (
@@ -556,179 +527,299 @@ export default function UserPipelinesPage() {
               ) : null}
             </div>
             <div className="pipeline-hall-content">
-            {availableTags.length > 0 ? (
-              <div className="mb-4 flex flex-wrap gap-2">
-                {availableTags.map((tag) => {
-                  const active = Boolean(tagFilter?.includes(tag));
-                  const disabled = !active && disabledTagSet.has(tag);
-                  return (
-                    <Tag
-                      key={tag}
-                      style={{
-                        backgroundColor: active ? getStableTagColor(tag) : '#e2e8f0',
-                        color: active ? '#fff' : '#475569',
-                        borderColor: 'transparent',
-                        opacity: disabled ? 0.36 : 1,
-                      }}
-                      className={`${disabled ? 'cursor-not-allowed' : 'cursor-pointer'} select-none !border-0 !px-3 !py-1`}
-                      onClick={() => !disabled && setTagFilter((previous) => {
-                        const next = previous?.includes(tag)
-                          ? previous.filter((item) => item !== tag)
-                          : [...(previous || []), tag];
-                        return next.length > 0 ? next : undefined;
-                      })}
+              {initialRunningLoading ? (
+                <div className="pipeline-hall-running-strip mb-4">
+                  {Array.from({ length: 4 }).map((_, index) => (
+                    <div key={index} className="pipeline-hall-running-item">
+                      <Skeleton.Avatar active shape="square" size={48} />
+                      <div className="min-w-0 flex-1">
+                        <Skeleton.Input active style={{ width: 140, height: 14 }} />
+                        <div className="mt-1">
+                          <Skeleton.Input active style={{ width: 92, height: 11 }} />
+                        </div>
+                        <div className="mt-1">
+                          <Skeleton.Input active style={{ width: 62, height: 10 }} />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : visibleRunningServices.length > 0 ? (
+                <div className="pipeline-hall-running-strip mb-4">
+                  {visibleRunningServices.map((item) => (
+                    <button
+                      key={item.serviceId}
+                      type="button"
+                      className={`pipeline-hall-running-item${selectedPipelineId === item.pipelineId ? ' pipeline-hall-running-item--active' : ''}`}
+                      onClick={() => item.pipelineId && setSelectedPipelineId((previous) => (previous === item.pipelineId ? undefined : item.pipelineId))}
                     >
-                      {tag}
-                    </Tag>
-                  );
-                })}
-              </div>
-            ) : null}
+                      <div className="pipeline-hall-running-item-title">
+                        <PipelineIcon type={item.templateType} />
+                        <div className="pipeline-hall-running-item-content">
+                          <div className="pipeline-hall-running-item-name">{item.serviceName || item.pipelineName || `服务 #${item.serviceId}`}</div>
+                          <div className="pipeline-hall-running-item-meta">{item.targetHostName || '本机'}{item.currentPid ? ` [${item.currentPid}]` : ''}</div>
+                          <div className="pipeline-hall-running-item-duration">{formatDurationSince(item.activeSince)}</div>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              {initialHallLoading ? (
+                <div className="mb-4 flex flex-wrap gap-2">
+                  {Array.from({ length: 8 }).map((_, index) => (
+                    <Skeleton.Button key={index} active size="small" style={{ width: 72, height: 28 }} />
+                  ))}
+                </div>
+              ) : availableTags.length > 0 ? (
+                <div className="mb-4 flex flex-wrap gap-2">
+                  {availableTags.map((tag) => {
+                    const active = Boolean(tagFilter?.includes(tag));
+                    const disabled = !active && disabledTagSet.has(tag);
+                    return (
+                      <Tag
+                        key={tag}
+                        style={{
+                          backgroundColor: active ? getStableTagColor(tag) : '#e2e8f0',
+                          color: active ? '#fff' : '#475569',
+                          borderColor: 'transparent',
+                          opacity: disabled ? 0.36 : 1,
+                        }}
+                        className={`${disabled ? 'cursor-not-allowed' : 'cursor-pointer'} select-none !border-0 !px-3 !py-1`}
+                        onClick={() => !disabled && setTagFilter((previous) => {
+                          const next = previous?.includes(tag)
+                            ? previous.filter((item) => item !== tag)
+                            : [...(previous || []), tag];
+                          return next.length > 0 ? next : undefined;
+                        })}
+                      >
+                        {tag}
+                      </Tag>
+                    );
+                  })}
+                </div>
+              ) : null}
             <div className="pipeline-hall-content-body">
-              {viewMode === 'card' ? (
-              filteredPipelineCards.length === 0 ? (
-              <Card className="app-card">
-                <EmptyPane description="当前筛选条件下没有可部署流水线。" />
-              </Card>
-              ) : (
-              <Row gutter={[16, 16]}>
-                {filteredPipelineCards.map((item) => {
-                const tags = sortTagNames(parseTagsJson(item.tagsJson));
-                const activeDeployment = item.latestStatus && ACTIVE_DEPLOYMENT_STATUSES.includes(item.latestStatus)
-                  ? item
-                  : undefined;
-                return (
-                  <Col xs={24} md={12} xl={8} xxl={6} key={item.pipelineId}>
-                    <Card id={`pipeline-card-${item.pipelineId}`} className="pipeline-card" bordered={false}>
-                      <div className="pipeline-card-header">
-                        <div className="pipeline-card-content">
-                          <PipelineIcon type={item.templateType} />
-                          <div className="min-w-0 flex-1 pipeline-card-title-block">
-                            <Typography.Text className="block text-[11px] uppercase tracking-[0.24em] text-slate-400">
-                              {item.projectName || 'Project'}
-                            </Typography.Text>
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                className={`pipeline-hall-favorite-button shrink-0${item.favorited ? ' pipeline-hall-favorite-button--active' : ''}`}
-                                onClick={() => toggleFavorite(item.pipelineId, item.favorited).catch(() => message.error(item.favorited ? '取消收藏失败' : '收藏失败'))}
-                              >
-                                <StarFilled />
-                              </button>
-                              <Typography.Title level={4} className="!mb-1 !mt-0 min-w-0">
-                                {item.pipelineName}
-                              </Typography.Title>
+              {initialHallLoading ? (
+                viewMode === 'card' ? (
+                  <Row gutter={[16, 16]}>
+                    {Array.from({ length: 8 }).map((_, index) => (
+                      <Col xs={24} md={12} xl={8} xxl={6} key={index}>
+                        <Card className="pipeline-card" bordered={false}>
+                          <div className="pipeline-card-header">
+                            <div className="pipeline-card-content">
+                              <Skeleton.Avatar active shape="square" size={44} />
+                              <div className="min-w-0 flex-1">
+                                <Skeleton.Input active style={{ width: 88, height: 14 }} />
+                                <div className="mt-2 flex items-start gap-2">
+                                  <Skeleton.Button active size="small" style={{ width: 20, height: 20 }} />
+                                  <Skeleton.Input active style={{ width: '64%', height: 24 }} />
+                                </div>
+                                <div className="mt-3 space-y-2">
+                                  <Skeleton.Input active block style={{ height: 14 }} />
+                                  <Skeleton.Input active style={{ width: '82%', height: 14 }} />
+                                </div>
+                              </div>
+                            </div>
+                            <Skeleton.Button active size="small" style={{ width: 70, height: 24 }} />
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {Array.from({ length: 3 }).map((__, tagIndex) => (
+                              <Skeleton.Button key={tagIndex} active size="small" style={{ width: 56, height: 24 }} />
+                            ))}
+                          </div>
+                          <div className="pipeline-meta-panel mt-4">
+                            {Array.from({ length: 6 }).map((__, rowIndex) => (
+                              <div className="pipeline-meta-row" key={rowIndex}>
+                                <Skeleton.Input active style={{ width: 64, height: 14 }} />
+                                <Skeleton.Input active style={{ width: 96, height: 14 }} />
+                              </div>
+                            ))}
+                            <div className="pt-2">
+                              <Skeleton.Input active block style={{ height: 16 }} />
                             </div>
                           </div>
-                        </div>
-                        <div className="pipeline-card-status">
-                          {item.latestDeploymentOrder ? (
-                            <div className="mb-1 text-right text-[22px] font-bold leading-none text-sky-600">
-                              #{item.latestDeploymentOrder}
+                          <Space>
+                            <Skeleton.Button active style={{ width: 72, height: 32 }} />
+                            <Skeleton.Button active style={{ width: 88, height: 32 }} />
+                            <Skeleton.Button active style={{ width: 88, height: 32 }} />
+                          </Space>
+                        </Card>
+                      </Col>
+                    ))}
+                  </Row>
+                ) : (
+                  <Card className="app-card">
+                    <div className="space-y-3">
+                      {Array.from({ length: 8 }).map((_, index) => (
+                        <div key={index} className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 px-4 py-3">
+                          <div className="flex min-w-0 flex-1 items-center gap-3">
+                            <Skeleton.Avatar active shape="square" size={40} />
+                            <div className="min-w-0 flex-1">
+                              <Skeleton.Input active style={{ width: 180, height: 16 }} />
+                              <div className="mt-2">
+                                <Skeleton.Input active style={{ width: 280, height: 14 }} />
+                              </div>
                             </div>
-                          ) : null}
-                          <StatusTag status={item.latestStatus || undefined} />
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <Skeleton.Button active size="small" style={{ width: 72, height: 28 }} />
+                            <Skeleton.Button active size="small" style={{ width: 72, height: 28 }} />
+                            <Skeleton.Button active size="small" style={{ width: 72, height: 28 }} />
+                          </div>
                         </div>
-                      </div>
-                      <Typography.Paragraph className="!mb-0 text-slate-600">
-                        {item.pipelineDescription || '已配置完成，可直接部署。'}
-                      </Typography.Paragraph>
-                      {tags.length > 0 ? (
-                        <Space className="!mt-3" wrap>
-                          {tags.map((tag) => (
-                            <Tag
-                              key={tag}
-                              style={{
-                                backgroundColor: getStableTagColor(tag),
-                                color: '#fff',
-                                borderColor: 'transparent',
-                              }}
-                              className="!border-0"
-                            >
-                              {tag}
-                            </Tag>
-                          ))}
-                        </Space>
-                      ) : null}
-                      <div className="pipeline-meta-panel">
-                        <div className="pipeline-meta-row">
-                          <span>{item.latestBranchName ? '部署分支' : '默认分支'}</span>
-                          <span>{item.latestBranchName || item.defaultBranch}</span>
-                        </div>
-                        <div className="pipeline-meta-row">
-                          <span>部署人</span>
-                          <span>{item.latestTriggeredByDisplayName || item.latestTriggeredBy || '-'}</span>
-                        </div>
-                        <div className="pipeline-meta-row">
-                          <span>开始时间</span>
-                          <span>{formatDateTime(item.latestStartedAt || item.latestCreatedAt)}</span>
-                        </div>
-                        <div className="pipeline-meta-row">
-                          <span>结束时间</span>
-                          <span>{formatDateTime(item.latestFinishedAt)}</span>
-                        </div>
-                        <div className="pt-2">
-                          <Progress
-                            percent={item.latestProgressPercent ?? 0}
-                            format={() => item.latestProgressText || `${item.latestProgressPercent ?? 0}%`}
-                            strokeColor={getDeploymentProgressColor(item.latestStatus)}
-                            trailColor="#d9e2f1"
-                          />
-                        </div>
-                      </div>
-                      <div className="mt-1 flex items-end justify-between gap-3">
-                        <Space>
-                          {activeDeployment ? (
-                            renderStopButton(item.pipelineId, activeDeployment.latestDeploymentId!)
-                          ) : (
-                            <Button
-                              type="primary"
-                              loading={submittingId === item.pipelineId}
-                              onClick={() => openDeployModal({
-                                id: item.pipelineId,
-                                name: item.pipelineName,
-                                description: item.pipelineDescription || undefined,
-                                defaultBranch: item.defaultBranch || undefined,
-                                tagsJson: item.tagsJson || undefined,
-                                project: item.projectName ? { id: 0, name: item.projectName } : undefined,
-                                template: item.templateType ? { id: 0, name: item.templateType, templateType: item.templateType } : undefined,
-                              } as PipelineSummary).catch(() => message.error('打开部署窗口失败'))}
-                            >
-                              部署
-                            </Button>
-                          )}
-                          <Button
-                            disabled={!item.latestDeploymentId}
-                            onClick={() => item.latestDeploymentId && navigate(`/user/deployments/${item.latestDeploymentId}`, {
-                              state: { from: '/user/pipelines', backLabel: '返回流水线大厅' },
-                            })}
-                          >
-                            查看
-                          </Button>
-                          <Button onClick={() => navigate(`/user/pipelines/${item.pipelineId}/history`)}>
-                            记录
-                          </Button>
-                        </Space>
-                        <div className="shrink-0 text-xs text-slate-500">
-                          耗时 {formatDeploymentElapsed({
-                            startedAt: item.latestStartedAt || undefined,
-                            createdAt: item.latestCreatedAt || undefined,
-                            finishedAt: item.latestFinishedAt || undefined,
-                            status: item.latestStatus || undefined,
-                          }, tick)}
-                        </div>
-                      </div>
-                    </Card>
-                  </Col>
-                );
-                })}
-              </Row>
-              )
+                      ))}
+                    </div>
+                  </Card>
+                )
+              ) : showHallEmpty ? (
+                <Card className="app-card">
+                  <EmptyPane description="当前没有可部署流水线，请先到管理端创建。" />
+                </Card>
+              ) : viewMode === 'card' ? (
+                filteredPipelineCards.length === 0 ? (
+                  <Card className="app-card">
+                    <EmptyPane description="当前筛选条件下没有可部署流水线。" />
+                  </Card>
+                ) : (
+                  <Row gutter={[16, 16]}>
+                    {filteredPipelineCards.map((item) => {
+                      const tags = sortTagNames(parseTagsJson(item.tagsJson));
+                      const activeDeployment = item.latestStatus && ACTIVE_DEPLOYMENT_STATUSES.includes(item.latestStatus)
+                        ? item
+                        : undefined;
+                      return (
+                        <Col xs={24} md={12} xl={8} xxl={6} key={item.pipelineId}>
+                          <Card id={`pipeline-card-${item.pipelineId}`} className="pipeline-card" bordered={false}>
+                            <div className="pipeline-card-header">
+                              <div className="pipeline-card-content">
+                                <PipelineIcon type={item.templateType} />
+                                <div className="min-w-0 flex-1 pipeline-card-title-block">
+                                  <Typography.Text className="block text-[11px] uppercase tracking-[0.24em] text-slate-400">
+                                    {item.projectName || 'Project'}
+                                  </Typography.Text>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      className={`pipeline-hall-favorite-button mt-0.5 shrink-0 self-start${item.favorited ? ' pipeline-hall-favorite-button--active' : ''}`}
+                                      onClick={() => toggleFavorite(item.pipelineId, item.favorited).catch(() => message.error(item.favorited ? '取消收藏失败' : '收藏失败'))}
+                                    >
+                                      <StarFilled />
+                                    </button>
+                                    <Typography.Title level={4} className="!mb-1 !mt-0 min-w-0">
+                                      {item.pipelineName}
+                                    </Typography.Title>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="pipeline-card-status">
+                                {item.latestDeploymentOrder ? (
+                                  <div className="mb-1 text-right text-[22px] font-bold leading-none text-sky-600">
+                                    #{item.latestDeploymentOrder}
+                                  </div>
+                                ) : null}
+                                <StatusTag status={item.latestStatus || undefined} />
+                              </div>
+                            </div>
+                            <Typography.Paragraph className="!mb-0 text-slate-600">
+                              {item.pipelineDescription || '已配置完成，可直接部署。'}
+                            </Typography.Paragraph>
+                            {tags.length > 0 ? (
+                              <Space className="!mt-3" wrap>
+                                {tags.map((tag) => (
+                                  <Tag
+                                    key={tag}
+                                    style={{
+                                      backgroundColor: getStableTagColor(tag),
+                                      color: '#fff',
+                                      borderColor: 'transparent',
+                                    }}
+                                    className="!border-0"
+                                  >
+                                    {tag}
+                                  </Tag>
+                                ))}
+                              </Space>
+                            ) : null}
+                            <div className="pipeline-meta-panel">
+                              <div className="pipeline-meta-row">
+                                <span>{item.latestBranchName ? '部署分支' : '默认分支'}</span>
+                                <span>{item.latestBranchName || item.defaultBranch}</span>
+                              </div>
+                              <div className="pipeline-meta-row">
+                                <span>部署人</span>
+                                <span>{item.latestTriggeredByDisplayName || item.latestTriggeredBy || '-'}</span>
+                              </div>
+                              <div className="pipeline-meta-row">
+                                <span>开始时间</span>
+                                <span>{formatDateTime(item.latestStartedAt || item.latestCreatedAt)}</span>
+                              </div>
+                              <div className="pipeline-meta-row">
+                                <span>结束时间</span>
+                                <span>{formatDateTime(item.latestFinishedAt)}</span>
+                              </div>
+                              <div className="pt-2">
+                                <Progress
+                                  percent={item.latestProgressPercent ?? 0}
+                                  format={() => item.latestProgressText || `${item.latestProgressPercent ?? 0}%`}
+                                  strokeColor={getDeploymentProgressColor(item.latestStatus)}
+                                  trailColor="#d9e2f1"
+                                />
+                              </div>
+                            </div>
+                            <div className="mt-1 flex items-end justify-between gap-3">
+                              <Space>
+                                {activeDeployment ? (
+                                  renderStopButton(item.pipelineId, activeDeployment.latestDeploymentId!)
+                                ) : (
+                                  <Button
+                                    type="primary"
+                                    loading={submittingId === item.pipelineId}
+                                    onClick={() => openDeployModal({
+                                      id: item.pipelineId,
+                                      name: item.pipelineName,
+                                      description: item.pipelineDescription || undefined,
+                                      defaultBranch: item.defaultBranch || undefined,
+                                      tagsJson: item.tagsJson || undefined,
+                                      project: item.projectName ? { id: 0, name: item.projectName } : undefined,
+                                      template: item.templateType ? { id: 0, name: item.templateType, templateType: item.templateType } : undefined,
+                                    } as PipelineSummary).catch(() => message.error('打开部署窗口失败'))}
+                                  >
+                                    部署
+                                  </Button>
+                                )}
+                                <Button
+                                  disabled={!item.latestDeploymentId}
+                                  onClick={() => item.latestDeploymentId && navigate(`/user/deployments/${item.latestDeploymentId}`, {
+                                    state: { from: '/user/pipelines', backLabel: '返回流水线大厅' },
+                                  })}
+                                >
+                                  查看
+                                </Button>
+                                <Button onClick={() => navigate(`/user/pipelines/${item.pipelineId}/history`)}>
+                                  记录
+                                </Button>
+                              </Space>
+                              <div className="shrink-0 text-xs text-slate-500">
+                                耗时 {formatDeploymentElapsed({
+                                  startedAt: item.latestStartedAt || undefined,
+                                  createdAt: item.latestCreatedAt || undefined,
+                                  finishedAt: item.latestFinishedAt || undefined,
+                                  status: item.latestStatus || undefined,
+                                }, tick)}
+                              </div>
+                            </div>
+                          </Card>
+                        </Col>
+                      );
+                    })}
+                  </Row>
+                )
               ) : (
                 <Card className="app-card">
                   <Table
                     rowKey="pipelineId"
-                    loading={loading}
+                    loading={hallLoading && filteredPipelineCards.length > 0}
                     scroll={{ x: 1180 }}
                     dataSource={filteredPipelineCards}
                     locale={{ emptyText: <EmptyPane description="当前筛选条件下没有可部署流水线。" /> }}
@@ -878,8 +969,6 @@ export default function UserPipelinesPage() {
             </div>
             </div>
           </div>
-        </>
-      )}
       <Modal
         title={deployingPipeline ? `部署 ${deployingPipeline.name}` : '部署流水线'}
         open={deployModalOpen}

@@ -14,6 +14,7 @@ public interface ServiceRepository extends JpaRepository<ServiceEntity, Long> {
     Optional<ServiceEntity> findFirstByPipelineId(Long pipelineId);
     List<ServiceEntity> findAllByOrderByUpdatedAtDesc();
     List<ServiceEntity> findTop6ByOrderByUpdatedAtDesc();
+    List<ServiceEntity> findAllByStatusOrderByLastHeartbeatAtDescUpdatedAtDescIdDesc(ServiceStatus status);
     long countByStatus(ServiceStatus status);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)

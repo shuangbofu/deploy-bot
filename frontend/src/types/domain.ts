@@ -218,6 +218,18 @@ export interface PipelineHallSummary {
   favorited?: boolean | null;
 }
 
+export interface PipelineHallRunningServiceSummary {
+  serviceId: number;
+  pipelineId?: number | null;
+  pipelineName?: string | null;
+  serviceName?: string | null;
+  templateType?: string | null;
+  targetHostName?: string | null;
+  currentPid?: number | null;
+  activeSince?: string | null;
+  lastHeartbeatAt?: string | null;
+}
+
 export interface NotificationBinding {
   notificationId: number;
   eventType: NotificationEventType;

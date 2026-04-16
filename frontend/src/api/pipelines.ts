@@ -1,5 +1,5 @@
 import client from './client';
-import type { PageResult, PipelineHallSummary, PipelinePayload, PipelineSummary } from './types';
+import type { PageResult, PipelineHallRunningServiceSummary, PipelineHallSummary, PipelinePayload, PipelineSummary } from './types';
 
 /**
  * 流水线相关接口。
@@ -8,6 +8,7 @@ export const pipelinesApi = {
   list: async () => (await client.get<PipelineSummary[]>('/pipelines')).data,
   listHall: async () => (await client.get<PipelineHallSummary[]>('/pipelines/hall')).data,
   listHallByIds: async (ids: number[]) => (await client.get<PipelineHallSummary[]>('/pipelines/hall/by-ids', { params: { ids } })).data,
+  listRunningServices: async () => (await client.get<PipelineHallRunningServiceSummary[]>('/pipelines/hall/running-services')).data,
   listFavorites: async () => (await client.get<number[]>('/pipelines/favorites')).data,
   favorite: async (id: number) => client.post(`/pipelines/${id}/favorite`),
   unfavorite: async (id: number) => client.delete(`/pipelines/${id}/favorite`),

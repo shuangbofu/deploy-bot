@@ -1,5 +1,6 @@
 package top.fusb.deploybot.service;
 
+import top.fusb.deploybot.dto.PipelineHallRunningServiceSummary;
 import top.fusb.deploybot.dto.ServiceProcessSummary;
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorSubCode;
@@ -15,18 +16,31 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 @Service
 public class ServiceManager {
     private static final Logger log = LoggerFactory.getLogger(ServiceManager.class);
+    private static final DateTimeFormatter REMOTE_PROCESS_START_FORMATTER = new DateTimeFormatterBuilder()
+            .parseCaseInsensitive()
+            .appendPattern("EEE MMM d HH:mm:ss yyyy")
+            .toFormatter(Locale.ENGLISH);
     private static final Comparator<ServiceEntity> SERVICE_HEARTBEAT_COMPARATOR =
             Comparator.comparing(ServiceEntity::getLastHeartbeatAt, Comparator.nullsLast(Comparator.reverseOrder()))
                     .thenComparing(ServiceEntity::getUpdatedAt, Comparator.nullsLast(Comparator.reverseOrder()))
                     .thenComparing(ServiceEntity::getId, Comparator.nullsLast(Comparator.reverseOrder()));
+    private static final Comparator<ServiceEntity> RUNNING_HALL_COMPARATOR =
+            Comparator.comparing(ServiceEntity::getActiveSince, Comparator.nullsLast(Comparator.reverseOrder()))
+                    .thenComparing(service -> service.getPipeline() == null ? null : service.getPipeline().getId(), Comparator.nullsLast(Comparator.naturalOrder()))
+                    .thenComparing(ServiceEntity::getId, Comparator.nullsLast(Comparator.naturalOrder()));
 
     private final ServiceRepository serviceRepository;
     private final JsonMapper jsonMapper;
@@ -39,10 +53,27 @@ public class ServiceManager {
     }
 
     public List<ServiceEntity> findAll() {
-        List<ServiceEntity> services = serviceRepository.findAll();
-        services.forEach(this::refreshStatus);
+        List<ServiceEntity> services = serviceRepository.findAllByOrderByUpdatedAtDesc();
         services.sort(SERVICE_HEARTBEAT_COMPARATOR);
         return services;
+    }
+
+    public List<PipelineHallRunningServiceSummary> findRunningHallSummaries() {
+        return serviceRepository.findAllByStatusOrderByLastHeartbeatAtDescUpdatedAtDescIdDesc(ServiceStatus.RUNNING).stream()
+                .sorted(RUNNING_HALL_COMPARATOR)
+                .limit(12)
+                .map(service -> new PipelineHallRunningServiceSummary(
+                        service.getId(),
+                        service.getPipeline() == null ? null : service.getPipeline().getId(),
+                        service.getPipeline() == null ? null : service.getPipeline().getName(),
+                        service.getServiceName(),
+                        service.getPipeline() != null && service.getPipeline().getTemplate() != null ? service.getPipeline().getTemplate().getTemplateType() : null,
+                        service.getPipeline() != null && service.getPipeline().getTargetHost() != null ? service.getPipeline().getTargetHost().getName() : "本机",
+                        service.getCurrentPid(),
+                        service.getActiveSince(),
+                        service.getLastHeartbeatAt()
+                ))
+                .toList();
     }
 
     /**
@@ -158,9 +189,7 @@ public class ServiceManager {
         }
         service.setCurrentPid(pid);
         service.setStatus(ServiceStatus.RUNNING);
-        if (service.getActiveSince() == null) {
-            service.setActiveSince(LocalDateTime.now());
-        }
+        service.setActiveSince(resolveProcessStartedAt(pid, targetHost).orElseGet(() -> service.getActiveSince() != null ? service.getActiveSince() : LocalDateTime.now()));
         service.setLastHeartbeatAt(LocalDateTime.now());
         service.setUpdatedAt(LocalDateTime.now());
         return serviceRepository.save(service);
@@ -199,6 +228,40 @@ public class ServiceManager {
             return output.contains("RUNNING");
         } catch (Exception ex) {
             return false;
+        }
+    }
+
+    private java.util.Optional<LocalDateTime> resolveProcessStartedAt(Long pid, HostEntity host) {
+        if (pid == null) {
+            return java.util.Optional.empty();
+        }
+        if (host == null || host.getType() == HostType.LOCAL) {
+            return ProcessHandle.of(pid)
+                    .flatMap(handle -> handle.info().startInstant())
+                    .map(instant -> LocalDateTime.ofInstant(instant, ZoneId.systemDefault()));
+        }
+        try {
+            String output = hostService.executeRemoteScript(
+                    host.getId(),
+                    "ps -p " + pid + " -o lstart= 2>/dev/null | head -n 1\n",
+                    8
+            ).trim();
+            if (output.isBlank()) {
+                return java.util.Optional.empty();
+            }
+            return java.util.Optional.of(parseRemoteProcessStartedAt(output));
+        } catch (Exception ex) {
+            return java.util.Optional.empty();
+        }
+    }
+
+    private LocalDateTime parseRemoteProcessStartedAt(String output) {
+        String normalized = output.trim().replaceAll("\\s+", " ");
+        try {
+            return LocalDateTime.parse(normalized, REMOTE_PROCESS_START_FORMATTER);
+        } catch (DateTimeParseException ex) {
+            log.debug("解析远程进程启动时间失败，output={}", output, ex);
+            throw ex;
         }
     }
 

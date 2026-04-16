@@ -1,12 +1,14 @@
 package top.fusb.deploybot.controller;
 
 import top.fusb.deploybot.dto.PageResult;
+import top.fusb.deploybot.dto.PipelineHallRunningServiceSummary;
 import top.fusb.deploybot.dto.PipelineHallSummary;
 import top.fusb.deploybot.dto.PipelineRequest;
 import top.fusb.deploybot.model.PipelineEntity;
 import top.fusb.deploybot.security.AdminOnly;
 import top.fusb.deploybot.service.GitBranchService;
 import top.fusb.deploybot.service.PipelineService;
+import top.fusb.deploybot.service.ServiceManager;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,10 +28,12 @@ public class PipelineController {
 
     private final PipelineService service;
     private final GitBranchService gitBranchService;
+    private final ServiceManager serviceManager;
 
-    public PipelineController(PipelineService service, GitBranchService gitBranchService) {
+    public PipelineController(PipelineService service, GitBranchService gitBranchService, ServiceManager serviceManager) {
         this.service = service;
         this.gitBranchService = gitBranchService;
+        this.serviceManager = serviceManager;
     }
 
     /**
@@ -48,6 +52,11 @@ public class PipelineController {
     @GetMapping("/hall/by-ids")
     public List<PipelineHallSummary> hallByIds(@RequestParam List<Long> ids) {
         return service.findHallSummariesByIds(ids);
+    }
+
+    @GetMapping("/hall/running-services")
+    public List<PipelineHallRunningServiceSummary> runningServices() {
+        return serviceManager.findRunningHallSummaries();
     }
 
     @GetMapping("/page")

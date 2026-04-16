@@ -63,7 +63,7 @@ export default function ServiceManagementPage() {
     setBindingService(service);
     setBindModalOpen(true);
     setProcessKeyword('');
-    setSelectedPid(undefined);
+    setSelectedPid(service.currentPid || undefined);
     setProcessLoading(true);
     try {
       setProcesses(await servicesApi.listProcesses(service.id));
