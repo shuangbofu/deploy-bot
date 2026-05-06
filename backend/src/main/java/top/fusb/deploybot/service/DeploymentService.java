@@ -2,6 +2,7 @@ package top.fusb.deploybot.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import top.fusb.deploybot.dto.DeploymentRequest;
+import top.fusb.deploybot.dto.DeploymentListSummary;
 import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.dto.TemplateVariable;
 import top.fusb.deploybot.dto.UserRecentPipelineSummary;
@@ -37,6 +38,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
@@ -49,6 +51,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Comparator;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -57,6 +64,12 @@ public class DeploymentService {
     private static final Logger log = LoggerFactory.getLogger(DeploymentService.class);
     private static final String DEFAULT_TRIGGER_USER = "anonymous";
     private static final String BUILD_ARTIFACT_DIR = "artifacts";
+    private static final long LOG_READ_TIMEOUT_MILLIS = 1500L;
+    private static final ExecutorService LOG_READ_EXECUTOR = Executors.newFixedThreadPool(2, task -> {
+        Thread thread = new Thread(task, "deployment-log-reader");
+        thread.setDaemon(true);
+        return thread;
+    });
     private static final Pattern REDIRECTION_PATTERN = Pattern.compile("\\s(?:\\d?>>?|>>?)");
 
     private final DeploymentRepository deploymentRepository;
@@ -177,7 +190,7 @@ public class DeploymentService {
                 .toList();
     }
 
-    public PageResult<DeploymentEntity> findPage(
+    public PageResult<DeploymentListSummary> findPage(
             int page,
             int pageSize,
             String projectName,
@@ -213,10 +226,10 @@ public class DeploymentService {
             }
             return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
         }, PageRequest.of(Math.max(0, page - 1), Math.max(1, Math.min(100, pageSize)), Sort.by(Sort.Order.desc("createdAt"))));
-        return PageResult.of(result.map(this::enrichTriggeredByDisplayName));
+        return PageResult.of(result.map(this::toDeploymentListSummary));
     }
 
-    public PageResult<DeploymentEntity> findMinePage(
+    public PageResult<DeploymentListSummary> findMinePage(
             int page,
             int pageSize,
             String projectName,
@@ -261,7 +274,7 @@ public class DeploymentService {
             }
             return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
         }, PageRequest.of(Math.max(0, page - 1), Math.max(1, Math.min(100, pageSize)), Sort.by(Sort.Order.desc("createdAt"))));
-        return PageResult.of(result.map(this::enrichTriggeredByDisplayName));
+        return PageResult.of(result.map(this::toDeploymentListSummary));
     }
 
     public DeploymentEntity findById(Long id) {
@@ -841,7 +854,58 @@ public class DeploymentService {
         if (!Files.exists(path)) {
             return "日志文件尚未生成，请稍后刷新。";
         }
-        return Files.readString(path, StandardCharsets.UTF_8);
+        return readLogWithTimeout(path);
+    }
+
+    private String readLogWithTimeout(Path path) {
+        if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
+            return "[系统] 日志路径不是普通文件，已跳过读取：" + path;
+        }
+        Future<String> future = LOG_READ_EXECUTOR.submit(() -> Files.readString(path, StandardCharsets.UTF_8));
+        try {
+            return future.get(LOG_READ_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException ex) {
+            future.cancel(true);
+            return "[系统] 日志读取超时，可能被其他进程占用或底层文件状态异常，请稍后刷新。";
+        } catch (Exception ex) {
+            return "[系统] 日志读取失败：" + ex.getMessage();
+        }
+    }
+
+    private DeploymentListSummary toDeploymentListSummary(DeploymentEntity entity) {
+        enrichTriggeredByDisplayName(entity);
+        return new DeploymentListSummary(
+                entity.getId(),
+                entity.getBranchName(),
+                entity.getTriggeredBy(),
+                entity.getTriggeredByDisplayName(),
+                entity.getStoppedBy(),
+                entity.getStoppedByDisplayName(),
+                entity.getStatus(),
+                entity.getCreatedAt(),
+                entity.getStartedAt(),
+                entity.getFinishedAt(),
+                entity.getLogPath(),
+                entity.getErrorMessage(),
+                toPipelineRef(entity),
+                entity.getArtifactPath(),
+                entity.getRollbackFromDeploymentId(),
+                entity.getMonitoredPid()
+        );
+    }
+
+    private DeploymentListSummary.PipelineRef toPipelineRef(DeploymentEntity entity) {
+        if (entity.getPipeline() == null) {
+            return null;
+        }
+        return new DeploymentListSummary.PipelineRef(
+                entity.getPipeline().getId(),
+                entity.getPipeline().getName(),
+                entity.getPipeline().getProject() == null ? null : new DeploymentListSummary.ProjectRef(
+                        entity.getPipeline().getProject().getId(),
+                        entity.getPipeline().getProject().getName()
+                )
+        );
     }
 
     private List<DeploymentEntity> enrichTriggeredByDisplayNames(List<DeploymentEntity> deployments) {

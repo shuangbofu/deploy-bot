@@ -144,6 +144,9 @@ public class DeploymentEntity {
         if (status == DeploymentStatus.SUCCESS) {
             return 100;
         }
+        if (status == DeploymentStatus.FAILED || status == DeploymentStatus.STOPPED) {
+            return 0;
+        }
         if (status == DeploymentStatus.PENDING) {
             return 0;
         }

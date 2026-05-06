@@ -1,6 +1,7 @@
 package top.fusb.deploybot.controller;
 
 import top.fusb.deploybot.dto.DeploymentRequest;
+import top.fusb.deploybot.dto.DeploymentListSummary;
 import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.model.DeploymentEntity;
 import top.fusb.deploybot.model.DeploymentStatus;
@@ -39,7 +40,7 @@ public class DeploymentController {
     }
 
     @GetMapping("/page")
-    public PageResult<DeploymentEntity> page(
+    public PageResult<DeploymentListSummary> page(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int pageSize,
             @RequestParam(required = false) String projectName,
@@ -63,7 +64,7 @@ public class DeploymentController {
     }
 
     @GetMapping("/mine/page")
-    public PageResult<DeploymentEntity> minePage(
+    public PageResult<DeploymentListSummary> minePage(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int pageSize,
             @RequestParam(required = false) String projectName,
