@@ -4,6 +4,7 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import top.fusb.deploybot.notification.model.NotificationTemplateEntity;
+import top.fusb.deploybot.notification.model.NotificationTemplateMode;
 import top.fusb.deploybot.notification.repo.NotificationTemplateRepository;
 
 @Component
@@ -20,6 +21,7 @@ public class NotificationTemplateBootstrap {
         ensureTemplate(
                 "开始通知",
                 "系统内置的部署开始消息模板。",
+                NotificationTemplateMode.TEXT,
                 """
                 【Deploy Bot】{{pipelineName}} 开始部署
                 项目：{{projectName}}
@@ -34,6 +36,7 @@ public class NotificationTemplateBootstrap {
         ensureTemplate(
                 "结束通知",
                 "系统内置的部署结束消息模板。",
+                NotificationTemplateMode.TEXT,
                 """
                 【Deploy Bot】{{pipelineName}} {{eventLabel}}
                 项目：{{projectName}}
@@ -51,11 +54,12 @@ public class NotificationTemplateBootstrap {
         );
     }
 
-    private void ensureTemplate(String name, String description, String messageTemplate) {
+    private void ensureTemplate(String name, String description, NotificationTemplateMode templateMode, String messageTemplate) {
         NotificationTemplateEntity entity = repository.findByName(name)
                 .orElseGet(NotificationTemplateEntity::new);
         entity.setName(name);
         entity.setDescription(description);
+        entity.setTemplateMode(templateMode);
         entity.setMessageTemplate(messageTemplate.strip());
         entity.setBuiltIn(Boolean.TRUE);
         entity.setEnabled(Boolean.TRUE);

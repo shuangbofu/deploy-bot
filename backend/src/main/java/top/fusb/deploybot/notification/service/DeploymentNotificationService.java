@@ -11,6 +11,7 @@ import top.fusb.deploybot.notification.model.NotificationDeliveryRecordEntity;
 import top.fusb.deploybot.notification.model.NotificationDeliveryStatus;
 import top.fusb.deploybot.notification.model.NotificationEventType;
 import top.fusb.deploybot.notification.model.NotificationTemplateEntity;
+import top.fusb.deploybot.notification.model.NotificationTemplateMode;
 import top.fusb.deploybot.model.PipelineEntity;
 import top.fusb.deploybot.repo.DeploymentRepository;
 import top.fusb.deploybot.notification.repo.NotificationChannelRepository;
@@ -115,8 +116,9 @@ public class DeploymentNotificationService {
                     continue;
                 }
                 String template = resolveTemplate(channel);
-                String text = scriptTemplateService.render(template, buildVariables(deployment, eventType)).trim();
-                recordDelivery(channel, deployment, eventType, text, sender);
+                NotificationTemplateMode templateMode = resolveTemplateMode(channel);
+                String renderedContent = scriptTemplateService.render(template, buildVariables(deployment, eventType)).trim();
+                recordDelivery(channel, deployment, eventType, templateMode, renderedContent, sender);
             }
         } catch (Exception ex) {
             log.warn("部署 {} 发送 {} 通知失败：{}", deployment.getId(), eventType, ex.getMessage(), ex);
@@ -127,7 +129,8 @@ public class DeploymentNotificationService {
             NotificationChannelEntity channel,
             DeploymentEntity deployment,
             NotificationEventType eventType,
-            String text,
+            NotificationTemplateMode templateMode,
+            String renderedContent,
             NotificationSender sender
     ) {
         NotificationDeliveryRecordEntity record = new NotificationDeliveryRecordEntity();
@@ -136,10 +139,10 @@ public class DeploymentNotificationService {
         record.setEventType(eventType);
         record.setChannelName(channel.getName());
         record.setPipelineName(deployment.getPipeline() == null ? null : deployment.getPipeline().getName());
-        record.setMessage(text);
+        record.setMessage(renderedContent);
         record.setCreatedAt(LocalDateTime.now());
         try {
-            NotificationSendResult result = sender.send(channel, new NotificationMessage(text));
+            NotificationSendResult result = sender.send(channel, new NotificationMessage(templateMode, renderedContent));
             record.setStatus(NotificationDeliveryStatus.SUCCESS);
             record.setResponseMessage(result.responseMessage());
         } catch (Exception ex) {
@@ -161,6 +164,14 @@ public class DeploymentNotificationService {
             return template.getMessageTemplate();
         }
         return DEFAULT_TEMPLATE;
+    }
+
+    private NotificationTemplateMode resolveTemplateMode(NotificationChannelEntity channel) {
+        NotificationTemplateEntity template = channel.getTemplate();
+        if (template != null && template.getTemplateMode() != null) {
+            return template.getTemplateMode();
+        }
+        return NotificationTemplateMode.TEXT;
     }
 
     private Map<String, String> buildVariables(DeploymentEntity deployment, NotificationEventType eventType) {

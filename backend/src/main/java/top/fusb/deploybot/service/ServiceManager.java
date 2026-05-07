@@ -115,6 +115,7 @@ public class ServiceManager {
             log.info("流水线 {} 当前没有可接管的旧服务，无需在部署前停止。", pipelineId);
             return null;
         }
+        Long stoppedPid = service.getCurrentPid();
         log.info("流水线 {} 在部署前检测到已受管服务：serviceId={}，pid={}，状态={}。", pipelineId, service.getId(), service.getCurrentPid(), service.getStatus());
         if (service.getCurrentPid() != null) {
             HostEntity targetHost = service.getPipeline() == null ? null : service.getPipeline().getTargetHost();
@@ -125,6 +126,7 @@ public class ServiceManager {
         service.setActiveSince(null);
         service.setUpdatedAt(LocalDateTime.now());
         ServiceEntity saved = serviceRepository.save(service);
+        saved.setCurrentPid(stoppedPid);
         log.info("流水线 {} 部署前旧服务停止完成。serviceId={}。", pipelineId, saved.getId());
         return saved;
     }
@@ -329,27 +331,42 @@ public class ServiceManager {
 
     private void stopProcess(Long pid, HostEntity host) {
         if (host == null || host.getType() == HostType.LOCAL) {
-            ProcessHandle.of(pid).ifPresent(handle -> {
-                handle.destroy();
-                try {
-                    Thread.sleep(300);
-                } catch (InterruptedException ignored) {
-                    Thread.currentThread().interrupt();
-                }
-                if (handle.isAlive()) {
-                    handle.destroyForcibly();
-                }
-            });
+            ProcessHandle handle = ProcessHandle.of(pid)
+                    .orElseThrow(() -> new BusinessException(ErrorSubCode.REMOTE_SERVICE_STOP_FAILED, "旧服务进程不存在，无法停止。"));
+            handle.destroy();
+            try {
+                Thread.sleep(300);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+            if (handle.isAlive()) {
+                handle.destroyForcibly();
+            }
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+            if (handle.isAlive()) {
+                throw new BusinessException(ErrorSubCode.REMOTE_SERVICE_STOP_FAILED, "旧服务进程停止失败，请先手工处理后再重新部署。");
+            }
             return;
         }
         try {
-            hostService.executeRemoteScript(
+            String output = hostService.executeRemoteScript(
                     host.getId(),
                     "kill " + pid + " >/dev/null 2>&1 || true\n" +
                             "sleep 1\n" +
-                            "if kill -0 " + pid + " >/dev/null 2>&1; then kill -9 " + pid + " >/dev/null 2>&1 || true; fi\n",
-                    10
+                            "if kill -0 " + pid + " >/dev/null 2>&1; then kill -9 " + pid + " >/dev/null 2>&1 || true; fi\n" +
+                            "sleep 1\n" +
+                            "if kill -0 " + pid + " >/dev/null 2>&1; then echo STILL_RUNNING; else echo STOPPED; fi\n",
+                    12
             );
+            if (output == null || !output.contains("STOPPED")) {
+                throw new BusinessException(ErrorSubCode.REMOTE_SERVICE_STOP_FAILED, "旧服务进程停止失败，请先手工处理后再重新部署。");
+            }
+        } catch (BusinessException ex) {
+            throw ex;
         } catch (Exception ex) {
             throw new BusinessException(ErrorSubCode.REMOTE_SERVICE_STOP_FAILED, ex.getMessage(), ex);
         }

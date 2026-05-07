@@ -25,6 +25,7 @@ export type RuntimeEnvironmentType = 'JAVA' | 'NODE' | 'MAVEN';
 export type UserRole = 'ADMIN' | 'USER';
 export type NotificationChannelType = 'FEISHU';
 export type NotificationEventType = 'DEPLOYMENT_STARTED' | 'DEPLOYMENT_FINISHED';
+export type NotificationTemplateMode = 'TEXT' | 'FEISHU_CARD';
 export type ServiceStatus = 'RUNNING' | 'STOPPED';
 
 export interface MavenSettingsSummary {
@@ -253,6 +254,7 @@ export interface NotificationTemplateSummary {
   id: number;
   name: string;
   description?: string;
+  templateMode: NotificationTemplateMode;
   messageTemplate: string;
   builtIn: boolean;
   enabled: boolean;

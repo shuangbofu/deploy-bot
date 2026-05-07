@@ -425,7 +425,7 @@ export default function NotificationAdminPage() {
                 value={channelForm.templateId}
                 placeholder="选择一个模板快速带出内容"
                 options={templates.map((item) => ({
-                  label: item.name,
+                  label: `${item.name} · ${item.templateMode === 'FEISHU_CARD' ? '飞书卡片' : '文本'}`,
                   value: item.id,
                 }))}
                 onChange={(value) => setChannelForm({ ...channelForm, templateId: value })}
@@ -437,6 +437,9 @@ export default function NotificationAdminPage() {
           </div>
           {selectedTemplate ? (
             <Form.Item label="当前模板内容">
+              <div className="mb-2 text-xs text-slate-500">
+                当前模板形式：{selectedTemplate.templateMode === 'FEISHU_CARD' ? '飞书卡片' : '文本'}
+              </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 whitespace-pre-wrap text-xs text-slate-600">
                 {selectedTemplate.messageTemplate}
               </div>

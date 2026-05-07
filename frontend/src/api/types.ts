@@ -13,6 +13,7 @@ import type {
   NotificationWebhookConfigSummary,
   NotificationDeliveryRecordSummary,
   NotificationTemplateSummary,
+  NotificationTemplateMode,
   MavenSettingsSummary,
   PipelineHallSummary,
   PipelineSummary,
@@ -117,6 +118,7 @@ export interface NotificationWebhookConfigPayload {
 export interface NotificationTemplatePayload {
   name: string;
   description?: string;
+  templateMode: NotificationTemplateMode;
   messageTemplate: string;
   enabled: boolean;
 }

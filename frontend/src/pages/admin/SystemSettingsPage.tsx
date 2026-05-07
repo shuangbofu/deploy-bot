@@ -8,6 +8,7 @@ import type {
   NotificationTemplateSummary,
   NotificationWebhookConfigPayload,
   NotificationWebhookConfigSummary,
+  NotificationTemplateMode,
   SystemSettingsPayload,
 } from '../../api/types';
 import EmptyPane from '../../components/EmptyPane';
@@ -38,9 +39,98 @@ const emptyWebhookConfig: NotificationWebhookConfigPayload = {
 const emptyTemplate: NotificationTemplatePayload = {
   name: '',
   description: '',
+  templateMode: 'TEXT',
   messageTemplate: '',
   enabled: true,
 };
+
+const notificationTemplateModeOptions: { label: string; value: NotificationTemplateMode }[] = [
+  { label: '文本', value: 'TEXT' },
+  { label: '飞书卡片', value: 'FEISHU_CARD' },
+];
+
+const defaultFeishuCardTemplate = `{
+  "config": {
+    "wide_screen_mode": true
+  },
+  "header": {
+    "template": "blue",
+    "title": {
+      "tag": "plain_text",
+      "content": "Deploy Bot｜{{pipelineName}} {{eventLabel}}"
+    }
+  },
+  "elements": [
+    {
+      "tag": "div",
+      "fields": [
+        {
+          "is_short": true,
+          "text": {
+            "tag": "lark_md",
+            "content": "**项目**\\n{{projectName}}"
+          }
+        },
+        {
+          "is_short": true,
+          "text": {
+            "tag": "lark_md",
+            "content": "**分支**\\n{{branch}}"
+          }
+        },
+        {
+          "is_short": true,
+          "text": {
+            "tag": "lark_md",
+            "content": "**部署人**\\n{{triggeredByDisplayName}}"
+          }
+        },
+        {
+          "is_short": true,
+          "text": {
+            "tag": "lark_md",
+            "content": "**目标主机**\\n{{hostName}}"
+          }
+        },
+        {
+          "is_short": true,
+          "text": {
+            "tag": "lark_md",
+            "content": "**开始时间**\\n{{startedAt}}"
+          }
+        },
+        {
+          "is_short": true,
+          "text": {
+            "tag": "lark_md",
+            "content": "**结束时间**\\n{{finishedAt}}"
+          }
+        }
+      ]
+    },
+    {
+      "tag": "div",
+      "text": {
+        "tag": "lark_md",
+        "content": "**耗时** {{duration}}\\n**错误信息** {{errorMessage}}"
+      }
+    },
+    {
+      "tag": "action",
+      "actions": [
+        {
+          "tag": "button",
+          "type": "primary",
+          "text": {
+            "tag": "plain_text",
+            "content": "查看部署详情"
+          },
+          "url": "{{detailUrl}}"
+        }
+      ]
+    }
+  ]
+}`;
 
 export default function SystemSettingsPage() {
   const [form, setForm] = useState<SystemSettingsPayload>(emptySettings);
@@ -210,6 +300,7 @@ export default function SystemSettingsPage() {
     setTemplateForm({
       name: record.name,
       description: record.description || '',
+      templateMode: record.templateMode || 'TEXT',
       messageTemplate: record.messageTemplate || '',
       enabled: record.enabled,
     });
@@ -529,6 +620,11 @@ export default function SystemSettingsPage() {
                           pagination={{ showSizeChanger: true, showTotal: (total) => `共 ${total} 条` }}
                           columns={[
                             { title: '名称', dataIndex: 'name', width: 180 },
+                            {
+                              title: '模板形式',
+                              width: 120,
+                              render: (_, record) => record.templateMode === 'FEISHU_CARD' ? '飞书卡片' : '文本',
+                            },
                             { title: '描述', render: (_, record) => record.description || '-', width: 200 },
                             { title: '模板内容', render: (_, record) => <div className="line-clamp-3 whitespace-pre-wrap text-xs text-slate-600">{record.messageTemplate}</div> },
                             { title: '状态', render: (_, record) => enabledStatus(record.enabled), width: 100 },
@@ -624,6 +720,13 @@ export default function SystemSettingsPage() {
           <Form.Item label="描述">
             <Input.TextArea rows={2} value={templateForm.description} onChange={(event) => setTemplateForm({ ...templateForm, description: event.target.value })} />
           </Form.Item>
+          <Form.Item label="模板形式" required>
+            <Select
+              value={templateForm.templateMode}
+              options={notificationTemplateModeOptions}
+              onChange={(value) => setTemplateForm({ ...templateForm, templateMode: value })}
+            />
+          </Form.Item>
           <Form.Item label="启用">
             <Switch checked={templateForm.enabled} onChange={(checked) => setTemplateForm({ ...templateForm, enabled: checked })} />
           </Form.Item>
@@ -637,6 +740,19 @@ export default function SystemSettingsPage() {
             </div>
           </Form.Item>
           <Form.Item label="消息模板" required>
+            {templateForm.templateMode === 'FEISHU_CARD' ? (
+              <div className="mb-3 rounded-2xl bg-slate-50 px-4 py-3 text-xs leading-6 text-slate-600">
+                <div>卡片模式请直接填写飞书 `interactive` 卡片的 JSON 内容。</div>
+                <div>
+                  变量仍然可以照常写成 <code>{'{{pipelineName}}'}</code>、<code>{'{{detailUrl}}'}</code> 这样的占位符。
+                </div>
+                <div className="mt-2">
+                  <Button size="small" onClick={() => setTemplateForm((current) => ({ ...current, messageTemplate: defaultFeishuCardTemplate }))}>
+                    填入卡片示例
+                  </Button>
+                </div>
+              </div>
+            ) : null}
             <Input.TextArea
               ref={templateTextareaRef}
               rows={12}

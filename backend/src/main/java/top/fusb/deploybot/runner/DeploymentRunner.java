@@ -100,6 +100,7 @@ public class DeploymentRunner {
     @Async
     public void runAsync(Long deploymentId) {
         Path logFile = null;
+        boolean deployStageExecuted = false;
         try {
             // 1. 读取部署与主机上下文，准备运行时目录。
             DeploymentEntity deployment = deploymentRepository.findById(deploymentId)
@@ -173,19 +174,22 @@ public class DeploymentRunner {
                 if (Boolean.TRUE.equals(deployment.getPipeline().getTemplate().getMonitorProcess())) {
                     ServiceEntity stoppedService = serviceManager.stopManagedServiceBeforeDeploy(deployment.getPipeline().getId());
                     if (stoppedService != null) {
-                        appendSystemLog(logFile, "本次发布前已停止旧服务，serviceId=" + stoppedService.getId() + "。");
+                        appendSystemLog(logFile, "本次发布前已停止旧服务，serviceId=" + stoppedService.getId() + "，pid=" + (stoppedService.getCurrentPid() == null ? "-" : stoppedService.getCurrentPid()) + "。");
                         log.info(
-                                "流水线 '{}' 在构建成功后、发布开始前已由系统停止旧服务：serviceId={}。",
+                                "流水线 '{}' 在构建成功后、发布开始前已由系统停止旧服务：serviceId={}，pid={}。",
                                 deployment.getPipeline().getName(),
-                                stoppedService.getId()
+                                stoppedService.getId(),
+                                stoppedService.getCurrentPid()
                         );
                     }
                 }
                 appendSystemLog(logFile, "本机构建完成，开始发布阶段。");
                 log.info("部署 {} 发布阶段开始。", deploymentId);
+                deployStageExecuted = true;
                 if (targetHost != null && targetHost.getType() == HostType.SSH) {
                     Path remoteArtifactDir = deployWorkspaceRoot.resolve(ARTIFACT_DIR).resolve("deploy-" + deploymentId).toAbsolutePath().normalize();
                     prepareRemoteExecutionDirectories(targetHost, deployment, remoteArtifactDir, sshDir, logFile, deploymentId);
+                    clearRuntimePidFileIfPresent(deployment, targetHost, deployWorkspaceRoot);
                     syncArtifactsToRemote(targetHost, artifactsDir, remoteArtifactDir, sshDir, logFile, deploymentId);
                     log.info("部署 {} 构建产物同步完成。目标主机='{}'，远端产物目录='{}'。", deploymentId, targetHost.getHostname(), remoteArtifactDir);
                     exitCode = runProcess(
@@ -197,6 +201,7 @@ public class DeploymentRunner {
                 } else {
                     Path pidsDir = deployWorkspaceRoot.resolve(PID_DIR);
                     Files.createDirectories(pidsDir);
+                    clearRuntimePidFileIfPresent(deployment, null, deployWorkspaceRoot);
                     exitCode = runProcess(
                         buildLocalDeployProcessBuilder(buildWorkspaceRoot, deployScriptFile),
                         null,
@@ -245,6 +250,9 @@ public class DeploymentRunner {
                         deployment.setStatus(DeploymentStatus.FAILED);
                         deployment.setErrorMessage(ErrorSubCode.DEPLOYMENT_MONITORED_PROCESS_NOT_RUNNING.getMessage());
                         appendSystemLog(logFile, "部署失败：服务启动后未检测到可用进程。");
+                        if (deployStageExecuted) {
+                            stopRuntimeProcessQuietly(deployment, logFile, "启动观察未通过，正在清理本次启动出来的进程。");
+                        }
                         log.warn("部署 {} 在服务监测阶段失败，未确认到稳定可接管的进程。", deploymentId);
                     } else {
                         deployment.setMonitoredPid(monitoredPid);
@@ -264,6 +272,9 @@ public class DeploymentRunner {
                 deployment.setStatus(DeploymentStatus.FAILED);
                 deployment.setErrorMessage("Script exited with code " + exitCode);
                 appendSystemLog(logFile, "部署失败，脚本退出码：" + exitCode);
+                if (deployStageExecuted) {
+                    stopRuntimeProcessQuietly(deployment, logFile, "发布脚本执行异常，正在清理本次启动出来的进程。");
+                }
                 log.warn("部署 {} 失败，脚本进程退出码={}。", deploymentId, exitCode);
             }
             deploymentRepository.save(deployment);
@@ -273,6 +284,7 @@ public class DeploymentRunner {
             runningProcesses.remove(deploymentId);
             log.error("部署 {} 在完成前发生未预期异常。", deploymentId, ex);
             final Path capturedLogFile = logFile;
+            final boolean deployStageExecutedFinal = deployStageExecuted;
             deploymentRepository.findById(deploymentId).ifPresent(deployment -> {
                 if (deployment.getStatus() == DeploymentStatus.STOPPED) {
                     Path resolvedStoppedLogFile = resolveOrCreateLogFile(capturedLogFile, deployment.getLogPath(), deploymentId);
@@ -301,6 +313,9 @@ public class DeploymentRunner {
                 deployment.setFinishedAt(LocalDateTime.now());
                 deployment.setStatus(DeploymentStatus.FAILED);
                 deployment.setErrorMessage(ex.getMessage());
+                if (deployStageExecutedFinal) {
+                    stopRuntimeProcessQuietly(deployment, resolvedLogFile, "部署异常结束，正在清理本次启动出来的进程。");
+                }
                 deploymentRepository.save(deployment);
                 deploymentCleanupService.cleanupAfterDeployment(deployment, resolveLocalWorkspaceRoot());
                 deploymentNotificationAsyncService.notifyAsync(deployment.getId(), NotificationEventType.DEPLOYMENT_FINISHED);
@@ -1231,8 +1246,10 @@ public class DeploymentRunner {
             try {
                 hostService.executeRemoteScript(
                         targetHost.getId(),
-                        "kill " + pid + " >/dev/null 2>&1 || true\n",
-                        8
+                        "kill " + pid + " >/dev/null 2>&1 || true\n" +
+                                "sleep 1\n" +
+                                "if kill -0 " + pid + " >/dev/null 2>&1; then kill -9 " + pid + " >/dev/null 2>&1 || true; fi\n",
+                        10
                 );
             } catch (Exception ex) {
                 log.warn("远程停止部署 {} 的运行进程 {} 失败：{}", deployment.getId(), pid, ex.getMessage());
@@ -1250,6 +1267,37 @@ public class DeploymentRunner {
                 process.destroyForcibly();
             }
         });
+    }
+
+    private void stopRuntimeProcessQuietly(DeploymentEntity deployment, Path logFile, String message) {
+        try {
+            if (logFile != null && message != null && !message.isBlank()) {
+                appendSystemLog(logFile, message);
+            }
+            stopRuntimeProcessIfPresent(deployment);
+        } catch (Exception ex) {
+            log.warn("部署 {} 异常收尾时清理运行进程失败：{}", deployment == null ? null : deployment.getId(), ex.getMessage());
+        }
+    }
+
+    private void clearRuntimePidFileIfPresent(DeploymentEntity deployment, HostEntity targetHost, Path deployWorkspaceRoot) {
+        try {
+            String pidFilePath = jsonMapper.toStringMap(deployment.getVariablesJson()).get("pidFilePath");
+            if (pidFilePath == null || pidFilePath.isBlank()) {
+                return;
+            }
+            if (targetHost != null && targetHost.getType() == HostType.SSH) {
+                hostService.executeRemoteScript(
+                        targetHost.getId(),
+                        "rm -f \"" + pidFilePath.replace("\"", "\\\"") + "\"\n",
+                        8
+                );
+                return;
+            }
+            Files.deleteIfExists(Path.of(pidFilePath));
+        } catch (Exception ex) {
+            log.warn("部署 {} 清理旧 PID 文件失败：{}", deployment == null ? null : deployment.getId(), ex.getMessage());
+        }
     }
 
     private void syncArtifactsToRemote(

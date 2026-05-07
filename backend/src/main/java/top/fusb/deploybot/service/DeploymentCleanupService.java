@@ -2,6 +2,8 @@ package top.fusb.deploybot.service;
 
 import top.fusb.deploybot.model.DeploymentEntity;
 import top.fusb.deploybot.model.DeploymentStatus;
+import top.fusb.deploybot.model.HostEntity;
+import top.fusb.deploybot.model.HostType;
 import top.fusb.deploybot.model.SystemSettingsEntity;
 import top.fusb.deploybot.repo.DeploymentRepository;
 import org.slf4j.Logger;
@@ -26,10 +28,16 @@ public class DeploymentCleanupService {
 
     private final DeploymentRepository deploymentRepository;
     private final SystemSettingsService systemSettingsService;
+    private final HostService hostService;
 
-    public DeploymentCleanupService(DeploymentRepository deploymentRepository, SystemSettingsService systemSettingsService) {
+    public DeploymentCleanupService(
+            DeploymentRepository deploymentRepository,
+            SystemSettingsService systemSettingsService,
+            HostService hostService
+    ) {
         this.deploymentRepository = deploymentRepository;
         this.systemSettingsService = systemSettingsService;
+        this.hostService = hostService;
     }
 
     @Transactional
@@ -44,6 +52,7 @@ public class DeploymentCleanupService {
         cleanupRunWorkspace(deployment, buildWorkspaceRoot, settings);
         cleanupOldRunWorkspaces(buildWorkspaceRoot, settings);
         cleanupPipelineArtifacts(deployment, settings);
+        cleanupRemoteArtifacts(deployment, buildWorkspaceRoot, settings);
     }
 
     private void cleanupRunWorkspace(DeploymentEntity deployment, Path buildWorkspaceRoot, SystemSettingsEntity settings) {
@@ -88,6 +97,30 @@ public class DeploymentCleanupService {
         }
     }
 
+    private void cleanupRemoteArtifacts(DeploymentEntity deployment, Path buildWorkspaceRoot, SystemSettingsEntity settings) {
+        HostEntity targetHost = deployment.getPipeline() == null ? null : deployment.getPipeline().getTargetHost();
+        if (targetHost == null || targetHost.getType() != HostType.SSH) {
+            return;
+        }
+        Path remoteWorkspaceRoot = resolveTargetWorkspaceRoot(targetHost, buildWorkspaceRoot);
+        if (deployment.getStatus() == DeploymentStatus.FAILED || deployment.getStatus() == DeploymentStatus.STOPPED) {
+            deleteRemoteDirectory(targetHost, remoteWorkspaceRoot.resolve("artifacts").resolve("deploy-" + deployment.getId()));
+        }
+        if (deployment.getPipeline() == null || deployment.getPipeline().getId() == null) {
+            return;
+        }
+        int retainCount = systemSettingsService.artifactRetainSuccessCount(settings);
+        List<DeploymentEntity> successfulDeployments = deploymentRepository
+                .findByPipelineIdAndStatusAndArtifactPathIsNotNullOrderByCreatedAtDesc(
+                        deployment.getPipeline().getId(),
+                        DeploymentStatus.SUCCESS
+                );
+        for (int index = retainCount; index < successfulDeployments.size(); index++) {
+            DeploymentEntity expired = successfulDeployments.get(index);
+            deleteRemoteDirectory(targetHost, remoteWorkspaceRoot.resolve("artifacts").resolve("deploy-" + expired.getId()));
+        }
+    }
+
     private void deleteRunWorkspace(Path buildWorkspaceRoot, Long deploymentId) {
         if (deploymentId == null) {
             return;
@@ -119,6 +152,26 @@ public class DeploymentCleanupService {
             log.info("已清理部署目录：{}", path.toAbsolutePath().normalize());
         } catch (Exception ex) {
             log.warn("清理部署目录失败：{} -> {}", path, ex.getMessage());
+        }
+    }
+
+    private Path resolveTargetWorkspaceRoot(HostEntity targetHost, Path localWorkspaceRoot) {
+        if (targetHost != null && targetHost.getWorkspaceRoot() != null && !targetHost.getWorkspaceRoot().isBlank()) {
+            return Path.of(targetHost.getWorkspaceRoot().trim());
+        }
+        return localWorkspaceRoot;
+    }
+
+    private void deleteRemoteDirectory(HostEntity targetHost, Path path) {
+        try {
+            hostService.executeRemoteScript(
+                    targetHost.getId(),
+                    "rm -rf \"" + path.toString().replace("\"", "\\\"") + "\"\n",
+                    15
+            );
+            log.info("已清理远程部署目录：{} -> {}", targetHost.getName(), path.toAbsolutePath().normalize());
+        } catch (Exception ex) {
+            log.warn("清理远程部署目录失败：{} -> {} -> {}", targetHost.getName(), path, ex.getMessage());
         }
     }
 }

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
 import top.fusb.deploybot.notification.model.NotificationChannelEntity;
 import top.fusb.deploybot.notification.model.NotificationChannelType;
+import top.fusb.deploybot.notification.model.NotificationTemplateMode;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -40,8 +41,13 @@ public class FeishuNotificationSender implements NotificationSender {
         String webhookUrl = channel.getWebhookConfig().getWebhookUrl();
         String secret = channel.getWebhookConfig().getSecret();
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("msg_type", "text");
-        payload.put("content", Map.of("text", message.text()));
+        if (message.mode() == NotificationTemplateMode.FEISHU_CARD) {
+            payload.put("msg_type", "interactive");
+            payload.put("card", objectMapper.readValue(message.content(), Map.class));
+        } else {
+            payload.put("msg_type", "text");
+            payload.put("content", Map.of("text", message.content()));
+        }
         if (secret != null && !secret.isBlank()) {
             String timestamp = String.valueOf(Instant.now().getEpochSecond());
             payload.put("timestamp", timestamp);
