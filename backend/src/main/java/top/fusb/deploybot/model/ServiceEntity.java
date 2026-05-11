@@ -10,6 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.ToString;
@@ -53,6 +54,10 @@ public class ServiceEntity {
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.VARCHAR)
     private ServiceStatus status;
+
+    /** 乐观锁版本，避免旧快照覆盖新状态。 */
+    @Version
+    private Long version;
 
     /** 创建时间。 */
     private LocalDateTime createdAt;

@@ -14,8 +14,10 @@ import top.fusb.deploybot.model.ServicePidHistoryEntity;
 import top.fusb.deploybot.model.ServiceStatus;
 import top.fusb.deploybot.repo.ServicePidHistoryRepository;
 import top.fusb.deploybot.repo.ServiceRepository;
+import top.fusb.deploybot.repo.DeploymentRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -38,10 +40,6 @@ public class ServiceManager {
             .parseCaseInsensitive()
             .appendPattern("EEE MMM d HH:mm:ss yyyy")
             .toFormatter(Locale.ENGLISH);
-    private static final Comparator<ServiceEntity> SERVICE_HEARTBEAT_COMPARATOR =
-            Comparator.comparing(ServiceEntity::getLastHeartbeatAt, Comparator.nullsLast(Comparator.reverseOrder()))
-                    .thenComparing(ServiceEntity::getUpdatedAt, Comparator.nullsLast(Comparator.reverseOrder()))
-                    .thenComparing(ServiceEntity::getId, Comparator.nullsLast(Comparator.reverseOrder()));
     private static final Comparator<ServiceEntity> RUNNING_HALL_COMPARATOR =
             Comparator.comparing((ServiceEntity service) -> service.getStatus() == ServiceStatus.RUNNING ? 0 : 1)
                     .thenComparing(ServiceEntity::getActiveSince, Comparator.nullsLast(Comparator.reverseOrder()))
@@ -51,20 +49,26 @@ public class ServiceManager {
 
     private final ServiceRepository serviceRepository;
     private final ServicePidHistoryRepository servicePidHistoryRepository;
+    private final DeploymentRepository deploymentRepository;
     private final JsonMapper jsonMapper;
     private final HostService hostService;
 
-    public ServiceManager(ServiceRepository serviceRepository, ServicePidHistoryRepository servicePidHistoryRepository, JsonMapper jsonMapper, HostService hostService) {
+    public ServiceManager(
+            ServiceRepository serviceRepository,
+            ServicePidHistoryRepository servicePidHistoryRepository,
+            DeploymentRepository deploymentRepository,
+            JsonMapper jsonMapper,
+            HostService hostService
+    ) {
         this.serviceRepository = serviceRepository;
         this.servicePidHistoryRepository = servicePidHistoryRepository;
+        this.deploymentRepository = deploymentRepository;
         this.jsonMapper = jsonMapper;
         this.hostService = hostService;
     }
 
     public List<ServiceEntity> findAll() {
-        List<ServiceEntity> services = serviceRepository.findAllByOrderByUpdatedAtDesc();
-        services.sort(SERVICE_HEARTBEAT_COMPARATOR);
-        return services;
+        return serviceRepository.findAllByOrderByIdDesc();
     }
 
     public List<PipelineHallRunningServiceSummary> findRunningHallSummaries() {
@@ -100,6 +104,8 @@ public class ServiceManager {
         services.forEach(service -> {
             try {
                 refreshStatus(service);
+            } catch (ObjectOptimisticLockingFailureException ex) {
+                log.info("服务 {} 心跳刷新命中乐观锁冲突，说明期间已有更新写入，跳过本次旧快照回写。", service.getId());
             } catch (Exception ex) {
                 log.warn("服务 {} 心跳刷新失败：{}", service.getId(), ex.getMessage());
             }
@@ -376,8 +382,10 @@ public class ServiceManager {
             return;
         }
         ServicePidHistoryEntity history = new ServicePidHistoryEntity();
-        history.setService(service);
-        history.setDeployment(deployment);
+        history.setService(serviceRepository.getReferenceById(service.getId()));
+        if (deployment != null && deployment.getId() != null) {
+            history.setDeployment(deploymentRepository.getReferenceById(deployment.getId()));
+        }
         history.setPreviousPid(previousPid);
         history.setCurrentPid(currentPid);
         history.setPreviousStatus(previousStatus);
@@ -385,7 +393,18 @@ public class ServiceManager {
         history.setChangeSource(source);
         history.setNote(note);
         history.setCreatedAt(LocalDateTime.now());
-        servicePidHistoryRepository.save(history);
+        try {
+            servicePidHistoryRepository.save(history);
+        } catch (Exception ex) {
+            log.warn(
+                    "服务 {} 写入 PID 轨迹失败：source={}，previousPid={}，currentPid={}，reason={}",
+                    service.getId(),
+                    source,
+                    previousPid,
+                    currentPid,
+                    ex.getMessage()
+            );
+        }
     }
 
     private boolean isAlive(Long pid, HostEntity host) {
