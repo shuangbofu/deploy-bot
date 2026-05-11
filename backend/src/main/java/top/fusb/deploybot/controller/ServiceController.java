@@ -1,6 +1,7 @@
 package top.fusb.deploybot.controller;
 
 import top.fusb.deploybot.dto.ServiceProcessBindRequest;
+import top.fusb.deploybot.dto.ServicePidHistorySummary;
 import top.fusb.deploybot.dto.ServiceProcessSummary;
 import top.fusb.deploybot.model.DeploymentEntity;
 import top.fusb.deploybot.model.ServiceEntity;
@@ -51,6 +52,11 @@ public class ServiceController {
     @GetMapping("/{id}/processes")
     public List<ServiceProcessSummary> processes(@PathVariable Long id) {
         return serviceManager.listProcessCandidates(id);
+    }
+
+    @GetMapping("/{id}/pid-history")
+    public List<ServicePidHistorySummary> pidHistory(@PathVariable Long id) {
+        return serviceManager.listPidHistory(id);
     }
 
     /**

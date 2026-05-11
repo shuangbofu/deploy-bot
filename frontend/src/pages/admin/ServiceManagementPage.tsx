@@ -5,9 +5,18 @@ import { servicesApi } from '../../api/services';
 import EmptyPane from '../../components/EmptyPane';
 import PageHeaderBar from '../../components/PageHeaderBar';
 import StatusTag from '../../components/StatusTag';
-import type { ServiceProcessSummary, ServiceSummary } from '../../api/types';
+import type { ServicePidHistorySummary, ServiceProcessSummary, ServiceSummary } from '../../api/types';
 import { formatDateTime } from '../../utils/datetime';
 import { formatDurationSince } from '../../utils/duration';
+
+const PID_HISTORY_SOURCE_LABELS: Record<string, string> = {
+  DEPLOYMENT_CONFIRMED: '部署接管',
+  PRE_DEPLOY_STOP: '部署前停止',
+  MANUAL_BIND: '手动绑定',
+  MANUAL_STOP: '手动停止',
+  HEARTBEAT_STOPPED: '心跳判停',
+  HEARTBEAT_RECOVERED: '心跳恢复',
+};
 
 export default function ServiceManagementPage() {
   const [services, setServices] = useState<ServiceSummary[]>([]);
@@ -23,6 +32,8 @@ export default function ServiceManagementPage() {
   const [processLoading, setProcessLoading] = useState(false);
   const [processKeyword, setProcessKeyword] = useState('');
   const [selectedPid, setSelectedPid] = useState<number>();
+  const [pidHistoryMap, setPidHistoryMap] = useState<Record<number, ServicePidHistorySummary[]>>({});
+  const [pidHistoryLoadingMap, setPidHistoryLoadingMap] = useState<Record<number, boolean>>({});
   const navigate = useNavigate();
 
   const loadServices = async () => {
@@ -86,6 +97,19 @@ export default function ServiceManagementPage() {
     message.success('进程已绑定');
   };
 
+  const loadPidHistory = async (serviceId: number) => {
+    if (pidHistoryMap[serviceId] || pidHistoryLoadingMap[serviceId]) {
+      return;
+    }
+    setPidHistoryLoadingMap((previous) => ({ ...previous, [serviceId]: true }));
+    try {
+      const history = await servicesApi.listPidHistory(serviceId);
+      setPidHistoryMap((previous) => ({ ...previous, [serviceId]: history }));
+    } finally {
+      setPidHistoryLoadingMap((previous) => ({ ...previous, [serviceId]: false }));
+    }
+  };
+
   const filteredServices = useMemo(() => services.filter((item) => {
     const normalizedKeyword = keyword.trim().toLowerCase();
     if (normalizedKeyword) {
@@ -118,6 +142,83 @@ export default function ServiceManagementPage() {
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(normalizedKeyword)));
   }, [processKeyword, processes]);
+
+  const renderPidHistory = (service: ServiceSummary) => {
+    const history = pidHistoryMap[service.id] || [];
+    const switchRows = history.reduce<Array<{
+      key: string;
+      deploymentId: number | null;
+      stoppedAt: string;
+      attachedAt: string;
+      oldPid: number | null;
+      newPid: number | null;
+      note: string;
+    }>>((items, item, index) => {
+      if (item.changeSource !== 'PRE_DEPLOY_STOP') {
+        return items;
+      }
+      const attached = history.slice(index + 1).find((candidate) =>
+        candidate.changeSource === 'DEPLOYMENT_CONFIRMED'
+        && candidate.deploymentId === item.deploymentId,
+      );
+      items.push({
+        key: `${item.id}-${attached?.id || 'pending'}`,
+        deploymentId: item.deploymentId,
+        stoppedAt: item.createdAt,
+        attachedAt: attached?.createdAt || '',
+        oldPid: item.previousPid,
+        newPid: attached?.currentPid ?? null,
+        note: attached
+          ? '本次部署先停止旧进程，再接管新进程。'
+          : '只记录到停止旧进程，后续还没有看到新的接管记录。',
+      });
+      return items;
+    }, []);
+
+    return (
+      <div className="space-y-4">
+        <div>
+          <div className="mb-2 text-sm font-medium text-slate-700">部署切换记录</div>
+          <Table
+            rowKey="key"
+            size="small"
+            pagination={false}
+            loading={pidHistoryLoadingMap[service.id]}
+            dataSource={switchRows}
+            locale={{ emptyText: '当前还没有形成“旧 PID -> 新 PID”的部署切换记录。' }}
+            columns={[
+              { title: '部署', width: 100, render: (_, row) => row.deploymentId ? `#${row.deploymentId}` : '-' },
+              { title: '停止时间', width: 170, render: (_, row) => formatDateTime(row.stoppedAt) },
+              { title: '接管时间', width: 170, render: (_, row) => row.attachedAt ? formatDateTime(row.attachedAt) : '-' },
+              { title: '旧 PID', width: 100, render: (_, row) => row.oldPid ?? '-' },
+              { title: '新 PID', width: 100, render: (_, row) => row.newPid ?? '-' },
+              { title: '说明', render: (_, row) => row.note },
+            ]}
+          />
+        </div>
+        <div>
+          <div className="mb-2 text-sm font-medium text-slate-700">PID 事件流</div>
+          <Table<ServicePidHistorySummary>
+            rowKey="id"
+            size="small"
+            pagination={false}
+            loading={pidHistoryLoadingMap[service.id]}
+            dataSource={history}
+            locale={{ emptyText: '当前还没有 PID 变化记录。' }}
+            columns={[
+              { title: '时间', width: 170, render: (_, row) => formatDateTime(row.createdAt) },
+              { title: '来源', width: 150, render: (_, row) => PID_HISTORY_SOURCE_LABELS[row.changeSource] || '-' },
+              { title: '部署', width: 100, render: (_, row) => row.deploymentId ? `#${row.deploymentId}` : '-' },
+              { title: '本次 PID', width: 100, render: (_, row) => row.currentPid ?? row.previousPid ?? '-' },
+              { title: '原状态', width: 100, render: (_, row) => row.previousStatus ? <StatusTag status={row.previousStatus} runningLabel="运行中" /> : '-' },
+              { title: '新状态', width: 100, render: (_, row) => <StatusTag status={row.currentStatus} runningLabel="运行中" /> },
+              { title: '说明', render: (_, row) => row.note || '-' },
+            ]}
+          />
+        </div>
+      </div>
+    );
+  };
 
   return (
     <>
@@ -185,6 +286,14 @@ export default function ServiceManagementPage() {
           loading={loading}
           scroll={{ x: 960 }}
           dataSource={filteredServices}
+          expandable={{
+            expandedRowRender: renderPidHistory,
+            onExpand: (expanded, record) => {
+              if (expanded) {
+                loadPidHistory(record.id).catch(() => message.error('加载 PID 轨迹失败'));
+              }
+            },
+          }}
           locale={{ emptyText: <EmptyPane description="当前没有可管理的服务。只有模板启用了进程监控并成功记录 PID 后，服务才会出现在这里。" /> }}
           pagination={{
             current: pagination.current,

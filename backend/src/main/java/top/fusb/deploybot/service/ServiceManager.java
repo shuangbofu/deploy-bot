@@ -1,6 +1,7 @@
 package top.fusb.deploybot.service;
 
 import top.fusb.deploybot.dto.PipelineHallRunningServiceSummary;
+import top.fusb.deploybot.dto.ServicePidHistorySummary;
 import top.fusb.deploybot.dto.ServiceProcessSummary;
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorSubCode;
@@ -8,7 +9,10 @@ import top.fusb.deploybot.model.DeploymentEntity;
 import top.fusb.deploybot.model.HostEntity;
 import top.fusb.deploybot.model.HostType;
 import top.fusb.deploybot.model.ServiceEntity;
+import top.fusb.deploybot.model.ServicePidChangeSource;
+import top.fusb.deploybot.model.ServicePidHistoryEntity;
 import top.fusb.deploybot.model.ServiceStatus;
+import top.fusb.deploybot.repo.ServicePidHistoryRepository;
 import top.fusb.deploybot.repo.ServiceRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,11 +50,13 @@ public class ServiceManager {
                     .thenComparing(ServiceEntity::getId, Comparator.nullsLast(Comparator.naturalOrder()));
 
     private final ServiceRepository serviceRepository;
+    private final ServicePidHistoryRepository servicePidHistoryRepository;
     private final JsonMapper jsonMapper;
     private final HostService hostService;
 
-    public ServiceManager(ServiceRepository serviceRepository, JsonMapper jsonMapper, HostService hostService) {
+    public ServiceManager(ServiceRepository serviceRepository, ServicePidHistoryRepository servicePidHistoryRepository, JsonMapper jsonMapper, HostService hostService) {
         this.serviceRepository = serviceRepository;
+        this.servicePidHistoryRepository = servicePidHistoryRepository;
         this.jsonMapper = jsonMapper;
         this.hostService = hostService;
     }
@@ -111,7 +117,7 @@ public class ServiceManager {
      * 在新的部署启动前，优先停止当前流水线已经被系统接管的旧服务。
      */
     public ServiceEntity stopManagedServiceBeforeDeploy(Long pipelineId) {
-        ServiceEntity service = serviceRepository.findFirstByPipelineId(pipelineId).orElse(null);
+        ServiceEntity service = serviceRepository.findByPipelineId(pipelineId).orElse(null);
         if (service == null) {
             log.info("流水线 {} 当前没有可接管的旧服务，无需在部署前停止。", pipelineId);
             return null;
@@ -147,22 +153,26 @@ public class ServiceManager {
                     service.getLastDeployment() == null ? null : service.getLastDeployment().getMonitoredPid()
             );
         }
+        ServiceStatus previousStatus = service.getStatus();
         service.setCurrentPid(null);
         service.setStatus(ServiceStatus.STOPPED);
         service.setActiveSince(null);
         service.setHeartbeatMissCount(0);
         service.setUpdatedAt(LocalDateTime.now());
         ServiceEntity saved = serviceRepository.save(service);
+        recordPidHistory(saved, saved.getLastDeployment(), stoppedPid, null, previousStatus, ServiceStatus.STOPPED, ServicePidChangeSource.PRE_DEPLOY_STOP, "部署前停止旧服务");
         saved.setCurrentPid(stoppedPid);
         log.info("流水线 {} 部署前旧服务停止完成。serviceId={}。", pipelineId, saved.getId());
         return saved;
     }
 
     public void updateFromDeployment(DeploymentEntity deployment, Long pid) {
-        ServiceEntity service = serviceRepository.findFirstByPipelineId(deployment.getPipeline().getId())
+        ServiceEntity service = serviceRepository.findByPipelineId(deployment.getPipeline().getId())
                 .orElseGet(ServiceEntity::new);
 
         Map<String, String> variables = jsonMapper.toStringMap(deployment.getVariablesJson());
+        Long previousPid = service.getCurrentPid();
+        ServiceStatus previousStatus = service.getStatus();
         service.setPipeline(deployment.getPipeline());
         service.setLastDeployment(deployment);
         service.setServiceName(variables.getOrDefault("serviceName", deployment.getPipeline().getName()));
@@ -178,13 +188,16 @@ public class ServiceManager {
             service.setHeartbeatMissCount(0);
         }
         service.setUpdatedAt(LocalDateTime.now());
-        serviceRepository.save(service);
+        ServiceEntity saved = serviceRepository.save(service);
+        recordPidHistory(saved, deployment, previousPid, pid, previousStatus, saved.getStatus(), ServicePidChangeSource.DEPLOYMENT_CONFIRMED, "部署完成后接管进程");
     }
 
     public ServiceEntity stop(Long id) {
         ServiceEntity service = serviceRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorSubCode.SERVICE_NOT_FOUND));
         HostEntity targetHost = service.getPipeline() == null ? null : service.getPipeline().getTargetHost();
+        Long previousPid = service.getCurrentPid();
+        ServiceStatus previousStatus = service.getStatus();
         if (service.getCurrentPid() != null) {
             stopProcess(service.getCurrentPid(), targetHost);
         }
@@ -193,7 +206,9 @@ public class ServiceManager {
         service.setActiveSince(null);
         service.setHeartbeatMissCount(0);
         service.setUpdatedAt(LocalDateTime.now());
-        return serviceRepository.save(service);
+        ServiceEntity saved = serviceRepository.save(service);
+        recordPidHistory(saved, saved.getLastDeployment(), previousPid, null, previousStatus, ServiceStatus.STOPPED, ServicePidChangeSource.MANUAL_STOP, "手动停止服务");
+        return saved;
     }
 
     public List<ServiceProcessSummary> listProcessCandidates(Long id) {
@@ -222,6 +237,8 @@ public class ServiceManager {
         if (!isAlive(pid, targetHost)) {
             throw new BusinessException(ErrorSubCode.REMOTE_SERVICE_STOP_FAILED, "进程不存在或已经退出，无法绑定。");
         }
+        Long previousPid = service.getCurrentPid();
+        ServiceStatus previousStatus = service.getStatus();
         service.setCurrentPid(pid);
         service.setStatus(ServiceStatus.RUNNING);
         service.setActiveSince(resolveProcessStartedAt(pid, targetHost).orElseGet(() -> service.getActiveSince() != null ? service.getActiveSince() : LocalDateTime.now()));
@@ -229,12 +246,16 @@ public class ServiceManager {
         service.setHeartbeatMissCount(0);
         service.setUpdatedAt(LocalDateTime.now());
         log.info("服务 {} 手动绑定进程成功，pid={}，目标主机类型={}。", service.getId(), pid, targetHost == null ? HostType.LOCAL : targetHost.getType());
-        return serviceRepository.save(service);
+        ServiceEntity saved = serviceRepository.save(service);
+        recordPidHistory(saved, saved.getLastDeployment(), previousPid, pid, previousStatus, ServiceStatus.RUNNING, ServicePidChangeSource.MANUAL_BIND, "手动绑定进程");
+        return saved;
     }
 
     public ServiceEntity refreshStatus(ServiceEntity service) {
         HostEntity targetHost = service.getPipeline() == null ? null : service.getPipeline().getTargetHost();
         Long pid = resolveManagedPid(service);
+        Long previousPid = service.getCurrentPid();
+        ServiceStatus previousStatus = service.getStatus();
         log.info(
                 "服务 {} 开始刷新状态：status={}，currentPid={}，解析后pid={}，pid来源={}，lastDeploymentId={}，lastDeploymentPid={}，heartbeatMissCount={}。",
                 service.getId(),
@@ -283,7 +304,33 @@ public class ServiceManager {
             }
         }
         service.setUpdatedAt(LocalDateTime.now());
-        return serviceRepository.save(service);
+        ServiceEntity saved = serviceRepository.save(service);
+        if (saved.getStatus() == ServiceStatus.STOPPED && previousStatus != ServiceStatus.STOPPED) {
+            recordPidHistory(saved, saved.getLastDeployment(), previousPid, saved.getCurrentPid(), previousStatus, ServiceStatus.STOPPED, ServicePidChangeSource.HEARTBEAT_STOPPED, "心跳连续未命中，标记为已停止");
+        } else if (saved.getStatus() == ServiceStatus.RUNNING
+                && (previousStatus != ServiceStatus.RUNNING || !java.util.Objects.equals(previousPid, saved.getCurrentPid()))) {
+            recordPidHistory(saved, saved.getLastDeployment(), previousPid, saved.getCurrentPid(), previousStatus, ServiceStatus.RUNNING, ServicePidChangeSource.HEARTBEAT_RECOVERED, "心跳确认服务仍在运行");
+        }
+        return saved;
+    }
+
+    public List<ServicePidHistorySummary> listPidHistory(Long id) {
+        serviceRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.SERVICE_NOT_FOUND));
+        return servicePidHistoryRepository.findTop50ByServiceIdOrderByCreatedAtDescIdDesc(id).stream()
+                .map(item -> new ServicePidHistorySummary(
+                        item.getId(),
+                        item.getService().getId(),
+                        item.getDeployment() == null ? null : item.getDeployment().getId(),
+                        item.getPreviousPid(),
+                        item.getCurrentPid(),
+                        item.getPreviousStatus(),
+                        item.getCurrentStatus(),
+                        item.getChangeSource(),
+                        item.getNote(),
+                        item.getCreatedAt()
+                ))
+                .toList();
     }
 
     private Long resolveManagedPid(ServiceEntity service) {
@@ -310,6 +357,35 @@ public class ServiceManager {
             return "lastDeployment.monitoredPid";
         }
         return "无可用PID";
+    }
+
+    private void recordPidHistory(
+            ServiceEntity service,
+            DeploymentEntity deployment,
+            Long previousPid,
+            Long currentPid,
+            ServiceStatus previousStatus,
+            ServiceStatus currentStatus,
+            ServicePidChangeSource source,
+            String note
+    ) {
+        if (service == null || service.getId() == null) {
+            return;
+        }
+        if (java.util.Objects.equals(previousPid, currentPid) && previousStatus == currentStatus) {
+            return;
+        }
+        ServicePidHistoryEntity history = new ServicePidHistoryEntity();
+        history.setService(service);
+        history.setDeployment(deployment);
+        history.setPreviousPid(previousPid);
+        history.setCurrentPid(currentPid);
+        history.setPreviousStatus(previousStatus);
+        history.setCurrentStatus(currentStatus);
+        history.setChangeSource(source);
+        history.setNote(note);
+        history.setCreatedAt(LocalDateTime.now());
+        servicePidHistoryRepository.save(history);
     }
 
     private boolean isAlive(Long pid, HostEntity host) {

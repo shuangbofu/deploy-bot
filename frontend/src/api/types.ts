@@ -21,6 +21,7 @@ import type {
   ProjectSummary,
   RuntimeEnvironmentSummary,
   ServiceSummary,
+  ServicePidHistorySummary,
   TemplateSummary,
   UserSummary,
 } from '../types/domain';
@@ -298,6 +299,7 @@ export type {
   RuntimeEnvironmentInstallAccepted,
   RuntimeEnvironmentInstallTaskStatus,
   ServiceSummary,
+  ServicePidHistorySummary,
   TemplateSummary,
   AvatarUploadResponse,
   UserSummary,

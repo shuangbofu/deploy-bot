@@ -27,6 +27,13 @@ export type NotificationChannelType = 'FEISHU';
 export type NotificationEventType = 'DEPLOYMENT_STARTED' | 'DEPLOYMENT_FINISHED';
 export type NotificationTemplateMode = 'TEXT' | 'FEISHU_CARD';
 export type ServiceStatus = 'RUNNING' | 'STOPPED';
+export type ServicePidChangeSource =
+  | 'DEPLOYMENT_CONFIRMED'
+  | 'PRE_DEPLOY_STOP'
+  | 'MANUAL_BIND'
+  | 'MANUAL_STOP'
+  | 'HEARTBEAT_STOPPED'
+  | 'HEARTBEAT_RECOVERED';
 
 export interface MavenSettingsSummary {
   id: number;
@@ -343,21 +350,34 @@ export interface ServiceSummary {
   /** 服务主键。 */
   id: number;
   /** 服务展示名称。 */
-  serviceName?: string;
+  serviceName: string;
   /** 当前进程 PID。 */
-  currentPid?: number | null;
+  currentPid: number | null;
   /** 服务状态。 */
-  status?: string;
+  status: ServiceStatus;
   /** 最近更新时间。 */
-  updatedAt?: string;
+  updatedAt: string;
   /** 当前这次运行开始被系统接管的时间。 */
-  activeSince?: string | null;
+  activeSince: string | null;
   /** 最近一次心跳确认仍然存活的时间。 */
-  lastHeartbeatAt?: string | null;
+  lastHeartbeatAt: string | null;
   /** 关联流水线。 */
-  pipeline?: PipelineSummary | null;
+  pipeline: PipelineSummary | null;
   /** 最近一次部署。 */
-  lastDeployment?: DeploymentSummary | null;
+  lastDeployment: DeploymentSummary | null;
+}
+
+export interface ServicePidHistorySummary {
+  id: number;
+  serviceId: number;
+  deploymentId: number | null;
+  previousPid: number | null;
+  currentPid: number | null;
+  previousStatus: ServiceStatus | null;
+  currentStatus: ServiceStatus;
+  changeSource: ServicePidChangeSource;
+  note: string | null;
+  createdAt: string;
 }
 
 export interface HostConnectionTestResult {

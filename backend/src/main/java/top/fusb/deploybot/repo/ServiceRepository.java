@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Optional;
 
 public interface ServiceRepository extends JpaRepository<ServiceEntity, Long> {
-    Optional<ServiceEntity> findFirstByPipelineId(Long pipelineId);
+    Optional<ServiceEntity> findByPipelineId(Long pipelineId);
     List<ServiceEntity> findAllByOrderByUpdatedAtDesc();
     List<ServiceEntity> findTop6ByOrderByUpdatedAtDesc();
     List<ServiceEntity> findAllByStatusOrderByLastHeartbeatAtDescUpdatedAtDescIdDesc(ServiceStatus status);

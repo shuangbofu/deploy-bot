@@ -742,7 +742,7 @@ public class DeploymentService {
         applyBuildRuntimeEnvironmentVariables(variables, pipeline);
 
         if (Boolean.TRUE.equals(pipeline.getTemplate().getMonitorProcess())) {
-            serviceRepository.findFirstByPipelineId(pipeline.getId())
+            serviceRepository.findByPipelineId(pipeline.getId())
                     .map(ServiceEntity::getId)
                     .ifPresent(serviceManager::stop);
         }

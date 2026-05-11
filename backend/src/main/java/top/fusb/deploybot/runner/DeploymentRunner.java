@@ -66,6 +66,7 @@ public class DeploymentRunner {
     private final DeploymentNotificationAsyncService deploymentNotificationAsyncService;
     private final Path defaultWorkspaceRoot;
     private final Map<Long, Process> runningProcesses = new ConcurrentHashMap<>();
+    private final Map<Long, String> stopRequests = new ConcurrentHashMap<>();
 
     private record StartupLogCursor(String runtimeLogPath, long nextOffset) {
     }
@@ -164,7 +165,11 @@ public class DeploymentRunner {
             );
             log.info("部署 {} 构建阶段结束，退出码={}.", deploymentId, exitCode);
             deployment = refreshDeploymentState(deployment);
-            if (deployment.getStatus() == DeploymentStatus.STOPPED) {
+            if (isStopRequested(deploymentId) || deployment.getStatus() == DeploymentStatus.STOPPED) {
+                deployment.setStatus(DeploymentStatus.STOPPED);
+                if (deployment.getFinishedAt() == null) {
+                    deployment.setFinishedAt(LocalDateTime.now());
+                }
                 appendSystemLog(logFile, "部署已停止。");
                 deploymentRepository.save(deployment);
                 deploymentCleanupService.cleanupAfterDeployment(deployment, buildWorkspaceRoot);
@@ -211,7 +216,11 @@ public class DeploymentRunner {
                 }
                 log.info("部署 {} 发布阶段结束，退出码={}.", deploymentId, exitCode);
                 deployment = refreshDeploymentState(deployment);
-                if (deployment.getStatus() == DeploymentStatus.STOPPED) {
+                if (isStopRequested(deploymentId) || deployment.getStatus() == DeploymentStatus.STOPPED) {
+                    deployment.setStatus(DeploymentStatus.STOPPED);
+                    if (deployment.getFinishedAt() == null) {
+                        deployment.setFinishedAt(LocalDateTime.now());
+                    }
                     appendSystemLog(logFile, "部署已停止。");
                     deploymentRepository.save(deployment);
                     deploymentCleanupService.cleanupAfterDeployment(deployment, buildWorkspaceRoot);
@@ -222,7 +231,8 @@ public class DeploymentRunner {
             LocalDateTime finishedAt = LocalDateTime.now();
             deployment = refreshDeploymentState(deployment);
             deployment.setFinishedAt(finishedAt);
-            if (deployment.getStatus() == DeploymentStatus.STOPPED) {
+            if (isStopRequested(deploymentId) || deployment.getStatus() == DeploymentStatus.STOPPED) {
+                deployment.setStatus(DeploymentStatus.STOPPED);
                 appendSystemLog(logFile, "部署已停止。");
                 deploymentRepository.save(deployment);
                 deploymentCleanupService.cleanupAfterDeployment(deployment, buildWorkspaceRoot);
@@ -240,7 +250,8 @@ public class DeploymentRunner {
                     Long monitoredPid = verifyMonitoredProcess(deployment, targetHost, pidsDir, deploymentId, logFile);
                     deployment = refreshDeploymentState(deployment);
                     deployment.setFinishedAt(finishedAt);
-                    if (deployment.getStatus() == DeploymentStatus.STOPPED) {
+                    if (isStopRequested(deploymentId) || deployment.getStatus() == DeploymentStatus.STOPPED) {
+                        deployment.setStatus(DeploymentStatus.STOPPED);
                         appendSystemLog(logFile, "部署已停止。");
                         deploymentRepository.save(deployment);
                         deploymentCleanupService.cleanupAfterDeployment(deployment, buildWorkspaceRoot);
@@ -269,13 +280,20 @@ public class DeploymentRunner {
                     log.info("部署 {} 成功完成，本次未启用服务监测。", deploymentId);
                 }
             } else {
-                deployment.setStatus(DeploymentStatus.FAILED);
-                deployment.setErrorMessage("Script exited with code " + exitCode);
-                appendSystemLog(logFile, "部署失败，脚本退出码：" + exitCode);
-                if (deployStageExecuted) {
-                    stopRuntimeProcessQuietly(deployment, logFile, "发布脚本执行异常，正在清理本次启动出来的进程。");
+                if (isStopRequested(deploymentId)) {
+                    deployment.setStatus(DeploymentStatus.STOPPED);
+                    deployment.setErrorMessage(null);
+                    appendSystemLog(logFile, "部署已停止。");
+                    log.info("部署 {} 在收到手动停止请求后退出，脚本退出码={} 按停止处理。", deploymentId, exitCode);
+                } else {
+                    deployment.setStatus(DeploymentStatus.FAILED);
+                    deployment.setErrorMessage("Script exited with code " + exitCode);
+                    appendSystemLog(logFile, "部署失败，脚本退出码：" + exitCode);
+                    if (deployStageExecuted) {
+                        stopRuntimeProcessQuietly(deployment, logFile, "发布脚本执行异常，正在清理本次启动出来的进程。");
+                    }
+                    log.warn("部署 {} 失败，脚本进程退出码={}。", deploymentId, exitCode);
                 }
-                log.warn("部署 {} 失败，脚本进程退出码={}。", deploymentId, exitCode);
             }
             deploymentRepository.save(deployment);
             deploymentCleanupService.cleanupAfterDeployment(deployment, buildWorkspaceRoot);
@@ -286,7 +304,8 @@ public class DeploymentRunner {
             final Path capturedLogFile = logFile;
             final boolean deployStageExecutedFinal = deployStageExecuted;
             deploymentRepository.findById(deploymentId).ifPresent(deployment -> {
-                if (deployment.getStatus() == DeploymentStatus.STOPPED) {
+                if (isStopRequested(deploymentId) || deployment.getStatus() == DeploymentStatus.STOPPED) {
+                    deployment.setStatus(DeploymentStatus.STOPPED);
                     Path resolvedStoppedLogFile = resolveOrCreateLogFile(capturedLogFile, deployment.getLogPath(), deploymentId);
                     if (resolvedStoppedLogFile != null) {
                         try {
@@ -320,6 +339,8 @@ public class DeploymentRunner {
                 deploymentCleanupService.cleanupAfterDeployment(deployment, resolveLocalWorkspaceRoot());
                 deploymentNotificationAsyncService.notifyAsync(deployment.getId(), NotificationEventType.DEPLOYMENT_FINISHED);
             });
+        } finally {
+            stopRequests.remove(deploymentId);
         }
     }
 
@@ -366,6 +387,7 @@ public class DeploymentRunner {
 
     public void stop(Long deploymentId, String stoppedBy) {
         log.info("收到部署 {} 的手动停止请求。", deploymentId);
+        stopRequests.put(deploymentId, stoppedBy == null ? "" : stoppedBy);
         deploymentRepository.findById(deploymentId).ifPresent(deployment -> {
             if (deployment.getStatus() != DeploymentStatus.PENDING && deployment.getStatus() != DeploymentStatus.RUNNING) {
                 return;
@@ -697,6 +719,9 @@ public class DeploymentRunner {
             }
             return null;
         }
+        deployment.setMonitoredPid(monitoredPid);
+        deploymentRepository.save(deployment);
+        log.info("部署 {} 已提前记录候选受管进程 PID={}，后续即使启动观察失败也可用于清理。", deploymentId, monitoredPid);
         return observeStartupWindow(deployment, targetHost, monitoredPid, logFile);
     }
 
@@ -1236,6 +1261,9 @@ public class DeploymentRunner {
     private boolean isStopRequested(Long deploymentId) {
         if (deploymentId == null) {
             return false;
+        }
+        if (stopRequests.containsKey(deploymentId)) {
+            return true;
         }
         return deploymentRepository.findById(deploymentId)
                 .map(item -> item.getStatus() == DeploymentStatus.STOPPED)
