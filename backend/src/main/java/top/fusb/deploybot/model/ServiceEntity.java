@@ -65,4 +65,7 @@ public class ServiceEntity {
 
     /** 最近一次心跳确认仍然存活的时间。 */
     private LocalDateTime lastHeartbeatAt;
+
+    /** 连续心跳未命中的次数，用于避免一次误判就清空 PID。 */
+    private Integer heartbeatMissCount;
 }

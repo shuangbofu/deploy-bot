@@ -24,22 +24,36 @@ export default function AdminDeploymentDetailPage() {
   const [searchParams] = useSearchParams();
   const [deployment, setDeployment] = useState<DeploymentSummary>();
   const [logContent, setLogContent] = useState('');
+  const [detailLoading, setDetailLoading] = useState(true);
+  const [logLoading, setLogLoading] = useState(true);
   const [tick, setTick] = useState(() => Date.now());
   const contentRef = useRef<HTMLDivElement | null>(null);
   const [contentHeight, setContentHeight] = useState<number>();
 
   /** 同步加载部署详情与日志内容。 */
-  const loadDetail = async () => {
-    const [detailResponse, logResponse] = await Promise.all([
-      deploymentsApi.detail(String(deploymentId)),
-      deploymentsApi.getLog(String(deploymentId)),
-    ]);
-    setDeployment(detailResponse);
-    setLogContent(logResponse.content);
+  const loadDeploymentDetail = async () => {
+    setDetailLoading(true);
+    try {
+      const detailResponse = await deploymentsApi.detail(String(deploymentId));
+      setDeployment(detailResponse);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const loadDeploymentLog = async () => {
+    setLogLoading(true);
+    try {
+      const logResponse = await deploymentsApi.getLog(String(deploymentId));
+      setLogContent(logResponse.content);
+    } finally {
+      setLogLoading(false);
+    }
   };
 
   useEffect(() => {
-    loadDetail().catch(() => message.error('加载部署详情失败'));
+    loadDeploymentDetail().catch(() => message.error('加载部署详情失败'));
+    loadDeploymentLog().catch(() => message.error('加载部署日志失败'));
   }, [deploymentId]);
 
   useEffect(() => {
@@ -52,7 +66,8 @@ export default function AdminDeploymentDetailPage() {
       return undefined;
     }
     const timer = window.setInterval(() => {
-      loadDetail().catch(() => message.error('刷新部署详情失败'));
+      loadDeploymentDetail().catch(() => message.error('刷新部署详情失败'));
+      loadDeploymentLog().catch(() => message.error('刷新部署日志失败'));
     }, 3000);
     return () => window.clearInterval(timer);
   }, [deployment, deploymentId]);
@@ -186,13 +201,19 @@ export default function AdminDeploymentDetailPage() {
               cancelText="取消"
               onConfirm={() => deploymentsApi.stop(String(deploymentId)).then(() => {
                 message.success('部署已停止');
-                return loadDetail();
+                return Promise.all([loadDeploymentDetail(), loadDeploymentLog()]);
               }).catch(() => message.error('停止部署失败'))}
             >
               <Button danger>停止部署</Button>
             </Popconfirm>
           ) : null,
-          <Button key="refresh" type="primary" onClick={() => loadDetail().catch(() => message.error('刷新失败'))}>刷新</Button>,
+          <Button key="refresh" type="primary" onClick={() => {
+            loadDeploymentDetail().catch(() => message.error('刷新详情失败'));
+            loadDeploymentLog().catch(() => message.error('刷新日志失败'));
+          }}
+          >
+            刷新
+          </Button>,
         ]}
       />
       <div ref={contentRef} className="deployment-detail-content" style={contentHeight ? { height: contentHeight } : undefined}>
@@ -203,6 +224,7 @@ export default function AdminDeploymentDetailPage() {
               className="app-card"
               title="部署状态"
               extra={<StatusTag status={deployment?.status} />}
+              loading={detailLoading}
             >
               <Progress
                 percent={progress}
@@ -228,7 +250,7 @@ export default function AdminDeploymentDetailPage() {
                 <Descriptions.Item label="错误信息">{deployment?.status === 'STOPPED' ? '-' : (deployment?.errorMessage || '-')}</Descriptions.Item>
               </Descriptions>
             </Card>
-            <Card className="app-card deployment-detail-snapshot-card" title="部署快照">
+            <Card className="app-card deployment-detail-snapshot-card" title="部署快照" loading={detailLoading}>
               <Descriptions column={1} size="small">
                 {snapshotFields.length > 0 ? snapshotFields.map((item) => (
                   <Descriptions.Item key={item.label} label={item.label}>{item.value}</Descriptions.Item>
@@ -272,6 +294,7 @@ export default function AdminDeploymentDetailPage() {
             className="app-card deployment-detail-log-card"
             style={contentHeight ? { height: '100%' } : undefined}
             title="部署日志"
+            loading={logLoading}
             extra={(
               <Space>
                 <Button onClick={() => copyText(logContent).then(() => message.success('日志已复制')).catch(() => message.error('复制失败'))}>

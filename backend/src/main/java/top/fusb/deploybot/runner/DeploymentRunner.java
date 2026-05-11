@@ -637,6 +637,7 @@ public class DeploymentRunner {
                         log.info("Deployment {} read monitored pid {} from remote pid file {}.", deploymentId, output.lines().findFirst().orElse("").trim(), pidFilePath);
                         return Long.parseLong(output.lines().findFirst().orElse("").trim());
                     }
+                    log.info("Deployment {} remote pid file {} exists but returned blank content.", deploymentId, pidFilePath);
                 }
             } else {
                 Path pidFile = pidsDir.resolve("service-" + deploymentId + ".pid");
@@ -646,15 +647,20 @@ public class DeploymentRunner {
                         log.info("Deployment {} read monitored pid {} from local pid file {}.", deploymentId, pidText, pidFile.toAbsolutePath().normalize());
                         return Long.parseLong(pidText);
                     }
+                    log.info("Deployment {} local pid file {} exists but returned blank content.", deploymentId, pidFile.toAbsolutePath().normalize());
                 }
             }
             String discoveryKeyword = resolvePidDiscoveryKeyword(deployment);
             if (discoveryKeyword != null && !discoveryKeyword.isBlank()) {
                 log.info("部署 {} 正在使用推导关键字 '{}' 尝试发现 PID。", deploymentId, discoveryKeyword);
-                return readMonitoredPidByKeyword(targetHost, discoveryKeyword);
+                Long discoveredPid = readMonitoredPidByKeyword(targetHost, discoveryKeyword);
+                log.info("部署 {} 通过关键字推导得到 PID={}。", deploymentId, discoveredPid);
+                return discoveredPid;
             }
+            log.info("部署 {} 当前没有可用的 PID 文件或推导关键字。", deploymentId);
             return null;
-        } catch (Exception ignored) {
+        } catch (Exception ex) {
+            log.warn("部署 {} 读取受管 PID 失败：{}", deploymentId, ex.getMessage());
             return null;
         }
     }
@@ -668,13 +674,16 @@ public class DeploymentRunner {
                         buildKeywordLookupScript(escapedKeyword, keyword),
                         8
                 ).trim();
+                log.info("关键字推导(远程) keyword='{}' 输出='{}'。", keyword, output.lines().findFirst().orElse("").trim());
                 return output.isBlank() ? null : Long.parseLong(output.lines().findFirst().orElse("").trim());
             }
             Process process = new ProcessBuilder("bash", "-lc", buildKeywordLookupScript(escapedKeyword, keyword)).redirectErrorStream(true).start();
             String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
             process.waitFor();
+            log.info("关键字推导(本地) keyword='{}' 输出='{}'。", keyword, output.lines().findFirst().orElse("").trim());
             return output.isBlank() ? null : Long.parseLong(output.lines().findFirst().orElse("").trim());
-        } catch (Exception ignored) {
+        } catch (Exception ex) {
+            log.warn("关键字推导失败 keyword='{}'：{}", keyword, ex.getMessage());
             return null;
         }
     }
@@ -805,11 +814,13 @@ public class DeploymentRunner {
         StringBuilder startupOutputBuffer = new StringBuilder();
         StartupLogCursor logCursor = initializeStartupLogCursor(deployment, targetHost);
         log.info(
-                "部署 {} 开始启动观察，PID={}，超时时间={}毫秒，启动关键字='{}'。",
+                "部署 {} 开始启动观察，PID={}，超时时间={}毫秒，启动关键字='{}'，运行日志路径='{}'，初始偏移={}。",
                 deployment.getId(),
                 monitoredPid,
                 resolveStartupTimeoutMillis(deployment),
-                startupKeyword
+                startupKeyword,
+                logCursor == null ? null : logCursor.runtimeLogPath(),
+                logCursor == null ? null : logCursor.nextOffset()
         );
         while (System.currentTimeMillis() <= deadline) {
             if (isStopRequested(deployment.getId())) {
@@ -824,6 +835,14 @@ public class DeploymentRunner {
             logCursor = logReadResult.cursor();
             appendRuntimeLogDelta(logFile, logReadResult.content());
             appendStartupOutput(startupOutputBuffer, logReadResult.content());
+            log.info(
+                    "部署 {} 启动观察第 {} 次读取日志增量完成：本次增量长度={}，累计缓存长度={}，当前偏移={}。",
+                    deployment.getId(),
+                    attempt,
+                    logReadResult.content() == null ? 0 : logReadResult.content().length(),
+                    startupOutputBuffer.length(),
+                    logCursor == null ? null : logCursor.nextOffset()
+            );
             boolean alive = isProcessAlive(targetHost, monitoredPid);
             if (!alive) {
                 try {

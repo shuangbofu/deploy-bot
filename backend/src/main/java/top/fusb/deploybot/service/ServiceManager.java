@@ -29,6 +29,7 @@ import java.util.Map;
 @Service
 public class ServiceManager {
     private static final Logger log = LoggerFactory.getLogger(ServiceManager.class);
+    private static final int HEARTBEAT_MISS_THRESHOLD = 3;
     private static final DateTimeFormatter REMOTE_PROCESS_START_FORMATTER = new DateTimeFormatterBuilder()
             .parseCaseInsensitive()
             .appendPattern("EEE MMM d HH:mm:ss yyyy")
@@ -115,15 +116,41 @@ public class ServiceManager {
             log.info("流水线 {} 当前没有可接管的旧服务，无需在部署前停止。", pipelineId);
             return null;
         }
-        Long stoppedPid = service.getCurrentPid();
-        log.info("流水线 {} 在部署前检测到已受管服务：serviceId={}，pid={}，状态={}。", pipelineId, service.getId(), service.getCurrentPid(), service.getStatus());
-        if (service.getCurrentPid() != null) {
+        Long stoppedPid = resolveManagedPid(service);
+        log.info(
+                "流水线 {} 在部署前检测到已受管服务：serviceId={}，pid={}，状态={}，pid来源={}，currentPid={}，lastDeploymentId={}，lastDeploymentPid={}，heartbeatMissCount={}。",
+                pipelineId,
+                service.getId(),
+                stoppedPid,
+                service.getStatus(),
+                describeManagedPidSource(service),
+                service.getCurrentPid(),
+                service.getLastDeployment() == null ? null : service.getLastDeployment().getId(),
+                service.getLastDeployment() == null ? null : service.getLastDeployment().getMonitoredPid(),
+                service.getHeartbeatMissCount()
+        );
+        if (stoppedPid != null) {
             HostEntity targetHost = service.getPipeline() == null ? null : service.getPipeline().getTargetHost();
-            stopProcess(service.getCurrentPid(), targetHost);
+            if (isAlive(stoppedPid, targetHost)) {
+                log.info("流水线 {} 准备停止旧服务进程 pid={}，目标主机类型={}。", pipelineId, stoppedPid, targetHost == null ? HostType.LOCAL : targetHost.getType());
+                stopProcess(stoppedPid, targetHost);
+            } else {
+                log.info("流水线 {} 的旧服务 pid={} 已不存在，直接清理服务状态。", pipelineId, stoppedPid);
+            }
+        } else {
+            log.warn(
+                    "流水线 {} 在部署前发现服务记录存在，但无法解析到可接管 pid。serviceId={}，currentPid={}，lastDeploymentId={}，lastDeploymentPid={}。",
+                    pipelineId,
+                    service.getId(),
+                    service.getCurrentPid(),
+                    service.getLastDeployment() == null ? null : service.getLastDeployment().getId(),
+                    service.getLastDeployment() == null ? null : service.getLastDeployment().getMonitoredPid()
+            );
         }
         service.setCurrentPid(null);
         service.setStatus(ServiceStatus.STOPPED);
         service.setActiveSince(null);
+        service.setHeartbeatMissCount(0);
         service.setUpdatedAt(LocalDateTime.now());
         ServiceEntity saved = serviceRepository.save(service);
         saved.setCurrentPid(stoppedPid);
@@ -148,6 +175,7 @@ public class ServiceManager {
         if (running) {
             service.setActiveSince(LocalDateTime.now());
             service.setLastHeartbeatAt(LocalDateTime.now());
+            service.setHeartbeatMissCount(0);
         }
         service.setUpdatedAt(LocalDateTime.now());
         serviceRepository.save(service);
@@ -163,6 +191,7 @@ public class ServiceManager {
         service.setCurrentPid(null);
         service.setStatus(ServiceStatus.STOPPED);
         service.setActiveSince(null);
+        service.setHeartbeatMissCount(0);
         service.setUpdatedAt(LocalDateTime.now());
         return serviceRepository.save(service);
     }
@@ -197,25 +226,90 @@ public class ServiceManager {
         service.setStatus(ServiceStatus.RUNNING);
         service.setActiveSince(resolveProcessStartedAt(pid, targetHost).orElseGet(() -> service.getActiveSince() != null ? service.getActiveSince() : LocalDateTime.now()));
         service.setLastHeartbeatAt(LocalDateTime.now());
+        service.setHeartbeatMissCount(0);
         service.setUpdatedAt(LocalDateTime.now());
+        log.info("服务 {} 手动绑定进程成功，pid={}，目标主机类型={}。", service.getId(), pid, targetHost == null ? HostType.LOCAL : targetHost.getType());
         return serviceRepository.save(service);
     }
 
     public ServiceEntity refreshStatus(ServiceEntity service) {
         HostEntity targetHost = service.getPipeline() == null ? null : service.getPipeline().getTargetHost();
-        boolean running = isAlive(service.getCurrentPid(), targetHost);
-        service.setStatus(running ? ServiceStatus.RUNNING : ServiceStatus.STOPPED);
+        Long pid = resolveManagedPid(service);
+        log.info(
+                "服务 {} 开始刷新状态：status={}，currentPid={}，解析后pid={}，pid来源={}，lastDeploymentId={}，lastDeploymentPid={}，heartbeatMissCount={}。",
+                service.getId(),
+                service.getStatus(),
+                service.getCurrentPid(),
+                pid,
+                describeManagedPidSource(service),
+                service.getLastDeployment() == null ? null : service.getLastDeployment().getId(),
+                service.getLastDeployment() == null ? null : service.getLastDeployment().getMonitoredPid(),
+                service.getHeartbeatMissCount()
+        );
+        boolean running = isAlive(pid, targetHost);
         if (running) {
+            service.setCurrentPid(pid);
+            service.setStatus(ServiceStatus.RUNNING);
             if (service.getActiveSince() == null) {
                 service.setActiveSince(LocalDateTime.now());
             }
             service.setLastHeartbeatAt(LocalDateTime.now());
+            service.setHeartbeatMissCount(0);
         } else {
-            service.setCurrentPid(null);
-            service.setActiveSince(null);
+            int missCount = (service.getHeartbeatMissCount() == null ? 0 : service.getHeartbeatMissCount()) + 1;
+            service.setHeartbeatMissCount(missCount);
+            if (missCount >= HEARTBEAT_MISS_THRESHOLD) {
+                service.setStatus(ServiceStatus.STOPPED);
+                service.setActiveSince(null);
+                log.info(
+                        "服务 {} 连续 {} 次心跳未命中，标记为已停止，保留 pid={} 供后续排查。currentPid={}，lastDeploymentId={}，lastDeploymentPid={}。",
+                        service.getId(),
+                        missCount,
+                        pid,
+                        service.getCurrentPid(),
+                        service.getLastDeployment() == null ? null : service.getLastDeployment().getId(),
+                        service.getLastDeployment() == null ? null : service.getLastDeployment().getMonitoredPid()
+                );
+            } else {
+                log.info(
+                        "服务 {} 第 {} 次心跳未命中，暂不清理 pid={}。currentPid={}，lastDeploymentId={}，lastDeploymentPid={}。",
+                        service.getId(),
+                        missCount,
+                        pid,
+                        service.getCurrentPid(),
+                        service.getLastDeployment() == null ? null : service.getLastDeployment().getId(),
+                        service.getLastDeployment() == null ? null : service.getLastDeployment().getMonitoredPid()
+                );
+            }
         }
         service.setUpdatedAt(LocalDateTime.now());
         return serviceRepository.save(service);
+    }
+
+    private Long resolveManagedPid(ServiceEntity service) {
+        if (service == null) {
+            return null;
+        }
+        if (service.getCurrentPid() != null) {
+            return service.getCurrentPid();
+        }
+        if (service.getLastDeployment() != null && service.getLastDeployment().getMonitoredPid() != null) {
+            return service.getLastDeployment().getMonitoredPid();
+        }
+        return null;
+    }
+
+    private String describeManagedPidSource(ServiceEntity service) {
+        if (service == null) {
+            return "无服务记录";
+        }
+        if (service.getCurrentPid() != null) {
+            return "service.currentPid";
+        }
+        if (service.getLastDeployment() != null && service.getLastDeployment().getMonitoredPid() != null) {
+            return "lastDeployment.monitoredPid";
+        }
+        return "无可用PID";
     }
 
     private boolean isAlive(Long pid, HostEntity host) {
