@@ -31,23 +31,31 @@ export default function AdminDeploymentDetailPage() {
   const [contentHeight, setContentHeight] = useState<number>();
 
   /** 同步加载部署详情与日志内容。 */
-  const loadDeploymentDetail = async () => {
-    setDetailLoading(true);
+  const loadDeploymentDetail = async (options?: { silent?: boolean }) => {
+    if (!options?.silent) {
+      setDetailLoading(true);
+    }
     try {
       const detailResponse = await deploymentsApi.detail(String(deploymentId));
       setDeployment(detailResponse);
     } finally {
-      setDetailLoading(false);
+      if (!options?.silent) {
+        setDetailLoading(false);
+      }
     }
   };
 
-  const loadDeploymentLog = async () => {
-    setLogLoading(true);
+  const loadDeploymentLog = async (options?: { silent?: boolean }) => {
+    if (!options?.silent) {
+      setLogLoading(true);
+    }
     try {
       const logResponse = await deploymentsApi.getLog(String(deploymentId));
       setLogContent(logResponse.content);
     } finally {
-      setLogLoading(false);
+      if (!options?.silent) {
+        setLogLoading(false);
+      }
     }
   };
 
@@ -66,8 +74,8 @@ export default function AdminDeploymentDetailPage() {
       return undefined;
     }
     const timer = window.setInterval(() => {
-      loadDeploymentDetail().catch(() => message.error('刷新部署详情失败'));
-      loadDeploymentLog().catch(() => message.error('刷新部署日志失败'));
+      loadDeploymentDetail({ silent: true }).catch(() => message.error('刷新部署详情失败'));
+      loadDeploymentLog({ silent: true }).catch(() => message.error('刷新部署日志失败'));
     }, 3000);
     return () => window.clearInterval(timer);
   }, [deployment, deploymentId]);

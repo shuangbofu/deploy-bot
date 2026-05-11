@@ -167,7 +167,7 @@ public class DeploymentCleanupService {
             hostService.executeRemoteScript(
                     targetHost.getId(),
                     "rm -rf \"" + path.toString().replace("\"", "\\\"") + "\"\n",
-                    15
+                    30
             );
             log.info("已清理远程部署目录：{} -> {}", targetHost.getName(), path.toAbsolutePath().normalize());
         } catch (Exception ex) {

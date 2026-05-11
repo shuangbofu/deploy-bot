@@ -30,23 +30,31 @@ export default function UserDeploymentDetailPage() {
   const [contentHeight, setContentHeight] = useState<number>();
 
   /** 同步加载部署详情与当前日志内容。 */
-  const loadDeploymentDetail = async () => {
-    setDetailLoading(true);
+  const loadDeploymentDetail = async (options?: { silent?: boolean }) => {
+    if (!options?.silent) {
+      setDetailLoading(true);
+    }
     try {
       const detail = await deploymentsApi.detail(deploymentId || '');
       setDeployment(detail);
     } finally {
-      setDetailLoading(false);
+      if (!options?.silent) {
+        setDetailLoading(false);
+      }
     }
   };
 
-  const loadDeploymentLog = async () => {
-    setLogLoading(true);
+  const loadDeploymentLog = async (options?: { silent?: boolean }) => {
+    if (!options?.silent) {
+      setLogLoading(true);
+    }
     try {
       const log = await deploymentsApi.getLog(deploymentId || '');
       setLogContent(log.content);
     } finally {
-      setLogLoading(false);
+      if (!options?.silent) {
+        setLogLoading(false);
+      }
     }
   };
 
@@ -66,8 +74,8 @@ export default function UserDeploymentDetailPage() {
     }
     // 运行中的任务每 3 秒轮询一次，保持详情页与后台状态接近实时。
     const timer = window.setInterval(() => {
-      loadDeploymentDetail().catch(() => message.error('刷新部署详情失败'));
-      loadDeploymentLog().catch(() => message.error('刷新部署日志失败'));
+      loadDeploymentDetail({ silent: true }).catch(() => message.error('刷新部署详情失败'));
+      loadDeploymentLog({ silent: true }).catch(() => message.error('刷新部署日志失败'));
     }, 3000);
     return () => window.clearInterval(timer);
   }, [deployment, deploymentId]);
