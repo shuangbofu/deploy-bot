@@ -80,6 +80,11 @@ public class DeploymentCleanupService {
     }
 
     private void cleanupPipelineArtifacts(DeploymentEntity deployment, SystemSettingsEntity settings) {
+        if (deployment.getStatus() == DeploymentStatus.FAILED || deployment.getStatus() == DeploymentStatus.STOPPED) {
+            deleteDirectory(deployment.getArtifactPath());
+            deployment.setArtifactPath(null);
+            deploymentRepository.save(deployment);
+        }
         if (deployment.getPipeline() == null || deployment.getPipeline().getId() == null) {
             return;
         }

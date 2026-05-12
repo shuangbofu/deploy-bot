@@ -36,6 +36,7 @@ import java.util.Map;
 public class ServiceManager {
     private static final Logger log = LoggerFactory.getLogger(ServiceManager.class);
     private static final int HEARTBEAT_MISS_THRESHOLD = 3;
+    private static final int PRE_DEPLOY_STOP_MAX_RETRIES = 3;
     private static final DateTimeFormatter REMOTE_PROCESS_START_FORMATTER = new DateTimeFormatterBuilder()
             .parseCaseInsensitive()
             .appendPattern("EEE MMM d HH:mm:ss yyyy")
@@ -123,53 +124,75 @@ public class ServiceManager {
      * 在新的部署启动前，优先停止当前流水线已经被系统接管的旧服务。
      */
     public ServiceEntity stopManagedServiceBeforeDeploy(Long pipelineId) {
-        ServiceEntity service = serviceRepository.findByPipelineId(pipelineId).orElse(null);
-        if (service == null) {
-            log.info("流水线 {} 当前没有可接管的旧服务，无需在部署前停止。", pipelineId);
-            return null;
-        }
-        Long stoppedPid = resolveManagedPid(service);
-        log.info(
-                "流水线 {} 在部署前检测到已受管服务：serviceId={}，pid={}，状态={}，pid来源={}，currentPid={}，lastDeploymentId={}，lastDeploymentPid={}，heartbeatMissCount={}。",
-                pipelineId,
-                service.getId(),
-                stoppedPid,
-                service.getStatus(),
-                describeManagedPidSource(service),
-                service.getCurrentPid(),
-                service.getLastDeployment() == null ? null : service.getLastDeployment().getId(),
-                service.getLastDeployment() == null ? null : service.getLastDeployment().getMonitoredPid(),
-                service.getHeartbeatMissCount()
-        );
-        if (stoppedPid != null) {
-            HostEntity targetHost = service.getPipeline() == null ? null : service.getPipeline().getTargetHost();
-            if (isAlive(stoppedPid, targetHost)) {
-                log.info("流水线 {} 准备停止旧服务进程 pid={}，目标主机类型={}。", pipelineId, stoppedPid, targetHost == null ? HostType.LOCAL : targetHost.getType());
-                stopProcess(stoppedPid, targetHost);
-            } else {
-                log.info("流水线 {} 的旧服务 pid={} 已不存在，直接清理服务状态。", pipelineId, stoppedPid);
+        Long lastObservedPid = null;
+        for (int attempt = 1; attempt <= PRE_DEPLOY_STOP_MAX_RETRIES; attempt++) {
+            ServiceEntity service = serviceRepository.findByPipelineId(pipelineId).orElse(null);
+            if (service == null) {
+                log.info("流水线 {} 当前没有可接管的旧服务，无需在部署前停止。", pipelineId);
+                return null;
             }
-        } else {
-            log.warn(
-                    "流水线 {} 在部署前发现服务记录存在，但无法解析到可接管 pid。serviceId={}，currentPid={}，lastDeploymentId={}，lastDeploymentPid={}。",
+            Long stoppedPid = resolveManagedPid(service);
+            lastObservedPid = stoppedPid;
+            log.info(
+                    "流水线 {} 在部署前检测到已受管服务：serviceId={}，pid={}，状态={}，pid来源={}，currentPid={}，lastDeploymentId={}，lastDeploymentPid={}，heartbeatMissCount={}，attempt={}/{}。",
                     pipelineId,
                     service.getId(),
+                    stoppedPid,
+                    service.getStatus(),
+                    describeManagedPidSource(service),
                     service.getCurrentPid(),
                     service.getLastDeployment() == null ? null : service.getLastDeployment().getId(),
-                    service.getLastDeployment() == null ? null : service.getLastDeployment().getMonitoredPid()
+                    service.getLastDeployment() == null ? null : service.getLastDeployment().getMonitoredPid(),
+                    service.getHeartbeatMissCount(),
+                    attempt,
+                    PRE_DEPLOY_STOP_MAX_RETRIES
             );
+            if (stoppedPid != null) {
+                HostEntity targetHost = service.getPipeline() == null ? null : service.getPipeline().getTargetHost();
+                if (isAlive(stoppedPid, targetHost)) {
+                    log.info("流水线 {} 准备停止旧服务进程 pid={}，目标主机类型={}。", pipelineId, stoppedPid, targetHost == null ? HostType.LOCAL : targetHost.getType());
+                    stopProcess(stoppedPid, targetHost);
+                } else {
+                    log.info("流水线 {} 的旧服务 pid={} 已不存在，直接清理服务状态。", pipelineId, stoppedPid);
+                }
+            } else {
+                log.warn(
+                        "流水线 {} 在部署前发现服务记录存在，但无法解析到可接管 pid。serviceId={}，currentPid={}，lastDeploymentId={}，lastDeploymentPid={}。",
+                        pipelineId,
+                        service.getId(),
+                        service.getCurrentPid(),
+                        service.getLastDeployment() == null ? null : service.getLastDeployment().getId(),
+                        service.getLastDeployment() == null ? null : service.getLastDeployment().getMonitoredPid()
+                );
+            }
+            try {
+                ServiceStatus previousStatus = service.getStatus();
+                service.setCurrentPid(null);
+                service.setStatus(ServiceStatus.STOPPED);
+                service.setActiveSince(null);
+                service.setHeartbeatMissCount(0);
+                service.setUpdatedAt(LocalDateTime.now());
+                ServiceEntity saved = serviceRepository.save(service);
+                recordPidHistory(saved, saved.getLastDeployment(), stoppedPid, null, previousStatus, ServiceStatus.STOPPED, ServicePidChangeSource.PRE_DEPLOY_STOP, "部署前停止旧服务");
+                saved.setCurrentPid(stoppedPid);
+                log.info("流水线 {} 部署前旧服务停止完成。serviceId={}。", pipelineId, saved.getId());
+                return saved;
+            } catch (ObjectOptimisticLockingFailureException ex) {
+                log.info("流水线 {} 在部署前停止旧服务时命中乐观锁冲突，准备重新读取最新服务状态后重试。attempt={}/{}，lastObservedPid={}。", pipelineId, attempt, PRE_DEPLOY_STOP_MAX_RETRIES, stoppedPid);
+            }
         }
-        ServiceStatus previousStatus = service.getStatus();
-        service.setCurrentPid(null);
-        service.setStatus(ServiceStatus.STOPPED);
-        service.setActiveSince(null);
-        service.setHeartbeatMissCount(0);
-        service.setUpdatedAt(LocalDateTime.now());
-        ServiceEntity saved = serviceRepository.save(service);
-        recordPidHistory(saved, saved.getLastDeployment(), stoppedPid, null, previousStatus, ServiceStatus.STOPPED, ServicePidChangeSource.PRE_DEPLOY_STOP, "部署前停止旧服务");
-        saved.setCurrentPid(stoppedPid);
-        log.info("流水线 {} 部署前旧服务停止完成。serviceId={}。", pipelineId, saved.getId());
-        return saved;
+        ServiceEntity latestService = serviceRepository.findByPipelineId(pipelineId).orElse(null);
+        log.warn("流水线 {} 在部署前停止旧服务时连续 {} 次命中乐观锁冲突，本次按技术冲突降级处理，不中断部署。latestServiceId={}，latestPid={}，latestStatus={}，lastObservedPid={}。",
+                pipelineId,
+                PRE_DEPLOY_STOP_MAX_RETRIES,
+                latestService == null ? null : latestService.getId(),
+                latestService == null ? null : latestService.getCurrentPid(),
+                latestService == null ? null : latestService.getStatus(),
+                lastObservedPid);
+        if (latestService != null) {
+            latestService.setCurrentPid(lastObservedPid);
+        }
+        return latestService;
     }
 
     public void updateFromDeployment(DeploymentEntity deployment, Long pid) {
