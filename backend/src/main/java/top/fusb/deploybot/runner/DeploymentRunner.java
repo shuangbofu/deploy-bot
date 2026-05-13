@@ -177,7 +177,7 @@ public class DeploymentRunner {
             }
             if (exitCode == 0 && deployment.getRenderedDeployScript() != null && !deployment.getRenderedDeployScript().isBlank()) {
                 if (Boolean.TRUE.equals(deployment.getPipeline().getTemplate().getMonitorProcess())) {
-                    ServiceEntity stoppedService = serviceManager.stopManagedServiceBeforeDeploy(deployment.getPipeline().getId());
+                    ServiceEntity stoppedService = serviceManager.stopManagedServiceBeforeDeploy(deployment);
                     if (stoppedService != null) {
                         appendSystemLog(logFile, "本次发布前已停止旧服务，serviceId=" + stoppedService.getId() + "，pid=" + (stoppedService.getCurrentPid() == null ? "-" : stoppedService.getCurrentPid()) + "。");
                         log.info(

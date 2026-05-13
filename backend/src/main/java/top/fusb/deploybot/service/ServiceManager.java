@@ -123,7 +123,14 @@ public class ServiceManager {
     /**
      * 在新的部署启动前，优先停止当前流水线已经被系统接管的旧服务。
      */
-    public ServiceEntity stopManagedServiceBeforeDeploy(Long pipelineId) {
+    public ServiceEntity stopManagedServiceBeforeDeploy(DeploymentEntity currentDeployment) {
+        Long pipelineId = currentDeployment == null || currentDeployment.getPipeline() == null
+                ? null
+                : currentDeployment.getPipeline().getId();
+        if (pipelineId == null) {
+            log.warn("部署前停止旧服务时缺少当前部署或流水线信息，跳过处理。");
+            return null;
+        }
         Long lastObservedPid = null;
         for (int attempt = 1; attempt <= PRE_DEPLOY_STOP_MAX_RETRIES; attempt++) {
             ServiceEntity service = serviceRepository.findByPipelineId(pipelineId).orElse(null);
@@ -173,7 +180,7 @@ public class ServiceManager {
                 service.setHeartbeatMissCount(0);
                 service.setUpdatedAt(LocalDateTime.now());
                 ServiceEntity saved = serviceRepository.save(service);
-                recordPidHistory(saved, saved.getLastDeployment(), stoppedPid, null, previousStatus, ServiceStatus.STOPPED, ServicePidChangeSource.PRE_DEPLOY_STOP, "部署前停止旧服务");
+                recordPidHistory(saved, currentDeployment, stoppedPid, null, previousStatus, ServiceStatus.STOPPED, ServicePidChangeSource.PRE_DEPLOY_STOP, "部署前停止旧服务");
                 saved.setCurrentPid(stoppedPid);
                 log.info("流水线 {} 部署前旧服务停止完成。serviceId={}。", pipelineId, saved.getId());
                 return saved;

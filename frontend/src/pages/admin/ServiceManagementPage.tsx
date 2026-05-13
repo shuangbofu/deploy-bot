@@ -161,8 +161,8 @@ export default function ServiceManagementPage() {
     const chronologicalHistory = [...history].sort((left, right) => (
       new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime() || left.id - right.id
     ));
-    const usedAttachIds = new Set<number>();
-    return chronologicalHistory.reduce<Array<{
+    const pendingStops: ServicePidHistorySummary[] = [];
+    const rows: Array<{
       key: string;
       deploymentId: number | null;
       stoppedAt: string;
@@ -170,30 +170,52 @@ export default function ServiceManagementPage() {
       oldPid: number | null;
       newPid: number | null;
       note: string;
-    }>>((items, item, index) => {
-      if (item.changeSource !== 'PRE_DEPLOY_STOP') {
-        return items;
+    }> = [];
+    chronologicalHistory.forEach((item) => {
+      if (item.changeSource === 'PRE_DEPLOY_STOP') {
+        pendingStops.push(item);
+        return;
       }
-      const attached = chronologicalHistory.slice(index + 1).find((candidate) =>
-        candidate.changeSource === 'DEPLOYMENT_CONFIRMED'
-        && !usedAttachIds.has(candidate.id),
-      );
-      if (attached) {
-        usedAttachIds.add(attached.id);
+      if (item.changeSource === 'DEPLOYMENT_CONFIRMED') {
+        const stopped = pendingStops.pop();
+        if (stopped) {
+          rows.push({
+            key: `${stopped.id}-${item.id}`,
+            deploymentId: item.deploymentId ?? stopped.deploymentId,
+            stoppedAt: stopped.createdAt,
+            attachedAt: item.createdAt,
+            oldPid: stopped.previousPid,
+            newPid: item.currentPid ?? null,
+            note: '本次部署先停止旧进程，再接管新进程。',
+          });
+          return;
+        }
+        rows.push({
+          key: `attach-only-${item.id}`,
+          deploymentId: item.deploymentId,
+          stoppedAt: '',
+          attachedAt: item.createdAt,
+          oldPid: null,
+          newPid: item.currentPid ?? null,
+          note: '只记录到新进程接管，前面没有找到可配对的停止记录。',
+        });
+        return;
       }
-      items.push({
-        key: `${item.id}-${attached?.id || 'pending'}`,
-        deploymentId: attached?.deploymentId ?? item.deploymentId,
-        stoppedAt: item.createdAt,
-        attachedAt: attached?.createdAt || '',
-        oldPid: item.previousPid,
-        newPid: attached?.currentPid ?? null,
-        note: attached
-          ? '本次部署先停止旧进程，再接管新进程。'
-          : '只记录到停止旧进程，后续还没有看到新的接管记录。',
+    });
+    pendingStops.forEach((stopped) => {
+      rows.push({
+        key: `${stopped.id}-pending`,
+        deploymentId: stopped.deploymentId,
+        stoppedAt: stopped.createdAt,
+        attachedAt: '',
+        oldPid: stopped.previousPid,
+        newPid: null,
+        note: '只记录到停止旧进程，后续还没有看到新的接管记录。',
       });
-      return items;
-    }, []).reverse();
+    });
+    return rows.sort((left, right) => (
+      new Date(right.stoppedAt || right.attachedAt).getTime() - new Date(left.stoppedAt || left.attachedAt).getTime()
+    ));
   };
 
   const renderHistoryModal = () => {
