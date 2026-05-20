@@ -552,7 +552,7 @@ public class DeploymentRunner {
         return command;
     }
 
-    private java.util.List<String> buildScpCommand(HostEntity targetHost, Path sshDir, Path localSource, String remoteTarget) throws Exception {
+    private java.util.List<String> buildArtifactSyncCommand(HostEntity targetHost, Path sshDir, Path localSource, String remoteTarget) throws Exception {
         var settings = systemSettingsService.get();
         Files.createDirectories(sshDir);
         Path privateKey = sshDir.resolve("id_host");
@@ -563,40 +563,39 @@ public class DeploymentRunner {
             Files.writeString(knownHosts, targetHost.getSshKnownHosts().trim() + "\n", StandardCharsets.UTF_8);
         }
 
-        java.util.List<String> command = new java.util.ArrayList<>();
-        if (authType == HostSshAuthType.PASSWORD) {
-            command.add("sshpass");
-            command.add("-p");
-            command.add(targetHost.getSshPassword() == null ? "" : targetHost.getSshPassword());
-        }
-        command.add("scp");
-        command.add("-r");
-        if (Files.exists(privateKey)) {
-            command.add("-i");
-            command.add(privateKey.toAbsolutePath().toString());
-            command.add("-o");
-            command.add("IdentitiesOnly=yes");
-        }
-        if (targetHost.getPort() != null) {
-            command.add("-P");
-            command.add(String.valueOf(targetHost.getPort()));
-        }
-        if (Files.exists(knownHosts)) {
-            command.add("-o");
-            command.add("StrictHostKeyChecking=yes");
-            command.add("-o");
-            command.add("UserKnownHostsFile=" + knownHosts.toAbsolutePath());
-        } else {
-            command.add("-o");
-            command.add("StrictHostKeyChecking=no");
-        }
-        command.add(localSource.toAbsolutePath().toString() + "/.");
         String userAtHost = (targetHost.getUsername() == null || targetHost.getUsername().isBlank())
                 ? targetHost.getHostname()
                 : targetHost.getUsername().trim() + "@" + targetHost.getHostname().trim();
-        command.add(userAtHost + ":" + remoteTarget);
-        log.info("Built SCP command to sync {} to {}:{}", localSource.toAbsolutePath().normalize(), userAtHost, remoteTarget);
-        return command;
+        StringBuilder sshCommand = new StringBuilder();
+        if (authType == HostSshAuthType.PASSWORD) {
+            sshCommand.append("sshpass -p ")
+                    .append(shellSingleQuote(targetHost.getSshPassword() == null ? "" : targetHost.getSshPassword()))
+                    .append(" ");
+        }
+        sshCommand.append("ssh -o BatchMode=")
+                .append(authType == HostSshAuthType.PASSWORD ? "no" : "yes")
+                .append(" -o ConnectTimeout=30 ");
+        if (Files.exists(privateKey)) {
+            sshCommand.append("-i ").append(shellSingleQuote(privateKey.toAbsolutePath().toString())).append(" ");
+            sshCommand.append("-o IdentitiesOnly=yes ");
+        }
+        if (targetHost.getPort() != null) {
+            sshCommand.append("-p ").append(targetHost.getPort()).append(" ");
+        }
+        if (Files.exists(knownHosts)) {
+            sshCommand.append("-o StrictHostKeyChecking=yes ");
+            sshCommand.append("-o UserKnownHostsFile=").append(shellSingleQuote(knownHosts.toAbsolutePath().toString())).append(" ");
+        } else {
+            sshCommand.append("-o StrictHostKeyChecking=no ");
+        }
+        sshCommand.append(shellSingleQuote(userAtHost)).append(" ");
+        sshCommand.append(shellSingleQuote("mkdir -p " + shellSingleQuote(remoteTarget) + " && tar -xf - -C " + shellSingleQuote(remoteTarget)));
+        String shellCommand = "tar -cf - -C "
+                + shellSingleQuote(localSource.toAbsolutePath().normalize().toString())
+                + " . | "
+                + sshCommand;
+        log.info("Built artifact sync command to stream {} to {}:{}", localSource.toAbsolutePath().normalize(), userAtHost, remoteTarget);
+        return java.util.List.of("bash", "-lc", shellCommand);
     }
 
     private void prepareHostKey(HostEntity targetHost, top.fusb.deploybot.model.SystemSettingsEntity settings, HostSshAuthType authType, Path privateKey) throws Exception {
@@ -652,12 +651,13 @@ public class DeploymentRunner {
                 if (pidFilePath != null && !pidFilePath.isBlank()) {
                     String output = hostService.executeRemoteScript(
                             targetHost.getId(),
-                            "if [ -f \"" + pidFilePath.replace("\"", "\\\"") + "\" ]; then cat \"" + pidFilePath.replace("\"", "\\\"") + "\"; fi\n",
+                            "if [ -f \"" + pidFilePath.replace("\"", "\\\"") + "\" ]; then printf '__DEPLOYBOT_PID__%s\\n' \"$(cat \\\"" + pidFilePath.replace("\"", "\\\"") + "\\\")\"; fi\n",
                             8
-                    ).trim();
-                    if (!output.isBlank()) {
-                        log.info("Deployment {} read monitored pid {} from remote pid file {}.", deploymentId, output.lines().findFirst().orElse("").trim(), pidFilePath);
-                        return Long.parseLong(output.lines().findFirst().orElse("").trim());
+                    );
+                    Long remotePid = extractPidFromOutput(output);
+                    if (remotePid != null) {
+                        log.info("Deployment {} read monitored pid {} from remote pid file {}.", deploymentId, remotePid, pidFilePath);
+                        return remotePid;
                     }
                     log.info("Deployment {} remote pid file {} exists but returned blank content.", deploymentId, pidFilePath);
                 }
@@ -695,15 +695,17 @@ public class DeploymentRunner {
                         targetHost.getId(),
                         buildKeywordLookupScript(escapedKeyword, keyword),
                         8
-                ).trim();
-                log.info("关键字推导(远程) keyword='{}' 输出='{}'。", keyword, output.lines().findFirst().orElse("").trim());
-                return output.isBlank() ? null : Long.parseLong(output.lines().findFirst().orElse("").trim());
+                );
+                Long resolvedPid = extractPidFromOutput(output);
+                log.info("关键字推导(远程) keyword='{}' 解析到 PID={}。", keyword, resolvedPid);
+                return resolvedPid;
             }
             Process process = new ProcessBuilder("bash", "-lc", buildKeywordLookupScript(escapedKeyword, keyword)).redirectErrorStream(true).start();
             String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
             process.waitFor();
-            log.info("关键字推导(本地) keyword='{}' 输出='{}'。", keyword, output.lines().findFirst().orElse("").trim());
-            return output.isBlank() ? null : Long.parseLong(output.lines().findFirst().orElse("").trim());
+            Long resolvedPid = extractPidFromOutput(output);
+            log.info("关键字推导(本地) keyword='{}' 解析到 PID={}。", keyword, resolvedPid);
+            return resolvedPid;
         } catch (Exception ex) {
             log.warn("关键字推导失败 keyword='{}'：{}", keyword, ex.getMessage());
             return null;
@@ -946,8 +948,35 @@ public class DeploymentRunner {
             script.append("  PID=$(jps -lv 2>/dev/null | grep \"").append(escapedKeyword).append("\" | awk '{print $1}' | head -n 1 || true)\n");
         }
         script.append("fi\n");
-        script.append("if [ -n \"$PID\" ]; then echo \"$PID\"; fi\n");
+        script.append("if [ -n \"$PID\" ]; then printf '__DEPLOYBOT_PID__%s\\n' \"$PID\"; fi\n");
         return script.toString();
+    }
+
+    private Long extractPidFromOutput(String output) {
+        if (output == null || output.isBlank()) {
+            return null;
+        }
+        for (String line : output.lines().toList()) {
+            String normalized = line.trim();
+            if (normalized.startsWith("__DEPLOYBOT_PID__")) {
+                return parseNullableLong(normalized.substring("__DEPLOYBOT_PID__".length()));
+            }
+        }
+        for (String line : output.lines().toList()) {
+            String normalized = line.trim();
+            if (normalized.matches("\\d+")) {
+                return parseNullableLong(normalized);
+            }
+        }
+        return null;
+    }
+
+    private Long parseNullableLong(String value) {
+        try {
+            return Long.parseLong(value == null ? "" : value.trim());
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private String resolveJarName(String keyword) {
@@ -1358,7 +1387,7 @@ public class DeploymentRunner {
         appendSystemLog(logFile, "开始同步构建产物到远程主机：" + remoteArtifactDir);
         log.info("部署 {} 开始同步构建产物到远端目录 {}。", deploymentId, remoteArtifactDir);
         int copyExitCode = runProcess(
-                new ProcessBuilder(buildScpCommand(targetHost, sshDir, localArtifactDir, remoteArtifactDir.toString())).redirectErrorStream(true),
+                new ProcessBuilder(buildArtifactSyncCommand(targetHost, sshDir, localArtifactDir, remoteArtifactDir.toString())).redirectErrorStream(true),
                 null,
                 logFile,
                 deploymentId
