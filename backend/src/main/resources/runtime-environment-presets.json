@@ -1,31 +1,31 @@
 [
   {
     "id": "java-8",
-    "name": "Temurin Java 8",
+    "name": "Zulu Java 8",
     "type": "JAVA",
     "version": "8",
-    "description": "Eclipse Temurin JDK 8，适合仍依赖 Java 8 的项目。",
-    "downloadUrlTemplate": "https://api.adoptium.net/v3/binary/latest/8/ga/${os}/${arch}/jdk/hotspot/normal/eclipse",
+    "description": "Azul Zulu JDK 8，适合仍依赖 Java 8 的项目。",
+    "downloadUrlTemplate": "",
     "homePathTemplate": "${installRoot}/tools/java-8",
     "binPathTemplate": "${installRoot}/tools/java-8/bin"
   },
   {
     "id": "java-11",
-    "name": "Temurin Java 11",
+    "name": "Zulu Java 11",
     "type": "JAVA",
     "version": "11",
-    "description": "Eclipse Temurin JDK 11，适合仍运行在 Java 11 的 Spring Boot / Java 项目。",
-    "downloadUrlTemplate": "https://api.adoptium.net/v3/binary/latest/11/ga/${os}/${arch}/jdk/hotspot/normal/eclipse",
+    "description": "Azul Zulu JDK 11，适合仍运行在 Java 11 的 Spring Boot / Java 项目。",
+    "downloadUrlTemplate": "",
     "homePathTemplate": "${installRoot}/tools/java-11",
     "binPathTemplate": "${installRoot}/tools/java-11/bin"
   },
   {
     "id": "java-17",
-    "name": "Temurin Java 17",
+    "name": "Zulu Java 17",
     "type": "JAVA",
     "version": "17",
-    "description": "Eclipse Temurin JDK 17，适合主流 Spring Boot / Java 17 项目。",
-    "downloadUrlTemplate": "https://api.adoptium.net/v3/binary/latest/17/ga/${os}/${arch}/jdk/hotspot/normal/eclipse",
+    "description": "Azul Zulu JDK 17，适合主流 Spring Boot / Java 17 项目。",
+    "downloadUrlTemplate": "",
     "homePathTemplate": "${installRoot}/tools/java-17",
     "binPathTemplate": "${installRoot}/tools/java-17/bin"
   },
@@ -80,13 +80,13 @@
     "binPathTemplate": "${installRoot}/tools/node-24/bin"
   },
   {
-    "id": "maven-3.9.14",
-    "name": "Apache Maven 3.9.14",
+    "id": "maven-3.9.16",
+    "name": "Apache Maven 3.9.16",
     "type": "MAVEN",
-    "version": "3.9.14",
-    "description": "Apache Maven 3.9.14，官方当前稳定版，运行要求为 JDK 8+，适合 Java 8 / 11 / 17+ 项目。",
-    "downloadUrlTemplate": "https://dlcdn.apache.org/maven/maven-3/3.9.14/binaries/apache-maven-3.9.14-bin.tar.gz",
-    "homePathTemplate": "${installRoot}/tools/maven-3.9.14",
-    "binPathTemplate": "${installRoot}/tools/maven-3.9.14/bin"
+    "version": "3.9.16",
+    "description": "Apache Maven 3.9.16，官方当前稳定版，运行要求为 JDK 8+，适合 Java 8 / 11 / 17+ 项目。",
+    "downloadUrlTemplate": "https://dlcdn.apache.org/maven/maven-3/3.9.16/binaries/apache-maven-3.9.16-bin.tar.gz",
+    "homePathTemplate": "${installRoot}/tools/maven-3.9.16",
+    "binPathTemplate": "${installRoot}/tools/maven-3.9.16/bin"
   }
 ]

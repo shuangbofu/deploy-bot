@@ -178,8 +178,9 @@ public class HostService {
         String workspace = host.getWorkspaceRoot() == null || host.getWorkspaceRoot().isBlank() ? "/tmp/deploy-bot/workspace" : host.getWorkspaceRoot().trim();
         try (var writer = process.outputWriter(StandardCharsets.UTF_8)) {
             writer.write("set -e\n");
-            writer.write("mkdir -p \"" + workspace.replace("\"", "\\\"") + "\"\n");
-            writer.write("test -w \"" + workspace.replace("\"", "\\\"") + "\"\n");
+            writer.write("printf '__DEPLOYBOT_BEGIN__1\\n'\n");
+            writer.write("if ! mkdir -p \"" + workspace.replace("\"", "\\\"") + "\"; then printf '__DEPLOYBOT_ERROR__WORKSPACE_CREATE_FAILED\\n'; exit 11; fi\n");
+            writer.write("if ! test -w \"" + workspace.replace("\"", "\\\"") + "\"; then printf '__DEPLOYBOT_ERROR__WORKSPACE_NOT_WRITABLE\\n'; exit 12; fi\n");
             writer.write("printf '__DEPLOYBOT_USER__%s\\n' \"$(whoami)\"\n");
             writer.write("printf '__DEPLOYBOT_HOST__%s\\n' \"$(hostname)\"\n");
             writer.flush();
@@ -190,13 +191,22 @@ public class HostService {
             output = reader.lines().reduce("", (left, right) -> left + right + "\n");
         }
         int exitCode = process.waitFor();
-        if (exitCode != 0) {
-            log.warn("Host connectivity check failed for {} with exit code {}.", host.getName(), exitCode);
-            return new HostConnectionTestResult(false, output.isBlank() ? "连接失败" : output.trim(), null, null, workspace);
-        }
-
         String remoteUser = extractValue(output, "__DEPLOYBOT_USER__");
         String remoteHost = extractValue(output, "__DEPLOYBOT_HOST__");
+        if (exitCode != 0 || remoteUser == null || remoteHost == null) {
+            log.warn("Host connectivity check failed for {} with exit code {}.", host.getName(), exitCode);
+            String message = output.isBlank()
+                    ? "连接失败"
+                    : output.trim();
+            if (output.contains("__DEPLOYBOT_ERROR__WORKSPACE_CREATE_FAILED")) {
+                message = "远程连接已建立，但创建工作空间目录失败。请检查主机工作空间路径和目录权限。";
+            } else if (output.contains("__DEPLOYBOT_ERROR__WORKSPACE_NOT_WRITABLE")) {
+                message = "远程连接已建立，但工作空间目录不可写。请检查主机工作空间权限。";
+            } else if ((remoteUser == null || remoteHost == null) && exitCode == 0) {
+                message = "远程连接已建立，但未能完成平台校验脚本。请检查远程 shell 初始化脚本或工作空间权限。";
+            }
+            return new HostConnectionTestResult(false, message, null, null, workspace);
+        }
         log.info("Host connectivity check succeeded for {}. remoteUser={}, remoteHost={}", host.getName(), remoteUser, remoteHost);
         return new HostConnectionTestResult(true, "连接成功", remoteUser, remoteHost, workspace);
     }
@@ -327,7 +337,7 @@ public class HostService {
             command.add("StrictHostKeyChecking=no");
         }
         command.add((host.getUsername() == null || host.getUsername().isBlank()) ? host.getHostname() : host.getUsername().trim() + "@" + host.getHostname().trim());
-        command.add("bash -s");
+        command.add("bash --noprofile --norc -s");
         log.info("已构建主机 {} 的 SSH 命令，认证方式={}，超时时间={}秒。", host.getName(), authType, timeoutSeconds);
         return command;
     }

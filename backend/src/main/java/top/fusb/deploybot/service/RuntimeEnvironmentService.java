@@ -6,6 +6,7 @@ import top.fusb.deploybot.dto.RuntimeEnvironmentInstallRequest;
 import top.fusb.deploybot.dto.RuntimeEnvironmentPreset;
 import top.fusb.deploybot.dto.RuntimeEnvironmentInstallTaskStatus;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorSubCode;
 import top.fusb.deploybot.model.HostEntity;
@@ -62,6 +63,7 @@ public class RuntimeEnvironmentService {
     private final String presetsResourceLocation;
     private final Map<String, InstallTaskState> installTasks = new ConcurrentHashMap<>();
     private final RuntimeEnvironmentInstallAsyncService installAsyncService;
+    private final HttpClient httpClient = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.ALWAYS).build();
 
     public RuntimeEnvironmentService(
             RuntimeEnvironmentRepository repository,
@@ -175,7 +177,7 @@ public class RuntimeEnvironmentService {
                         definition.type(),
                         definition.version(),
                         definition.description(),
-                        applyPresetTemplate(definition.downloadUrlTemplate(), variables),
+                        resolvePresetDownloadUrl(definition, platform, variables),
                         applyPresetTemplate(definition.homePathTemplate(), variables),
                         applyPresetTemplate(definition.binPathTemplate(), variables)
                 ))
@@ -206,10 +208,9 @@ public class RuntimeEnvironmentService {
         String archiveName = preset.downloadUrl().substring(preset.downloadUrl().lastIndexOf('/') + 1);
         Path archiveFile = downloadsDir.resolve(archiveName.isBlank() ? UUID.randomUUID() + ".archive" : archiveName);
 
-        HttpClient client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.ALWAYS).build();
         HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(preset.downloadUrl())).GET().build();
         log.info("Downloading preset {} from {}", preset.name(), preset.downloadUrl());
-        HttpResponse<Path> response = client.send(httpRequest, HttpResponse.BodyHandlers.ofFile(archiveFile));
+        HttpResponse<Path> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofFile(archiveFile));
         if (response.statusCode() >= 400) {
             log.warn("Preset download failed for {} with HTTP {}", preset.name(), response.statusCode());
             throw new BusinessException(ErrorSubCode.PRESET_DOWNLOAD_FAILED, "HTTP 状态码：" + response.statusCode());
@@ -677,6 +678,60 @@ public class RuntimeEnvironmentService {
             rendered = rendered.replace("${" + entry.getKey() + "}", entry.getValue());
         }
         return rendered;
+    }
+
+    private String resolvePresetDownloadUrl(PresetDefinition definition, PlatformInfo platform, Map<String, String> variables) {
+        if (definition.type() != RuntimeEnvironmentType.JAVA) {
+            return applyPresetTemplate(definition.downloadUrlTemplate(), variables);
+        }
+        return resolveZuluDownloadUrl(definition.version(), platform);
+    }
+
+    private String resolveZuluDownloadUrl(String javaVersion, PlatformInfo platform) {
+        String os = switch (platform.os()) {
+            case "linux" -> "linux-glibc";
+            case "mac" -> "macos";
+            default -> platform.os();
+        };
+        String arch = switch (platform.arch()) {
+            case "aarch64" -> "aarch64";
+            default -> "x64";
+        };
+        String requestUrl = "https://api.azul.com/metadata/v1/zulu/packages"
+                + "?availability_types=ca"
+                + "&java_version=" + javaVersion
+                + "&os=" + os
+                + "&arch=" + arch
+                + "&java_package_type=jdk"
+                + "&archive_type=tar.gz"
+                + "&release_status=ga"
+                + "&latest=true"
+                + "&certifications=tck"
+                + "&page=1&page_size=1";
+        try {
+            HttpRequest request = HttpRequest.newBuilder(URI.create(requestUrl))
+                    .header("accept", "application/json")
+                    .GET()
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() >= 400) {
+                throw new BusinessException(ErrorSubCode.PRESET_CONFIG_READ_FAILED, "读取 Azul Zulu 元数据失败，HTTP 状态码：" + response.statusCode());
+            }
+            JsonNode root = jsonMapper.read(response.body(), new TypeReference<JsonNode>() {
+            });
+            if (!root.isArray() || root.isEmpty()) {
+                throw new BusinessException(ErrorSubCode.PRESET_CONFIG_READ_FAILED, "未找到匹配的 Azul Zulu 预置下载地址。");
+            }
+            JsonNode downloadUrlNode = root.get(0).get("download_url");
+            if (downloadUrlNode == null || downloadUrlNode.asText().isBlank()) {
+                throw new BusinessException(ErrorSubCode.PRESET_CONFIG_READ_FAILED, "Azul Zulu 元数据返回中缺少下载地址。");
+            }
+            return downloadUrlNode.asText();
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new BusinessException(ErrorSubCode.PRESET_CONFIG_READ_FAILED, "读取 Azul Zulu 元数据失败：" + ex.getMessage(), ex);
+        }
     }
 
     private record PlatformInfo(String os, String arch) {
