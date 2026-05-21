@@ -4,6 +4,10 @@ import type { ApiResult } from './types';
 import { authStorage } from '../auth/authStorage';
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+const originalMessageError = message.error.bind(message);
+const LOCAL_ERROR_SUPPRESS_WINDOW = 800;
+
+let suppressNextLocalErrorUntil = 0;
 
 /**
  * 统一的前端 API 客户端。
@@ -11,8 +15,24 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
  */
 const client = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 15000,
+  timeout: 30000,
 });
+
+function markNextLocalErrorSuppressed() {
+  suppressNextLocalErrorUntil = Date.now() + LOCAL_ERROR_SUPPRESS_WINDOW;
+}
+
+function shouldSuppressLocalError() {
+  return Date.now() <= suppressNextLocalErrorUntil;
+}
+
+message.error = ((content: Parameters<typeof originalMessageError>[0], duration?: Parameters<typeof originalMessageError>[1], onClose?: Parameters<typeof originalMessageError>[2]) => {
+  if (shouldSuppressLocalError()) {
+    suppressNextLocalErrorUntil = 0;
+    return (() => undefined) as ReturnType<typeof originalMessageError>;
+  }
+  return originalMessageError(content, duration as never, onClose as never);
+}) as typeof message.error;
 
 export function resolveBackendAssetUrl(url?: string | null) {
   if (!url) {
@@ -64,8 +84,9 @@ client.interceptors.response.use(
       if (!result.success) {
         const errorMessage = result.subMessage || result.message || '请求失败';
         handleAuthExpired(result.subCode);
-        message.error(errorMessage);
-        return Promise.reject(Object.assign(new Error(errorMessage), { apiResult: result }));
+        markNextLocalErrorSuppressed();
+        originalMessageError(errorMessage);
+        return Promise.reject(Object.assign(new Error(errorMessage), { apiResult: result, requestErrorToastShown: true }));
       }
       response.data = result.data;
     }
@@ -73,8 +94,13 @@ client.interceptors.response.use(
   },
   (error) => {
     handleAuthExpired(error?.response?.data?.subCode);
-    const errorMessage = error?.response?.data?.message || error?.message || '请求失败';
-    message.error(errorMessage);
+    const isTimeout = error?.code === 'ECONNABORTED' || String(error?.message || '').includes('timeout');
+    const errorMessage = isTimeout
+      ? '请求超时，请稍后重试'
+      : (error?.response?.data?.message || error?.message || '请求失败');
+    markNextLocalErrorSuppressed();
+    originalMessageError(errorMessage);
+    error.requestErrorToastShown = true;
     return Promise.reject(error);
   },
 );

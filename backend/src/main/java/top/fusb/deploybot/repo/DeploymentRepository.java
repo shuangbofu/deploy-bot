@@ -23,6 +23,25 @@ public interface DeploymentRepository extends JpaRepository<DeploymentEntity, Lo
     List<DeploymentEntity> findByCreatedAtGreaterThanEqualOrderByCreatedAtDesc(LocalDateTime createdAt);
     List<DeploymentEntity> findByTriggeredByAndCreatedAtGreaterThanEqualOrderByCreatedAtDesc(String triggeredBy, LocalDateTime createdAt);
     List<DeploymentEntity> findByStatusInOrderByCreatedAtDesc(List<DeploymentStatus> statuses);
+    @Query("""
+            select distinct p.name
+              from DeploymentEntity d
+              left join d.pipeline p
+             where d.triggeredBy = :triggeredBy
+               and p.name is not null
+             order by p.name
+            """)
+    List<String> findDistinctPipelineNamesByTriggeredBy(@Param("triggeredBy") String triggeredBy);
+    @Query("""
+            select distinct pr.name
+              from DeploymentEntity d
+              left join d.pipeline p
+              left join p.project pr
+             where d.triggeredBy = :triggeredBy
+               and pr.name is not null
+             order by pr.name
+            """)
+    List<String> findDistinctProjectNamesByTriggeredBy(@Param("triggeredBy") String triggeredBy);
     java.util.Optional<DeploymentEntity> findFirstByPipelineIdOrderByCreatedAtDesc(Long pipelineId);
     List<DeploymentEntity> findByPipelineIdAndStatusInOrderByCreatedAtDesc(Long pipelineId, List<DeploymentStatus> statuses);
     Optional<DeploymentEntity> findFirstByPipelineIdAndStatusOrderByCreatedAtDesc(Long pipelineId, DeploymentStatus status);

@@ -4,15 +4,21 @@ import type { DeploymentStatus } from '../types/domain';
 interface StatusTagProps {
   status?: DeploymentStatus | null;
   runningLabel?: string;
+  runningTone?: 'default' | 'service';
 }
 
 /**
  * 统一渲染部署状态，避免各页面重复维护颜色和中文文案。
  */
-export default function StatusTag({ status, runningLabel }: StatusTagProps) {
+export default function StatusTag({ status, runningLabel, runningTone = 'default' }: StatusTagProps) {
   const meta = status ? DEPLOYMENT_STATUS_META[status] : null;
   const label = status === 'RUNNING' && runningLabel ? runningLabel : (meta?.label || status || '未部署');
-  const dotClass = meta?.dotClass || 'status-dot--pending';
+  const dotClass = status === 'RUNNING' && runningTone === 'service'
+    ? 'status-dot--success'
+    : (meta?.dotClass || 'status-dot--pending');
+  const chipClassName = status === 'RUNNING' && runningTone === 'service'
+    ? 'status-chip status-chip--running-service'
+    : 'status-chip';
 
   if (!status) {
     return (
@@ -24,7 +30,7 @@ export default function StatusTag({ status, runningLabel }: StatusTagProps) {
   }
 
   return (
-    <span className="status-chip">
+    <span className={chipClassName}>
       <span className={`status-dot ${dotClass}`} />
       <span>{label}</span>
     </span>

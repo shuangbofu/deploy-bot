@@ -10,7 +10,7 @@ import type { DeploymentSummary } from '../../types/domain';
 import { copyText } from '../../utils/clipboard';
 import { formatDateTime } from '../../utils/datetime';
 import { formatDeploymentElapsed } from '../../utils/deploymentDuration';
-import { getDeploymentProgress, getDeploymentProgressColor } from '../../utils/deploymentProgress';
+import { getDeploymentProgress, getDeploymentProgressColor, getDeploymentProgressLabel } from '../../utils/deploymentProgress';
 import { formatDeploymentTimeline } from '../../utils/deploymentTimeline';
 
 /**
@@ -236,8 +236,9 @@ export default function AdminDeploymentDetailPage() {
             >
               <Progress
                 percent={progress}
+                status={deployment?.status === 'RUNNING' ? 'active' : undefined}
                 strokeColor={getDeploymentProgressColor(deployment?.status)}
-                format={() => deployment?.progressText || `${progress}%`}
+                format={() => getDeploymentProgressLabel(progress, deployment?.status, deployment?.progressText)}
               />
               <Descriptions column={1} size="small" className="mt-4">
                 <Descriptions.Item label="流水线">{deployment?.pipelineName || deployment?.pipeline?.name || '-'}</Descriptions.Item>

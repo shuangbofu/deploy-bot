@@ -26,7 +26,8 @@ const emptyFilters: DeploymentRecordFilters = {
 export default function UserDeploymentRecordsPage() {
   const navigate = useNavigate();
   const [deployments, setDeployments] = useState<DeploymentSummary[]>([]);
-  const [filterSourceDeployments, setFilterSourceDeployments] = useState<DeploymentSummary[]>([]);
+  const [projectOptions, setProjectOptions] = useState<Array<{ label: string; value: string }>>([]);
+  const [pipelineOptions, setPipelineOptions] = useState<Array<{ label: string; value: string }>>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState<DeploymentRecordFilters>(emptyFilters);
@@ -54,8 +55,11 @@ export default function UserDeploymentRecordsPage() {
   };
 
   useEffect(() => {
-    deploymentsApi.listMine()
-      .then((items) => setFilterSourceDeployments(items))
+    deploymentsApi.getMineFilterOptions()
+      .then((result) => {
+        setProjectOptions(result.projectNames.map((item) => ({ label: item, value: item })));
+        setPipelineOptions(result.pipelineNames.map((item) => ({ label: item, value: item })));
+      })
       .catch(() => message.error('加载筛选项失败'));
   }, []);
 
@@ -67,24 +71,6 @@ export default function UserDeploymentRecordsPage() {
     const timer = window.setInterval(() => setTick(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
-
-  const projectOptions = useMemo(
-    () => Array.from(new Set(
-      filterSourceDeployments
-        .map((item) => item.projectName || item.pipeline?.project?.name)
-        .filter((value): value is string => Boolean(value && value.trim())),
-    )).sort((left, right) => left.localeCompare(right, 'zh-CN')).map((item) => ({ label: item, value: item })),
-    [filterSourceDeployments],
-  );
-
-  const pipelineOptions = useMemo(
-    () => Array.from(new Set(
-      filterSourceDeployments
-        .map((item) => item.pipelineName || item.pipeline?.name)
-        .filter((value): value is string => Boolean(value && value.trim())),
-    )).sort((left, right) => left.localeCompare(right, 'zh-CN')).map((item) => ({ label: item, value: item })),
-    [filterSourceDeployments],
-  );
 
   return (
     <>

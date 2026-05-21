@@ -416,7 +416,7 @@ body {
 }
 
 .pipeline-hall-running-item-duration {
-  color: #eab308;
+  color: #16a34a;
   font-weight: 400;
   font-size: 10px;
   line-height: 1.1;
@@ -717,6 +717,10 @@ body {
   font-weight: 500;
 }
 
+.status-chip--running-service {
+  color: #16a34a;
+}
+
 .status-dot {
   width: 8px;
   height: 8px;
@@ -729,8 +733,8 @@ body {
 }
 
 .status-dot--running {
-  background: #eab308;
-  box-shadow: 0 0 0 4px rgba(234, 179, 8, 0.16);
+  background: #f59e0b;
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.16);
 }
 
 .status-dot--stopped {

@@ -1,12 +1,12 @@
 import client from './client';
-import type { DeploymentPayload, DeploymentSummary, LogResponse, PageResult, UserRecentPipelineSummary } from './types';
+import type { DeploymentFilterOptions, DeploymentPayload, DeploymentSummary, LogResponse, PageResult, UserRecentPipelineSummary } from './types';
 
 /**
  * 部署记录与部署动作接口。
  */
 export const deploymentsApi = {
   list: async () => (await client.get<DeploymentSummary[]>('/deployments')).data,
-  listMine: async () => (await client.get<DeploymentSummary[]>('/deployments/mine')).data,
+  getMineFilterOptions: async () => (await client.get<DeploymentFilterOptions>('/deployments/mine/filter-options')).data,
   listMineRecentPipelines: async () => (await client.get<UserRecentPipelineSummary[]>('/deployments/mine/recent-pipelines')).data,
   listPage: async (params: {
     page: number;

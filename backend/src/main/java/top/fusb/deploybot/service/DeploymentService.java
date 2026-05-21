@@ -2,6 +2,7 @@ package top.fusb.deploybot.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import top.fusb.deploybot.dto.DeploymentRequest;
+import top.fusb.deploybot.dto.DeploymentFilterOptions;
 import top.fusb.deploybot.dto.DeploymentListSummary;
 import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.dto.TemplateVariable;
@@ -149,10 +150,11 @@ public class DeploymentService {
         });
     }
 
-    public List<DeploymentEntity> findMine() {
+    public DeploymentFilterOptions findMineFilterOptions() {
         AuthenticatedUser currentUser = requireCurrentUser();
-        return enrichTriggeredByDisplayNames(
-                deploymentRepository.findByTriggeredByOrderByCreatedAtDesc(currentUser.username())
+        return new DeploymentFilterOptions(
+                deploymentRepository.findDistinctProjectNamesByTriggeredBy(currentUser.username()),
+                deploymentRepository.findDistinctPipelineNamesByTriggeredBy(currentUser.username())
         );
     }
 

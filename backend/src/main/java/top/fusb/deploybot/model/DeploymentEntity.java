@@ -152,17 +152,18 @@ public class DeploymentEntity {
         if (status == DeploymentStatus.SUCCESS) {
             return 100;
         }
-        if (status == DeploymentStatus.FAILED || status == DeploymentStatus.STOPPED) {
-            return 0;
-        }
         if (status == DeploymentStatus.PENDING) {
             return 0;
         }
 
         ProgressSnapshot snapshot = readProgressSnapshot();
         if (snapshot == null) {
-            return status == DeploymentStatus.RUNNING ? 10 : 0;
+            return 0;
         }
+        return calculateSnapshotProgressPercent(snapshot);
+    }
+
+    private int calculateSnapshotProgressPercent(ProgressSnapshot snapshot) {
         if (ROLLBACK_STAGE.equals(snapshot.stage()) && snapshot.rollbackStep() != null && snapshot.rollbackStep().total > 0) {
             int percent = Math.round((snapshot.rollbackStep().current * 100.0f) / snapshot.rollbackStep().total);
             return Math.max(0, Math.min(percent, MAX_RUNNING_PROGRESS));
@@ -173,7 +174,7 @@ public class DeploymentEntity {
         int startupStageWeight = requiresStartupObservation() ? 1 : 0;
         int grandTotal = buildTotal + deployTotal + startupStageWeight;
         if (grandTotal <= 0) {
-            return status == DeploymentStatus.RUNNING ? 10 : 0;
+            return 0;
         }
 
         float completedUnits;
@@ -196,16 +197,20 @@ public class DeploymentEntity {
         if (status == DeploymentStatus.SUCCESS) {
             return "部署完成";
         }
+        ProgressSnapshot snapshot = readProgressSnapshot();
         if (status == DeploymentStatus.FAILED) {
-            return "部署失败";
+            return snapshot == null ? "部署失败" : buildSnapshotProgressText(snapshot) + "（失败）";
         }
         if (status == DeploymentStatus.STOPPED) {
-            return "已停止";
+            return snapshot == null ? "已停止" : buildSnapshotProgressText(snapshot) + "（已停止）";
         }
-        ProgressSnapshot snapshot = readProgressSnapshot();
         if (snapshot == null) {
             return null;
         }
+        return buildSnapshotProgressText(snapshot);
+    }
+
+    private String buildSnapshotProgressText(ProgressSnapshot snapshot) {
         String stageLabel = switch (snapshot.stage()) {
             case DEPLOY_STAGE -> "发布";
             case STARTUP_STAGE -> "启动";

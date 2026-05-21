@@ -1,6 +1,7 @@
 package top.fusb.deploybot.controller;
 
 import top.fusb.deploybot.dto.DeploymentRequest;
+import top.fusb.deploybot.dto.DeploymentFilterOptions;
 import top.fusb.deploybot.dto.DeploymentListSummary;
 import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.model.DeploymentEntity;
@@ -53,9 +54,9 @@ public class DeploymentController {
         return service.findPage(page, pageSize, projectName, pipelineName, triggeredBy, status, startTime, endTime);
     }
 
-    @GetMapping("/mine")
-    public List<DeploymentEntity> mine() {
-        return service.findMine();
+    @GetMapping("/mine/filter-options")
+    public DeploymentFilterOptions mineFilterOptions() {
+        return service.findMineFilterOptions();
     }
 
     @GetMapping("/mine/recent-pipelines")

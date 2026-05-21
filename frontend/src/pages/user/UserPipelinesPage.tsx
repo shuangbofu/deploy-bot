@@ -12,7 +12,7 @@ import { ACTIVE_DEPLOYMENT_STATUSES } from '../../constants/deployment';
 import type { PipelineHallRunningServiceSummary, PipelineHallSummary, PipelineSummary, UserRecentPipelineSummary } from '../../types/domain';
 import { formatDateTime } from '../../utils/datetime';
 import { formatDeploymentElapsed } from '../../utils/deploymentDuration';
-import { getDeploymentProgress, getDeploymentProgressColor } from '../../utils/deploymentProgress';
+import { getDeploymentProgress, getDeploymentProgressColor, getDeploymentProgressLabel } from '../../utils/deploymentProgress';
 import { formatDurationSince } from '../../utils/duration';
 import { getStableTagColor, sortTagNames } from '../../utils/tagColors';
 
@@ -808,7 +808,8 @@ export default function UserPipelinesPage() {
                               <div className="pt-2">
                                 <Progress
                                   percent={item.latestProgressPercent ?? 0}
-                                  format={() => item.latestProgressText || `${item.latestProgressPercent ?? 0}%`}
+                                  status={item.latestStatus === 'RUNNING' ? 'active' : undefined}
+                                  format={() => getDeploymentProgressLabel(item.latestProgressPercent ?? 0, item.latestStatus, item.latestProgressText)}
                                   strokeColor={getDeploymentProgressColor(item.latestStatus)}
                                   trailColor="#d9e2f1"
                                 />
@@ -943,8 +944,20 @@ export default function UserPipelinesPage() {
                     },
                     {
                       title: '最近状态',
-                      width: 140,
-                      render: (_, row) => <StatusTag status={row.latestStatus || undefined} />,
+                      width: 190,
+                      render: (_, row) => {
+                        const showProgressText = row.latestStatus === 'RUNNING' && row.latestProgressText;
+                        return (
+                          <div className="flex items-center gap-2">
+                            <StatusTag status={row.latestStatus || undefined} />
+                            {showProgressText ? (
+                              <span className="text-xs font-medium text-slate-500">
+                                {row.latestProgressText}
+                              </span>
+                            ) : null}
+                          </div>
+                        );
+                      },
                     },
                     {
                       title: '部署人',

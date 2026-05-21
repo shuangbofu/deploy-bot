@@ -46,6 +46,11 @@ export interface PageResult<T> {
   pageSize: number;
 }
 
+export interface DeploymentFilterOptions {
+  projectNames: string[];
+  pipelineNames: string[];
+}
+
 /**
  * 项目表单请求体。
  */

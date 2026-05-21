@@ -18,7 +18,7 @@ export const DEPLOYMENT_STATUS_META: Record<
   { label: string; dotClass: string; color: string }
 > = {
   PENDING: { label: '待执行', dotClass: 'status-dot--pending', color: '#94a3b8' },
-  RUNNING: { label: '部署中', dotClass: 'status-dot--running', color: '#eab308' },
+  RUNNING: { label: '部署中', dotClass: 'status-dot--running', color: '#f59e0b' },
   STOPPED: { label: '已停止', dotClass: 'status-dot--stopped', color: '#94a3b8' },
   SUCCESS: { label: '成功', dotClass: 'status-dot--success', color: '#16a34a' },
   FAILED: { label: '失败', dotClass: 'status-dot--failed', color: '#dc2626' },
