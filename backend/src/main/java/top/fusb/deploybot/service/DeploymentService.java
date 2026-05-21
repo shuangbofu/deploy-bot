@@ -344,6 +344,8 @@ public class DeploymentService {
         DeploymentEntity entity = new DeploymentEntity();
         entity.setPipeline(pipeline);
         entity.setBranchName(branch);
+        entity.setPipelineName(pipeline.getName());
+        entity.setProjectName(pipeline.getProject() == null ? null : pipeline.getProject().getName());
         entity.setVariablesJson(jsonMapper.write(variables));
         entity.setExecutionSnapshotJson(buildExecutionSnapshotJson(pipeline, branch, variables));
         entity.setTriggeredBy(currentUser.username() == null || currentUser.username().isBlank() ? DEFAULT_TRIGGER_USER : currentUser.username());
@@ -750,6 +752,8 @@ public class DeploymentService {
         DeploymentEntity entity = new DeploymentEntity();
         entity.setPipeline(pipeline);
         entity.setBranchName(source.getBranchName());
+        entity.setPipelineName(pipeline.getName());
+        entity.setProjectName(pipeline.getProject() == null ? null : pipeline.getProject().getName());
         entity.setTriggeredBy(requireCurrentUser().username());
         entity.setStatus(DeploymentStatus.PENDING);
         entity.setCreatedAt(LocalDateTime.now());
@@ -874,6 +878,8 @@ public class DeploymentService {
 
     private DeploymentListSummary toDeploymentListSummary(DeploymentEntity entity) {
         enrichTriggeredByDisplayName(entity);
+        String pipelineName = resolveDeploymentPipelineName(entity);
+        String projectName = resolveDeploymentProjectName(entity);
         return new DeploymentListSummary(
                 entity.getId(),
                 entity.getBranchName(),
@@ -887,6 +893,8 @@ public class DeploymentService {
                 entity.getFinishedAt(),
                 entity.getLogPath(),
                 entity.getErrorMessage(),
+                pipelineName,
+                projectName,
                 toPipelineRef(entity),
                 entity.getArtifactPath(),
                 entity.getRollbackFromDeploymentId(),
@@ -919,7 +927,51 @@ public class DeploymentService {
         }
         entity.setTriggeredByDisplayName(resolveDisplayName(entity.getTriggeredBy()));
         entity.setStoppedByDisplayName(resolveDisplayName(entity.getStoppedBy()));
+        entity.setPipelineName(resolveDeploymentPipelineName(entity));
+        entity.setProjectName(resolveDeploymentProjectName(entity));
         return entity;
+    }
+
+    private String resolveDeploymentPipelineName(DeploymentEntity entity) {
+        if (entity == null) {
+            return null;
+        }
+        if (entity.getPipelineName() != null && !entity.getPipelineName().isBlank()) {
+            return entity.getPipelineName();
+        }
+        if (entity.getPipeline() != null && entity.getPipeline().getName() != null && !entity.getPipeline().getName().isBlank()) {
+            return entity.getPipeline().getName();
+        }
+        return readSnapshotText(entity.getExecutionSnapshotJson(), "pipelineName");
+    }
+
+    private String resolveDeploymentProjectName(DeploymentEntity entity) {
+        if (entity == null) {
+            return null;
+        }
+        if (entity.getProjectName() != null && !entity.getProjectName().isBlank()) {
+            return entity.getProjectName();
+        }
+        if (entity.getPipeline() != null
+                && entity.getPipeline().getProject() != null
+                && entity.getPipeline().getProject().getName() != null
+                && !entity.getPipeline().getProject().getName().isBlank()) {
+            return entity.getPipeline().getProject().getName();
+        }
+        return readSnapshotText(entity.getExecutionSnapshotJson(), "projectName");
+    }
+
+    private String readSnapshotText(String snapshotJson, String key) {
+        if (snapshotJson == null || snapshotJson.isBlank()) {
+            return null;
+        }
+        try {
+            Object value = jsonMapper.toObjectMap(snapshotJson).get(key);
+            return value == null ? null : String.valueOf(value);
+        } catch (Exception ex) {
+            log.debug("读取部署快照字段 {} 失败：{}", key, ex.getMessage());
+            return null;
+        }
     }
 
     private String resolveDisplayName(String username) {

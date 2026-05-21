@@ -29,6 +29,8 @@ public class SchemaMigrationBootstrap {
                 "ALTER TABLE IF EXISTS deployments ALTER COLUMN pipeline_id BIGINT NULL",
                 "ALTER TABLE IF EXISTS deployments ALTER COLUMN variables_json CLOB",
                 "ALTER TABLE IF EXISTS deployments ADD COLUMN IF NOT EXISTS execution_snapshot_json CLOB",
+                "ALTER TABLE IF EXISTS deployments ADD COLUMN IF NOT EXISTS pipeline_name VARCHAR(255)",
+                "ALTER TABLE IF EXISTS deployments ADD COLUMN IF NOT EXISTS project_name VARCHAR(255)",
                 "ALTER TABLE IF EXISTS deployments ADD COLUMN IF NOT EXISTS stopped_by VARCHAR(1000)",
                 "ALTER TABLE IF EXISTS pipelines ADD COLUMN IF NOT EXISTS application_name VARCHAR(255)",
                 "ALTER TABLE IF EXISTS pipelines ADD COLUMN IF NOT EXISTS spring_profile VARCHAR(255)",

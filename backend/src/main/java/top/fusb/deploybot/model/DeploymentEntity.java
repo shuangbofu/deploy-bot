@@ -70,6 +70,14 @@ public class DeploymentEntity {
     @Column(nullable = false)
     private String branchName;
 
+    /** 创建部署时固化的流水线名称，避免删除流水线后历史记录丢失名称。 */
+    @Column(length = 255)
+    private String pipelineName;
+
+    /** 创建部署时固化的项目名称，避免删除项目/流水线关联变更后历史记录丢失名称。 */
+    @Column(length = 255)
+    private String projectName;
+
     /** 本次部署实际使用的变量 JSON。 */
     @Lob
     private String variablesJson;

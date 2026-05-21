@@ -166,8 +166,8 @@ export default function DeploymentRecordsPage() {
                   </Space>
                 ),
               },
-              { title: '项目', render: (_, row) => row.pipeline?.project?.name || '-' },
-              { title: '流水线', render: (_, row) => row.pipeline?.name },
+              { title: '项目', render: (_, row) => row.projectName || row.pipeline?.project?.name || '-' },
+              { title: '流水线', render: (_, row) => row.pipelineName || row.pipeline?.name || '-' },
               { title: '分支', dataIndex: 'branchName' },
               { title: '触发人', render: (_, record) => record.triggeredByDisplayName || record.triggeredBy || '-' },
               { title: '状态', render: (_, row) => <StatusTag status={row.status} /> },

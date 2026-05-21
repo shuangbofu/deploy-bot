@@ -71,7 +71,7 @@ export default function UserDeploymentRecordsPage() {
   const projectOptions = useMemo(
     () => Array.from(new Set(
       filterSourceDeployments
-        .map((item) => item.pipeline?.project?.name)
+        .map((item) => item.projectName || item.pipeline?.project?.name)
         .filter((value): value is string => Boolean(value && value.trim())),
     )).sort((left, right) => left.localeCompare(right, 'zh-CN')).map((item) => ({ label: item, value: item })),
     [filterSourceDeployments],
@@ -80,7 +80,7 @@ export default function UserDeploymentRecordsPage() {
   const pipelineOptions = useMemo(
     () => Array.from(new Set(
       filterSourceDeployments
-        .map((item) => item.pipeline?.name)
+        .map((item) => item.pipelineName || item.pipeline?.name)
         .filter((value): value is string => Boolean(value && value.trim())),
     )).sort((left, right) => left.localeCompare(right, 'zh-CN')).map((item) => ({ label: item, value: item })),
     [filterSourceDeployments],
@@ -192,8 +192,8 @@ export default function UserDeploymentRecordsPage() {
                   </Space>
                 ),
               },
-              { title: '项目', render: (_, row) => row.pipeline?.project?.name || '-' },
-              { title: '流水线', render: (_, row) => row.pipeline?.name || '-' },
+              { title: '项目', render: (_, row) => row.projectName || row.pipeline?.project?.name || '-' },
+              { title: '流水线', render: (_, row) => row.pipelineName || row.pipeline?.name || '-' },
               { title: '分支', dataIndex: 'branchName' },
               { title: '触发人', render: (_, record) => record.triggeredByDisplayName || record.triggeredBy || '-' },
               { title: '状态', render: (_, row) => <StatusTag status={row.status} /> },

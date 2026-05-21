@@ -302,6 +302,13 @@ public class PipelineService {
 
     @Transactional
     public void delete(Long id) {
+        PipelineEntity pipeline = pipelineRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.PIPELINE_NOT_FOUND));
+        deploymentRepository.backfillPipelineSnapshot(
+                id,
+                pipeline.getName(),
+                pipeline.getProject() == null ? null : pipeline.getProject().getName()
+        );
         serviceRepository.deleteByPipelineId(id);
         deploymentRepository.detachPipeline(id);
         pipelineRepository.deleteById(id);

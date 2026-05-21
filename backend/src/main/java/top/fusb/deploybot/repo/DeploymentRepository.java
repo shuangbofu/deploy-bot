@@ -36,6 +36,17 @@ public interface DeploymentRepository extends JpaRepository<DeploymentEntity, Lo
     long countByTriggeredByAndStatusIn(String triggeredBy, List<DeploymentStatus> statuses);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            update DeploymentEntity d
+               set d.pipelineName = coalesce(d.pipelineName, :pipelineName),
+                   d.projectName = coalesce(d.projectName, :projectName)
+             where d.pipeline.id = :pipelineId
+            """)
+    void backfillPipelineSnapshot(@Param("pipelineId") Long pipelineId,
+                                  @Param("pipelineName") String pipelineName,
+                                  @Param("projectName") String projectName);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("update DeploymentEntity d set d.pipeline = null where d.pipeline.id = :pipelineId")
     void detachPipeline(@Param("pipelineId") Long pipelineId);
 }

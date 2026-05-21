@@ -17,6 +17,8 @@ public record DeploymentListSummary(
         LocalDateTime finishedAt,
         String logPath,
         String errorMessage,
+        String pipelineName,
+        String projectName,
         PipelineRef pipeline,
         String artifactPath,
         Long rollbackFromDeploymentId,

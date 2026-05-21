@@ -300,6 +300,10 @@ export interface UserSummary {
 export interface DeploymentSummary {
   /** 部署记录主键。 */
   id: number;
+  /** 部署创建时固化的流水线名称。 */
+  pipelineName?: string | null;
+  /** 部署创建时固化的项目名称。 */
+  projectName?: string | null;
   /** 本次部署使用的分支。 */
   branchName?: string;
   /** 触发人。 */

@@ -240,8 +240,8 @@ export default function AdminDeploymentDetailPage() {
                 format={() => deployment?.progressText || `${progress}%`}
               />
               <Descriptions column={1} size="small" className="mt-4">
-                <Descriptions.Item label="流水线">{deployment?.pipeline?.name || '-'}</Descriptions.Item>
-                <Descriptions.Item label="项目">{deployment?.pipeline?.project?.name || '-'}</Descriptions.Item>
+                <Descriptions.Item label="流水线">{deployment?.pipelineName || deployment?.pipeline?.name || '-'}</Descriptions.Item>
+                <Descriptions.Item label="项目">{deployment?.projectName || deployment?.pipeline?.project?.name || '-'}</Descriptions.Item>
                 <Descriptions.Item label="分支">{deployment?.branchName || '-'}</Descriptions.Item>
                 <Descriptions.Item label="触发人">{deployment?.triggeredByDisplayName || deployment?.triggeredBy || '-'}</Descriptions.Item>
                 <Descriptions.Item label="停止人">{deployment?.stoppedByDisplayName || deployment?.stoppedBy || '-'}</Descriptions.Item>
