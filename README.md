@@ -169,6 +169,32 @@ scripts/    一次性维护脚本或迁移脚本
 - [Deploy Bot 使用介绍 08：怎么发起部署、查看记录与详情](./docs/articles/08-deployments-and-history.md)
 - [Deploy Bot 使用介绍 09：服务、通知与系统设置怎么用](./docs/articles/09-ops-and-settings.md)
 
+## 本地快速部署到云端
+
+如果你已经在本地把 Deploy Bot 跑起来了，可以先用它把自己部署到云端服务器上。这样平台一旦先上线，后面部署其他 Java 服务、前端站点或简单全栈项目，就都可以直接在云端这套 Deploy Bot 上完成。
+
+准备工作只需要三步：
+
+- 把部署平台所在机器的 SSH 公钥加入目标云服务器，保证平台可以免密登录目标主机
+- 把 Git 拉代码使用的公钥加入对应的 Git 平台
+- 在本地这套 Deploy Bot 里先配置好项目、目标主机、运行环境、模板和流水线
+
+Deploy Bot 自己这类前后端一体项目，一条常见的流水线配置可以参考下面这张图：
+
+![Deploy Bot 自部署示例](./docs/screenshots/deploy-bot-self-hosting.png)
+
+这类配置的核心思路是：
+
+- 前端目录放在 `frontend`
+- 前端构建产物目录使用 `dist`
+- 构建完成后把前端产物复制到 `backend/src/main/resources/static`
+- 后端构建目录使用 `backend`
+- 后端构建命令使用 `mvn -DskipTests package`
+- 最终发布 `backend/target/deploy-bot-backend-0.0.1-SNAPSHOT.jar`
+- 云端启动命令使用 `nohup java -Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8 -jar deploy-bot-backend.jar > deploy-bot-backend.log 2>&1 &`
+
+按这套方式配好流水线之后，直接点击部署，就可以先把“部署平台”本身发到云端。后面再部署其他项目时，就不需要继续依赖本地环境了。
+
 ## 快速开始
 
 ### 1. 启动后端
