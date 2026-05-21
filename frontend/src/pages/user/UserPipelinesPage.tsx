@@ -890,7 +890,14 @@ export default function UserPipelinesPage() {
                           </button>
                           <PipelineIcon type={row.templateType} />
                           <div className="min-w-0">
-                            <div className="truncate font-medium text-slate-900" title={row.pipelineName}>{row.pipelineName}</div>
+                            <div className="flex items-center gap-1">
+                              <div className="truncate font-medium text-slate-900" title={row.pipelineName}>{row.pipelineName}</div>
+                              {row.latestDeploymentOrder ? (
+                                <div className="shrink-0 text-xs font-semibold text-sky-600">
+                                  #{row.latestDeploymentOrder}
+                                </div>
+                              ) : null}
+                            </div>
                             <div className="truncate text-xs text-slate-500" title={row.projectName || ''}>{row.projectName || '-'}</div>
                           </div>
                         </div>

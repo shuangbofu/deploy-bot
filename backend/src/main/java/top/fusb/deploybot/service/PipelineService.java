@@ -19,6 +19,7 @@ import top.fusb.deploybot.repo.PipelineRepository;
 import top.fusb.deploybot.repo.DeploymentRepository;
 import top.fusb.deploybot.repo.ProjectRepository;
 import top.fusb.deploybot.repo.ServiceRepository;
+import top.fusb.deploybot.repo.ServicePidHistoryRepository;
 import top.fusb.deploybot.repo.TemplateRepository;
 import top.fusb.deploybot.repo.UserRepository;
 import top.fusb.deploybot.repo.UserFavoritePipelineRepository;
@@ -52,6 +53,7 @@ public class PipelineService {
     private final JsonMapper jsonMapper;
     private final UserRepository userRepository;
     private final UserFavoritePipelineRepository userFavoritePipelineRepository;
+    private final ServicePidHistoryRepository servicePidHistoryRepository;
 
     public PipelineService(
             PipelineRepository pipelineRepository,
@@ -66,7 +68,8 @@ public class PipelineService {
             NotificationChannelRepository notificationChannelRepository,
             JsonMapper jsonMapper,
             UserRepository userRepository,
-            UserFavoritePipelineRepository userFavoritePipelineRepository
+            UserFavoritePipelineRepository userFavoritePipelineRepository,
+            ServicePidHistoryRepository servicePidHistoryRepository
     ) {
         this.pipelineRepository = pipelineRepository;
         this.projectRepository = projectRepository;
@@ -81,6 +84,7 @@ public class PipelineService {
         this.jsonMapper = jsonMapper;
         this.userRepository = userRepository;
         this.userFavoritePipelineRepository = userFavoritePipelineRepository;
+        this.servicePidHistoryRepository = servicePidHistoryRepository;
     }
 
     public List<PipelineEntity> findAll() {
@@ -309,6 +313,8 @@ public class PipelineService {
                 pipeline.getName(),
                 pipeline.getProject() == null ? null : pipeline.getProject().getName()
         );
+        userFavoritePipelineRepository.deleteByPipelineId(id);
+        servicePidHistoryRepository.deleteByPipelineId(id);
         serviceRepository.deleteByPipelineId(id);
         deploymentRepository.detachPipeline(id);
         pipelineRepository.deleteById(id);
