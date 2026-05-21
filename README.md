@@ -139,6 +139,36 @@ scripts/    一次性维护脚本或迁移脚本
 - `通知记录`
 - `部署详情`
 
+## 界面预览
+
+### 登录页
+
+![Deploy Bot 登录页](./docs/screenshots/login.png)
+
+### 管理端仪表盘
+
+![管理端仪表盘](./docs/screenshots/admin-dashboard.png)
+
+### 管理端流水线管理
+
+![管理端流水线管理](./docs/screenshots/admin-pipelines.png)
+
+### 用户端流水线大厅
+
+![用户端流水线大厅](./docs/screenshots/user-pipelines.png)
+
+## 使用文章
+
+- [Deploy Bot 介绍 01：为什么做 Deploy Bot](./docs/articles/01-why-deploy-bot.md)
+- [Deploy Bot 使用介绍 02：登录、仪表盘与双端入口](./docs/articles/02-login-dashboard-and-dual-views.md)
+- [Deploy Bot 使用介绍 03：项目怎么配置](./docs/articles/03-project-setup.md)
+- [Deploy Bot 使用介绍 04：主机怎么配置](./docs/articles/04-host-setup.md)
+- [Deploy Bot 使用介绍 05：运行环境怎么配置](./docs/articles/05-runtime-environments.md)
+- [Deploy Bot 使用介绍 06：模板怎么设计](./docs/articles/06-template-design.md)
+- [Deploy Bot 使用介绍 07：流水线怎么拼出完整部署流程](./docs/articles/07-pipeline-setup.md)
+- [Deploy Bot 使用介绍 08：怎么发起部署、查看记录与详情](./docs/articles/08-deployments-and-history.md)
+- [Deploy Bot 使用介绍 09：服务、通知与系统设置怎么用](./docs/articles/09-ops-and-settings.md)
+
 ## 快速开始
 
 ### 1. 启动后端
