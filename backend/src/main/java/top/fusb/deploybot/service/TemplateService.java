@@ -1,5 +1,6 @@
 package top.fusb.deploybot.service;
 
+import top.fusb.deploybot.kit.TextKit;
 import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.dto.TemplateRequest;
 import top.fusb.deploybot.exception.BusinessException;
@@ -10,7 +11,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
-import java.util.Comparator;
 import java.util.List;
 
 @Service
@@ -57,8 +57,8 @@ public class TemplateService {
         if (variablesSchema.isBlank()) {
             throw new BusinessException(ErrorSubCode.TEMPLATE_VARIABLES_REQUIRED);
         }
-        String buildScript = normalizeScript(request.buildScriptContent());
-        String deployScript = normalizeScript(request.deployScriptContent());
+        String buildScript = TextKit.normalizeScript(request.buildScriptContent());
+        String deployScript = TextKit.normalizeScript(request.deployScriptContent());
         if (buildScript == null || buildScript.isBlank()) {
             throw new BusinessException(ErrorSubCode.TEMPLATE_BUILD_SCRIPT_REQUIRED);
         }
@@ -79,33 +79,4 @@ public class TemplateService {
         repository.deleteById(id);
     }
 
-    /**
-     * 统一收口脚本内容，保证保存到数据库中的脚本以换行结尾，后续落文件更稳定。
-     */
-    private String normalizeScript(String content) {
-        if (content == null) {
-            return null;
-        }
-        String trimmed = content.trim();
-        return trimmed.isBlank() ? null : trimmed + "\n";
-    }
-    private String normalizeText(String content) {
-        if (content == null) {
-            return null;
-        }
-        String trimmed = content.trim();
-        return trimmed.isBlank() ? null : trimmed;
-    }
-
-    private boolean matchesKeyword(TemplateEntity item, String keyword) {
-        if (keyword == null || keyword.isBlank()) {
-            return true;
-        }
-        String normalized = keyword.trim().toLowerCase();
-        return contains(item.getName(), normalized) || contains(item.getDescription(), normalized);
-    }
-
-    private boolean contains(String value, String keyword) {
-        return value != null && value.toLowerCase().contains(keyword);
-    }
 }

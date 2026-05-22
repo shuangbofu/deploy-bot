@@ -9,6 +9,10 @@ import top.fusb.deploybot.dto.TemplateVariable;
 import top.fusb.deploybot.dto.UserRecentPipelineSummary;
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorSubCode;
+import top.fusb.deploybot.kit.ShellHeredocMarker;
+import top.fusb.deploybot.kit.ShellKit;
+import top.fusb.deploybot.kit.TextKit;
+import top.fusb.deploybot.kit.TimeKit;
 import top.fusb.deploybot.model.DeploymentEntity;
 import top.fusb.deploybot.model.DeploymentStatus;
 import top.fusb.deploybot.model.GitAuthType;
@@ -43,8 +47,6 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
-import java.time.Instant;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
@@ -207,13 +209,13 @@ public class DeploymentService {
             List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
             var pipelineJoin = root.join("pipeline", jakarta.persistence.criteria.JoinType.LEFT);
             var projectJoin = pipelineJoin.join("project", jakarta.persistence.criteria.JoinType.LEFT);
-            if (projectName != null && !projectName.isBlank()) {
+            if (TextKit.isNotBlank(projectName)) {
                 predicates.add(cb.equal(projectJoin.get("name"), projectName));
             }
-            if (pipelineName != null && !pipelineName.isBlank()) {
+            if (TextKit.isNotBlank(pipelineName)) {
                 predicates.add(cb.equal(pipelineJoin.get("name"), pipelineName));
             }
-            if (triggeredBy != null && !triggeredBy.isBlank()) {
+            if (TextKit.isNotBlank(triggeredBy)) {
                 String pattern = "%" + triggeredBy.trim().toLowerCase() + "%";
                 predicates.add(cb.like(cb.lower(root.get("triggeredBy")), pattern));
             }
@@ -221,10 +223,10 @@ public class DeploymentService {
                 predicates.add(cb.equal(root.get("status"), status));
             }
             if (startTime != null) {
-                predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), LocalDateTime.ofInstant(Instant.ofEpochMilli(startTime), ZoneId.systemDefault())));
+                predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), TimeKit.fromEpochMillis(startTime)));
             }
             if (endTime != null) {
-                predicates.add(cb.lessThanOrEqualTo(root.get("createdAt"), LocalDateTime.ofInstant(Instant.ofEpochMilli(endTime), ZoneId.systemDefault())));
+                predicates.add(cb.lessThanOrEqualTo(root.get("createdAt"), TimeKit.fromEpochMillis(endTime)));
             }
             return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
         }, PageRequest.of(Math.max(0, page - 1), Math.max(1, Math.min(100, pageSize)), Sort.by(Sort.Order.desc("createdAt"))));
@@ -249,30 +251,30 @@ public class DeploymentService {
             var pipelineJoin = root.join("pipeline", jakarta.persistence.criteria.JoinType.LEFT);
             var projectJoin = pipelineJoin.join("project", jakarta.persistence.criteria.JoinType.LEFT);
             predicates.add(cb.equal(root.get("triggeredBy"), currentUser.username()));
-            if (projectName != null && !projectName.isBlank()) {
+            if (TextKit.isNotBlank(projectName)) {
                 predicates.add(cb.equal(projectJoin.get("name"), projectName));
             }
-            if (pipelineName != null && !pipelineName.isBlank()) {
+            if (TextKit.isNotBlank(pipelineName)) {
                 predicates.add(cb.equal(pipelineJoin.get("name"), pipelineName));
             }
             if (pipelineId != null) {
                 predicates.add(cb.equal(pipelineJoin.get("id"), pipelineId));
             }
-            if (triggeredBy != null && !triggeredBy.isBlank()) {
+            if (TextKit.isNotBlank(triggeredBy)) {
                 String pattern = "%" + triggeredBy.trim().toLowerCase() + "%";
                 predicates.add(cb.like(cb.lower(root.get("triggeredBy")), pattern));
             }
-            if (branchName != null && !branchName.isBlank()) {
+            if (TextKit.isNotBlank(branchName)) {
                 predicates.add(cb.like(cb.lower(root.get("branchName")), "%" + branchName.trim().toLowerCase() + "%"));
             }
             if (status != null) {
                 predicates.add(cb.equal(root.get("status"), status));
             }
             if (startTime != null) {
-                predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), LocalDateTime.ofInstant(Instant.ofEpochMilli(startTime), ZoneId.systemDefault())));
+                predicates.add(cb.greaterThanOrEqualTo(root.get("createdAt"), TimeKit.fromEpochMillis(startTime)));
             }
             if (endTime != null) {
-                predicates.add(cb.lessThanOrEqualTo(root.get("createdAt"), LocalDateTime.ofInstant(Instant.ofEpochMilli(endTime), ZoneId.systemDefault())));
+                predicates.add(cb.lessThanOrEqualTo(root.get("createdAt"), TimeKit.fromEpochMillis(endTime)));
             }
             return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
         }, PageRequest.of(Math.max(0, page - 1), Math.max(1, Math.min(100, pageSize)), Sort.by(Sort.Order.desc("createdAt"))));
@@ -506,31 +508,25 @@ public class DeploymentService {
     }
 
     private String buildRuntimeEnvironmentPreamble(Map<String, String> variables, PipelineEntity pipeline, boolean buildStage) {
-        List<String> lines = new ArrayList<>();
-        lines.add("# Runtime environment preamble generated by Deploy Bot");
+        StringBuilder script = new StringBuilder();
+        script.append("# Runtime environment preamble generated by Deploy Bot\n");
         if (buildStage) {
-            lines.add("if [ -n \"" + valueOf(variables, "JAVA_HOME") + "\" ]; then");
-            lines.add("  export JAVA_HOME=\"" + escapeShell(valueOf(variables, "JAVA_HOME")) + "\"");
-            lines.add("fi");
-            lines.add("if [ -n \"" + valueOf(variables, "MAVEN_HOME") + "\" ]; then");
-            lines.add("  export MAVEN_HOME=\"" + escapeShell(valueOf(variables, "MAVEN_HOME")) + "\"");
-            lines.add("fi");
-            lines.add("if [ -n \"" + valueOf(variables, "NODE_HOME") + "\" ]; then");
-            lines.add("  export NODE_HOME=\"" + escapeShell(valueOf(variables, "NODE_HOME")) + "\"");
-            lines.add("fi");
-            appendActivationScript(lines, "JAVA", variables);
-            appendActivationScript(lines, "NODE", variables);
-            appendActivationScript(lines, "MAVEN", variables);
+            script.append("# Build stage runtime exports\n");
+            script.append(ShellKit.exportIfPresent("JAVA_HOME", valueOf(variables, "JAVA_HOME")));
+            script.append(ShellKit.exportIfPresent("MAVEN_HOME", valueOf(variables, "MAVEN_HOME")));
+            script.append(ShellKit.exportIfPresent("NODE_HOME", valueOf(variables, "NODE_HOME")));
+            script.append(buildActivationScriptBlock("JAVA", variables));
+            script.append(buildActivationScriptBlock("NODE", variables));
+            script.append(buildActivationScriptBlock("MAVEN", variables));
             String settingsXmlBase64 = encodeMavenSettingsXml(pipeline);
-            lines.add("if [ -n \"" + escapeShell(settingsXmlBase64) + "\" ]; then");
-            lines.add("  mkdir -p \"$(dirname \"" + escapeShell(valueOf(variables, "MAVEN_SETTINGS_FILE_PATH")) + "\")\"");
-            lines.add("  printf '%s' '" + escapeShell(settingsXmlBase64) + "' | base64 --decode > \"" + escapeShell(valueOf(variables, "MAVEN_SETTINGS_FILE_PATH")) + "\"");
-            lines.add("fi");
+            if (TextKit.isNotBlank(settingsXmlBase64) && TextKit.isNotBlank(valueOf(variables, "MAVEN_SETTINGS_FILE_PATH"))) {
+                script.append("# Prepare Maven settings.xml for build stage\n");
+                script.append(ShellKit.writeBase64FileIfPresent(settingsXmlBase64, valueOf(variables, "MAVEN_SETTINGS_FILE_PATH")));
+            }
         } else {
-            lines.add("if [ -n \"" + valueOf(variables, "JAVA_HOME") + "\" ]; then");
-            lines.add("  export JAVA_HOME=\"" + escapeShell(valueOf(variables, "JAVA_HOME")) + "\"");
-            lines.add("fi");
-            appendActivationScript(lines, "JAVA", variables);
+            script.append("# Deploy stage runtime exports\n");
+            script.append(ShellKit.exportIfPresent("JAVA_HOME", valueOf(variables, "JAVA_HOME")));
+            script.append(buildActivationScriptBlock("JAVA", variables));
         }
 
         StringBuilder pathBuilder = new StringBuilder();
@@ -549,20 +545,25 @@ public class DeploymentService {
                 continue;
             }
             if (key.endsWith("__PREPEND_PATH")) {
-                pathBuilder.insert(0, escapeShell(entry.getValue()) + ":");
+                pathBuilder.insert(0, ShellKit.escapeDoubleQuoted(entry.getValue()) + ":");
                 continue;
             }
-            lines.add("export " + key + "=\"" + escapeShell(entry.getValue()) + "\"");
+            script.append("export ")
+                    .append(key)
+                    .append("=\"")
+                    .append(ShellKit.escapeDoubleQuoted(entry.getValue()))
+                    .append("\"\n");
         }
 
         if (pathBuilder.length() > 0) {
-            lines.add("export PATH=\"" + escapeShell(pathBuilder.toString()) + "$PATH\"");
+            script.append("export PATH=\"")
+                    .append(ShellKit.escapeDoubleQuoted(pathBuilder.toString()))
+                    .append("$PATH\"\n");
         }
 
-        appendGitSshPreamble(lines, pipeline, variables);
-
-        lines.add("");
-        return String.join("\n", lines);
+        script.append(buildGitSshPreamble(pipeline, variables));
+        script.append("\n");
+        return script.toString();
     }
 
     private void augmentMavenBuildCommands(Map<String, String> variables, PipelineEntity pipeline) {
@@ -607,76 +608,84 @@ public class DeploymentService {
     }
 
     private void appendPath(StringBuilder pathBuilder, String path) {
-        if (path == null || path.isBlank()) {
+        if (TextKit.isBlank(path)) {
             return;
         }
-        pathBuilder.append(escapeShell(path)).append(":");
+        pathBuilder.append(ShellKit.escapeDoubleQuoted(path)).append(":");
     }
 
     private String valueOf(Map<String, String> variables, String key) {
         return variables.getOrDefault(key, "");
     }
 
-    private String escapeShell(String value) {
-        return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"");
-    }
-
-    private void appendActivationScript(List<String> lines, String prefix, Map<String, String> variables) {
+    /**
+     * 运行环境提供的激活脚本会原样嵌入到部署脚本中，并在前面补一行注释说明作用。
+     */
+    private String buildActivationScriptBlock(String prefix, Map<String, String> variables) {
         String activationScript = valueOf(variables, prefix + "_ACTIVATION_SCRIPT");
-        if (activationScript.isBlank()) {
-            return;
+        if (TextKit.isBlank(activationScript)) {
+            return "";
         }
-        lines.add("# Activate " + prefix + " environment");
-        lines.add(activationScript);
+        return """
+                # Activate %s environment
+                %s
+                """.formatted(prefix, activationScript);
     }
 
-    private void appendGitSshPreamble(List<String> lines, PipelineEntity pipeline, Map<String, String> variables) {
+    /**
+     * Git 使用 SSH 拉代码时，这段脚本负责在工作目录内准备临时密钥、known_hosts 与 ssh 包装器。
+     */
+    private String buildGitSshPreamble(PipelineEntity pipeline, Map<String, String> variables) {
         if (pipeline == null || pipeline.getProject() == null || pipeline.getProject().getGitAuthType() != GitAuthType.SSH) {
-            return;
+            return "";
         }
         String workspaceRoot = valueOf(variables, "workspaceRoot");
-        if (workspaceRoot.isBlank()) {
-            return;
+        if (TextKit.isBlank(workspaceRoot)) {
+            return "";
         }
-        String gitSshDir = escapeShell(Path.of(workspaceRoot).resolve("ssh").resolve("git").toString());
+        String gitSshDir = Path.of(workspaceRoot).resolve("ssh").resolve("git").toString();
         String privateKey = systemSettingsService.get().getGitSshPrivateKey();
-        if (privateKey == null || privateKey.isBlank()) {
-            return;
+        if (TextKit.isBlank(privateKey)) {
+            return "";
         }
         String publicKey = systemSettingsService.get().getGitSshPublicKey();
         String knownHosts = systemSettingsService.get().getGitSshKnownHosts();
 
-        lines.add("# Prepare Git SSH credentials");
-        lines.add("mkdir -p \"" + gitSshDir + "\"");
-        lines.add("cat > \"" + gitSshDir + "/id_deploybot\" <<'__DEPLOYBOT_GIT_PRIVATE_KEY__'");
-        lines.add(privateKey.strip());
-        lines.add("__DEPLOYBOT_GIT_PRIVATE_KEY__");
-        if (publicKey != null && !publicKey.isBlank()) {
-            lines.add("cat > \"" + gitSshDir + "/id_deploybot.pub\" <<'__DEPLOYBOT_GIT_PUBLIC_KEY__'");
-            lines.add(publicKey.strip());
-            lines.add("__DEPLOYBOT_GIT_PUBLIC_KEY__");
+        StringBuilder script = new StringBuilder();
+        script.append("# Prepare Git SSH credentials\n");
+        script.append("mkdir -p \"").append(ShellKit.escapeDoubleQuoted(gitSshDir)).append("\"\n");
+        script.append(ShellKit.writeLiteralFile(gitSshDir + "/id_deploybot", privateKey, ShellHeredocMarker.GIT_PRIVATE_KEY));
+        if (TextKit.isNotBlank(publicKey)) {
+            script.append(ShellKit.writeLiteralFile(gitSshDir + "/id_deploybot.pub", publicKey, ShellHeredocMarker.GIT_PUBLIC_KEY));
         }
-        if (knownHosts != null && !knownHosts.isBlank()) {
-            lines.add("cat > \"" + gitSshDir + "/known_hosts\" <<'__DEPLOYBOT_GIT_KNOWN_HOSTS__'");
-            lines.add(knownHosts.strip());
-            lines.add("__DEPLOYBOT_GIT_KNOWN_HOSTS__");
-            lines.add("cat > \"" + gitSshDir + "/git-ssh-wrapper.sh\" <<'__DEPLOYBOT_GIT_SSH_WRAPPER__'");
-            lines.add("#!/usr/bin/env bash");
-            lines.add("set -e");
-            lines.add("exec ssh -i \"" + gitSshDir + "/id_deploybot\" -o IdentitiesOnly=yes -o PreferredAuthentications=publickey -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no -o StrictHostKeyChecking=yes -o UserKnownHostsFile=\"" + gitSshDir + "/known_hosts\" \"$@\"");
-            lines.add("__DEPLOYBOT_GIT_SSH_WRAPPER__");
+        if (TextKit.isNotBlank(knownHosts)) {
+            script.append(ShellKit.writeLiteralFile(gitSshDir + "/known_hosts", knownHosts, ShellHeredocMarker.GIT_KNOWN_HOSTS));
+            script.append(ShellKit.writeLiteralFile(
+                    gitSshDir + "/git-ssh-wrapper.sh",
+                    """
+                    #!/usr/bin/env bash
+                    set -e
+                    exec ssh -i "%s/id_deploybot" -o IdentitiesOnly=yes -o PreferredAuthentications=publickey -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no -o StrictHostKeyChecking=yes -o UserKnownHostsFile="%s/known_hosts" "$@"
+                    """.formatted(ShellKit.escapeDoubleQuoted(gitSshDir), ShellKit.escapeDoubleQuoted(gitSshDir)),
+                    ShellHeredocMarker.GIT_SSH_WRAPPER
+            ));
         } else {
-            lines.add("cat > \"" + gitSshDir + "/git-ssh-wrapper.sh\" <<'__DEPLOYBOT_GIT_SSH_WRAPPER__'");
-            lines.add("#!/usr/bin/env bash");
-            lines.add("set -e");
-            lines.add("exec ssh -i \"" + gitSshDir + "/id_deploybot\" -o IdentitiesOnly=yes -o PreferredAuthentications=publickey -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no -o StrictHostKeyChecking=no \"$@\"");
-            lines.add("__DEPLOYBOT_GIT_SSH_WRAPPER__");
+            script.append(ShellKit.writeLiteralFile(
+                    gitSshDir + "/git-ssh-wrapper.sh",
+                    """
+                    #!/usr/bin/env bash
+                    set -e
+                    exec ssh -i "%s/id_deploybot" -o IdentitiesOnly=yes -o PreferredAuthentications=publickey -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no -o StrictHostKeyChecking=no "$@"
+                    """.formatted(ShellKit.escapeDoubleQuoted(gitSshDir)),
+                    ShellHeredocMarker.GIT_SSH_WRAPPER
+            ));
         }
-        lines.add("chmod 600 \"" + gitSshDir + "/id_deploybot\" || true");
-        lines.add("chmod 700 \"" + gitSshDir + "/git-ssh-wrapper.sh\" || true");
-        lines.add("export GIT_SSH=\"" + gitSshDir + "/git-ssh-wrapper.sh\"");
-        lines.add("export GIT_TERMINAL_PROMPT=0");
-        lines.add("export GIT_ASKPASS=echo");
+        script.append("chmod 600 \"").append(ShellKit.escapeDoubleQuoted(gitSshDir)).append("/id_deploybot\" || true\n");
+        script.append("chmod 700 \"").append(ShellKit.escapeDoubleQuoted(gitSshDir)).append("/git-ssh-wrapper.sh\" || true\n");
+        script.append("export GIT_SSH=\"").append(ShellKit.escapeDoubleQuoted(gitSshDir)).append("/git-ssh-wrapper.sh\"\n");
+        script.append("export GIT_TERMINAL_PROMPT=0\n");
+        script.append("export GIT_ASKPASS=echo\n");
+        return script.toString();
     }
 
     private String resolveBuildScriptTemplate(PipelineEntity pipeline) {
@@ -977,11 +986,11 @@ public class DeploymentService {
     }
 
     private String resolveDisplayName(String username) {
-        if (username == null || username.isBlank()) {
+        if (TextKit.isBlank(username)) {
             return null;
         }
         return userRepository.findByUsername(username)
-                .map(user -> user.getDisplayName() == null || user.getDisplayName().isBlank() ? user.getUsername() : user.getDisplayName())
+                .map(user -> TextKit.isBlank(user.getDisplayName()) ? user.getUsername() : user.getDisplayName())
                 .orElse(username);
     }
 
@@ -994,17 +1003,17 @@ public class DeploymentService {
     }
 
     private boolean matchesProject(DeploymentEntity item, String projectName) {
-        return projectName == null || projectName.isBlank()
+        return TextKit.isBlank(projectName)
                 || Objects.equals(item.getPipeline() == null || item.getPipeline().getProject() == null ? null : item.getPipeline().getProject().getName(), projectName);
     }
 
     private boolean matchesPipeline(DeploymentEntity item, String pipelineName) {
-        return pipelineName == null || pipelineName.isBlank()
+        return TextKit.isBlank(pipelineName)
                 || Objects.equals(item.getPipeline() == null ? null : item.getPipeline().getName(), pipelineName);
     }
 
     private boolean matchesTriggeredBy(DeploymentEntity item, String triggeredBy) {
-        if (triggeredBy == null || triggeredBy.isBlank()) {
+        if (TextKit.isBlank(triggeredBy)) {
             return true;
         }
         String normalized = triggeredBy.trim().toLowerCase();
@@ -1018,7 +1027,7 @@ public class DeploymentService {
     }
 
     private boolean matchesBranch(DeploymentEntity item, String branchName) {
-        if (branchName == null || branchName.isBlank()) {
+        if (TextKit.isBlank(branchName)) {
             return true;
         }
         return item.getBranchName() != null && item.getBranchName().toLowerCase().contains(branchName.trim().toLowerCase());
@@ -1029,13 +1038,13 @@ public class DeploymentService {
             return startTime == null && endTime == null;
         }
         if (startTime != null) {
-            LocalDateTime start = LocalDateTime.ofInstant(Instant.ofEpochMilli(startTime), ZoneId.systemDefault());
+            LocalDateTime start = TimeKit.fromEpochMillis(startTime);
             if (item.getCreatedAt().isBefore(start)) {
                 return false;
             }
         }
         if (endTime != null) {
-            LocalDateTime end = LocalDateTime.ofInstant(Instant.ofEpochMilli(endTime), ZoneId.systemDefault());
+            LocalDateTime end = TimeKit.fromEpochMillis(endTime);
             if (item.getCreatedAt().isAfter(end)) {
                 return false;
             }
@@ -1058,25 +1067,27 @@ public class DeploymentService {
     }
 
     private String buildReplayScript(Map<String, String> variables) {
-        List<String> lines = new ArrayList<>();
-        lines.add("#!/usr/bin/env bash");
-        lines.add("set -e");
-        lines.add("export PS4='+ $(date \"+%Y-%m-%d %H:%M:%S\") '");
-        lines.add("set -x");
-        lines.add("");
-        lines.add("echo \"[回滚 1/3] 准备历史产物目录\"");
-        lines.add("if [ ! -d \"{{sourceArtifactPath}}\" ]; then");
-        lines.add("  echo \"历史构建产物不存在：{{sourceArtifactPath}}\"");
-        lines.add("  exit 1");
-        lines.add("fi");
-        lines.add("");
-        lines.add("echo \"[回滚 2/3] 复制历史构建产物到本次发布包\"");
-        lines.add("mkdir -p \"{{artifactDir}}\"");
-        lines.add("rsync -a \"{{sourceArtifactPath}}/\" \"{{artifactDir}}/\"");
-        lines.add("");
-        lines.add("echo \"[回滚 3/3] 历史构建产物已就绪，开始重新发布\"");
-        lines.add("");
-        return scriptTemplateService.render(String.join("\n", lines), variables);
+        String script = """
+                #!/usr/bin/env bash
+                set -e
+                export PS4='+ $(date "+%Y-%m-%d %H:%M:%S") '
+                set -x
+
+                # 校验历史产物目录仍然存在，避免创建一条注定失败的回滚任务。
+                echo "[回滚 1/3] 准备历史产物目录"
+                if [ ! -d "{{sourceArtifactPath}}" ]; then
+                  echo "历史构建产物不存在：{{sourceArtifactPath}}"
+                  exit 1
+                fi
+
+                # 将历史构建产物复制到本次发布产物目录，后续仍然复用标准发布脚本。
+                echo "[回滚 2/3] 复制历史构建产物到本次发布包"
+                mkdir -p "{{artifactDir}}"
+                rsync -a "{{sourceArtifactPath}}/" "{{artifactDir}}/"
+
+                echo "[回滚 3/3] 历史构建产物已就绪，开始重新发布"
+                """;
+        return scriptTemplateService.render(script, variables);
     }
 
     /**
@@ -1088,35 +1099,45 @@ public class DeploymentService {
         if (!Boolean.TRUE.equals(pipeline.getTemplate().getMonitorProcess())) {
             return "";
         }
-        List<String> lines = new ArrayList<>();
-        lines.add("");
-        lines.add("echo \"[系统] 启动命令已执行，开始进行服务自检。\"");
-        lines.add("sleep 1");
-        lines.add("echo \"[系统] 当前工作目录：$(pwd)\"");
+        StringBuilder script = new StringBuilder("""
+
+                # 输出一段轻量自检信息，方便直接在部署日志里确认启动命令、工作目录和应用日志是否已经落地。
+                echo "[系统] 启动命令已执行，开始进行服务自检。"
+                sleep 1
+                echo "[系统] 当前工作目录：$(pwd)"
+                """);
         String startupKeyword = pipeline.getStartupKeyword();
-        if (startupKeyword != null && !startupKeyword.isBlank()) {
-            lines.add("echo \"[系统] 启动关键字：" + escapeShell(startupKeyword) + "\"");
+        if (TextKit.isNotBlank(startupKeyword)) {
+            script.append("echo \"[系统] 启动关键字：")
+                    .append(ShellKit.escapeDoubleQuoted(startupKeyword))
+                    .append("\"\n");
         }
         String targetDir = variables.get("targetDir");
-        if (targetDir != null && !targetDir.isBlank()) {
-            String logPath = escapeShell(targetDir + "/" + variables.getOrDefault("applicationName", "application") + ".log");
-            lines.add("if [ -f \"" + logPath + "\" ]; then");
-            lines.add("  echo \"[系统] 应用日志文件状态：$(ls -l \"" + logPath + "\")\"");
-            lines.add("else");
-            lines.add("  echo \"[系统] 应用日志尚未生成：" + logPath + "\"");
-            lines.add("fi");
+        if (TextKit.isNotBlank(targetDir)) {
+            String logPath = targetDir + "/" + variables.getOrDefault("applicationName", "application") + ".log";
+            script.append("""
+                    if [ -f "%s" ]; then
+                      echo "[系统] 应用日志文件状态：$(ls -l "%s")"
+                    else
+                      echo "[系统] 应用日志尚未生成：%s"
+                    fi
+                    """.formatted(
+                    ShellKit.escapeDoubleQuoted(logPath),
+                    ShellKit.escapeDoubleQuoted(logPath),
+                    ShellKit.escapeDoubleQuoted(logPath)
+            ));
         }
-        lines.add("");
-        return scriptTemplateService.render(String.join("\n", lines), variables);
+        script.append("\n");
+        return scriptTemplateService.render(script.toString(), variables);
     }
 
     private String resolveApplicationName(PipelineEntity pipeline) {
         String configured = pipeline.getApplicationName();
-        if (configured != null && !configured.isBlank()) {
+        if (TextKit.isNotBlank(configured)) {
             return configured.trim();
         }
         String fallback = pipeline.getName();
-        if (fallback == null || fallback.isBlank()) {
+        if (TextKit.isBlank(fallback)) {
             return "application";
         }
         return fallback.trim()

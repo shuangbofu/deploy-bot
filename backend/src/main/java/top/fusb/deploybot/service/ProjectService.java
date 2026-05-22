@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import top.fusb.deploybot.kit.TextKit;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -21,8 +22,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.Arrays;
-import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -71,11 +70,11 @@ public class ProjectService {
         entity.setDescription(request.description());
         entity.setGitUrl(request.gitUrl());
         entity.setGitAuthType(request.gitAuthType() == null ? GitAuthType.NONE : request.gitAuthType());
-        entity.setGitUsername(trimToNull(request.gitUsername()));
-        entity.setGitPassword(trimToNull(request.gitPassword()));
-        entity.setGitSshPrivateKey(trimToNull(request.gitSshPrivateKey()));
-        entity.setGitSshPublicKey(trimToNull(request.gitSshPublicKey()));
-        entity.setGitSshKnownHosts(trimToNull(request.gitSshKnownHosts()));
+        entity.setGitUsername(TextKit.trimToNull(request.gitUsername()));
+        entity.setGitPassword(TextKit.trimToNull(request.gitPassword()));
+        entity.setGitSshPrivateKey(TextKit.trimToNull(request.gitSshPrivateKey()));
+        entity.setGitSshPublicKey(TextKit.trimToNull(request.gitSshPublicKey()));
+        entity.setGitSshKnownHosts(TextKit.trimToNull(request.gitSshKnownHosts()));
         return repository.save(entity);
     }
 
@@ -94,11 +93,11 @@ public class ProjectService {
         project.setDescription(request.description());
         project.setGitUrl(request.gitUrl());
         project.setGitAuthType(request.gitAuthType() == null ? GitAuthType.NONE : request.gitAuthType());
-        project.setGitUsername(trimToNull(request.gitUsername()));
-        project.setGitPassword(trimToNull(request.gitPassword()));
-        project.setGitSshPrivateKey(trimToNull(request.gitSshPrivateKey()));
-        project.setGitSshPublicKey(trimToNull(request.gitSshPublicKey()));
-        project.setGitSshKnownHosts(trimToNull(request.gitSshKnownHosts()));
+        project.setGitUsername(TextKit.trimToNull(request.gitUsername()));
+        project.setGitPassword(TextKit.trimToNull(request.gitPassword()));
+        project.setGitSshPrivateKey(TextKit.trimToNull(request.gitSshPrivateKey()));
+        project.setGitSshPublicKey(TextKit.trimToNull(request.gitSshPublicKey()));
+        project.setGitSshKnownHosts(TextKit.trimToNull(request.gitSshKnownHosts()));
 
         log.info(
                 "开始测试项目仓库连通性：project='{}', gitUrl='{}', gitAuthType='{}'.",
@@ -146,7 +145,7 @@ public class ProjectService {
                     output = reader.lines().collect(Collectors.joining("\n"));
                 }
 
-                String summarizedOutput = summarizeOutput(output, 20);
+                String summarizedOutput = TextKit.summarizeHead(output, 20);
                 log.info(
                         "项目仓库连通性测试结束：project='{}', exitCode={}, output='{}'.",
                         project.getName(),
@@ -188,46 +187,8 @@ public class ProjectService {
         }
     }
 
-    /**
-     * 表单里未填写的字段统一落成 null，避免数据库里出现大量空字符串。
-     */
-    private String trimToNull(String value) {
-        return value == null || value.isBlank() ? null : value.trim();
-    }
-
-    private boolean matchesKeyword(ProjectEntity item, String keyword) {
-        if (keyword == null || keyword.isBlank()) {
-            return true;
-        }
-        String normalized = keyword.trim().toLowerCase();
-        return contains(item.getName(), normalized)
-                || contains(item.getDescription(), normalized)
-                || contains(item.getGitUrl(), normalized);
-    }
-
-    private boolean contains(String value, String keyword) {
-        return value != null && value.toLowerCase().contains(keyword);
-    }
-
-    private String summarizeOutput(String output, int maxLines) {
-        if (output == null || output.isBlank()) {
-            return "";
-        }
-        return output.lines()
-                .limit(Math.max(1, maxLines))
-                .collect(Collectors.joining("\n"))
-                .trim();
-    }
-
     private String summarizeOutputTail(String output, int maxLines) {
-        if (output == null || output.isBlank()) {
-            return "";
-        }
-        String[] lines = output.lines().toArray(String[]::new);
-        int start = Math.max(0, lines.length - Math.max(1, maxLines));
-        return Arrays.stream(lines, start, lines.length)
-                .collect(Collectors.joining("\n"))
-                .trim();
+        return TextKit.summarizeTail(output, maxLines);
     }
 
     private void logGitSshDiagnosticsIfNecessary(ProjectEntity project, GitCredentialService.GitProcessConfig processConfig) {

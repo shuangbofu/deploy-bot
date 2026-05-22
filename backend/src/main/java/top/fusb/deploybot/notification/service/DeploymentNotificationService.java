@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import top.fusb.deploybot.kit.TextKit;
+import top.fusb.deploybot.kit.TimeKit;
 import top.fusb.deploybot.notification.dto.NotificationBinding;
 import top.fusb.deploybot.model.DeploymentEntity;
 import top.fusb.deploybot.notification.model.NotificationChannelEntity;
@@ -22,9 +24,7 @@ import top.fusb.deploybot.notification.sender.NotificationSender;
 import top.fusb.deploybot.service.JsonMapper;
 import top.fusb.deploybot.service.ScriptTemplateService;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -84,7 +84,7 @@ public class DeploymentNotificationService {
     public void notifyDeploymentEvent(DeploymentEntity deployment, NotificationEventType eventType) {
         try {
             PipelineEntity pipeline = deployment.getPipeline();
-            if (pipeline == null || pipeline.getNotificationBindingsJson() == null || pipeline.getNotificationBindingsJson().isBlank()) {
+            if (pipeline == null || TextKit.isBlank(pipeline.getNotificationBindingsJson())) {
                 return;
             }
             List<NotificationBinding> bindings = jsonMapper.read(
@@ -156,11 +156,11 @@ public class DeploymentNotificationService {
     }
 
     private String resolveTemplate(NotificationChannelEntity channel) {
-        if (channel.getMessageTemplate() != null && !channel.getMessageTemplate().isBlank()) {
+        if (TextKit.isNotBlank(channel.getMessageTemplate())) {
             return channel.getMessageTemplate();
         }
         NotificationTemplateEntity template = channel.getTemplate();
-        if (template != null && template.getMessageTemplate() != null && !template.getMessageTemplate().isBlank()) {
+        if (template != null && TextKit.isNotBlank(template.getMessageTemplate())) {
             return template.getMessageTemplate();
         }
         return DEFAULT_TEMPLATE;
@@ -178,8 +178,8 @@ public class DeploymentNotificationService {
         PipelineEntity pipeline = deployment.getPipeline();
         Map<String, String> variables = new LinkedHashMap<>();
         variables.put("deploymentId", String.valueOf(deployment.getId()));
-        variables.put("pipelineName", pipeline == null ? "-" : nullToDash(pipeline.getName()));
-        variables.put("projectName", pipeline == null || pipeline.getProject() == null ? "-" : nullToDash(pipeline.getProject().getName()));
+        variables.put("pipelineName", pipeline == null ? "-" : TextKit.valueOrDash(pipeline.getName()));
+        variables.put("projectName", pipeline == null || pipeline.getProject() == null ? "-" : TextKit.valueOrDash(pipeline.getProject().getName()));
         variables.put("branch", nullToDash(deployment.getBranchName()));
         variables.put("status", deployment.getStatus() == null ? "-" : deployment.getStatus().name());
         variables.put("statusLabel", mapStatusLabel(deployment));
@@ -189,12 +189,12 @@ public class DeploymentNotificationService {
         variables.put("triggeredByDisplayName", resolveDisplayName(deployment.getTriggeredBy()));
         variables.put("stoppedBy", nullToDash(deployment.getStoppedBy()));
         variables.put("stoppedByDisplayName", resolveDisplayName(deployment.getStoppedBy()));
-        variables.put("hostName", pipeline == null || pipeline.getTargetHost() == null ? "本机" : nullToDash(pipeline.getTargetHost().getName()));
-        variables.put("applicationName", pipeline == null ? "-" : nullToDash(pipeline.getApplicationName()));
-        variables.put("springProfile", pipeline == null ? "-" : nullToDash(pipeline.getSpringProfile()));
-        variables.put("startedAt", formatDateTime(deployment.getStartedAt()));
-        variables.put("finishedAt", formatDateTime(deployment.getFinishedAt()));
-        variables.put("duration", formatDuration(deployment.getStartedAt(), deployment.getFinishedAt()));
+        variables.put("hostName", pipeline == null || pipeline.getTargetHost() == null ? "本机" : TextKit.valueOrDash(pipeline.getTargetHost().getName()));
+        variables.put("applicationName", pipeline == null ? "-" : TextKit.valueOrDash(pipeline.getApplicationName()));
+        variables.put("springProfile", pipeline == null ? "-" : TextKit.valueOrDash(pipeline.getSpringProfile()));
+        variables.put("startedAt", TimeKit.formatDateTime(deployment.getStartedAt()));
+        variables.put("finishedAt", TimeKit.formatDateTime(deployment.getFinishedAt()));
+        variables.put("duration", TimeKit.formatDuration(deployment.getStartedAt(), deployment.getFinishedAt()));
         variables.put("errorMessage", nullToDash(deployment.getErrorMessage()));
         variables.put("detailUrl", buildDeploymentDetailUrl(deployment));
         return variables;
@@ -202,7 +202,7 @@ public class DeploymentNotificationService {
 
     private String buildDeploymentDetailUrl(DeploymentEntity deployment) {
         String normalizedBaseUrl = baseUrl == null ? "" : baseUrl.trim();
-        if (normalizedBaseUrl.isBlank()) {
+        if (TextKit.isBlank(normalizedBaseUrl)) {
             return "-";
         }
         String base = normalizedBaseUrl.endsWith("/") ? normalizedBaseUrl.substring(0, normalizedBaseUrl.length() - 1) : normalizedBaseUrl;
@@ -230,33 +230,15 @@ public class DeploymentNotificationService {
     }
 
     private String resolveDisplayName(String username) {
-        if (username == null || username.isBlank()) {
+        if (TextKit.isBlank(username)) {
             return "-";
         }
         return userRepository.findByUsername(username)
-                .map(item -> item.getDisplayName() == null || item.getDisplayName().isBlank() ? item.getUsername() : item.getDisplayName())
+                .map(item -> TextKit.isBlank(item.getDisplayName()) ? item.getUsername() : item.getDisplayName())
                 .orElse(username);
     }
 
-    private String formatDateTime(LocalDateTime value) {
-        if (value == null) {
-            return "-";
-        }
-        return value.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-    }
-
-    private String formatDuration(LocalDateTime startedAt, LocalDateTime finishedAt) {
-        if (startedAt == null || finishedAt == null) {
-            return "-";
-        }
-        Duration duration = Duration.between(startedAt, finishedAt);
-        long seconds = Math.max(0, duration.getSeconds());
-        long minutes = seconds / 60;
-        long remainSeconds = seconds % 60;
-        return minutes > 0 ? minutes + "分" + remainSeconds + "秒" : remainSeconds + "秒";
-    }
-
     private String nullToDash(String value) {
-        return value == null || value.isBlank() ? "-" : value;
+        return TextKit.valueOrDash(value);
     }
 }

@@ -1,6 +1,7 @@
 package top.fusb.deploybot.notification.service;
 
 import org.springframework.stereotype.Service;
+import top.fusb.deploybot.kit.TextKit;
 import top.fusb.deploybot.notification.dto.NotificationChannelRequest;
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorSubCode;
@@ -37,13 +38,13 @@ public class NotificationChannelService {
     public NotificationChannelEntity save(NotificationChannelRequest request, Long id) {
         NotificationChannelEntity entity = id == null ? new NotificationChannelEntity() : repository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorSubCode.NOTIFICATION_CHANNEL_NOT_FOUND));
-        entity.setName(request.name().trim());
-        entity.setDescription(trimToNull(request.description()));
+        entity.setName(TextKit.trimToNull(request.name()));
+        entity.setDescription(TextKit.trimToNull(request.description()));
         entity.setType(request.type());
         entity.setEventType(request.eventType());
         entity.setWebhookConfig(resolveWebhookConfig(request.webhookConfigId()));
         entity.setTemplate(resolveTemplate(request.templateId()));
-        entity.setMessageTemplate(normalizeTemplate(request.messageTemplate()));
+        entity.setMessageTemplate(TextKit.normalizeMultiline(request.messageTemplate()));
         entity.setEnabled(request.enabled() == null ? Boolean.TRUE : request.enabled());
         return repository.save(entity);
     }
@@ -53,22 +54,6 @@ public class NotificationChannelService {
             throw new BusinessException(ErrorSubCode.NOTIFICATION_CHANNEL_NOT_FOUND);
         }
         repository.deleteById(id);
-    }
-
-    private String trimToNull(String value) {
-        if (value == null) {
-            return null;
-        }
-        String trimmed = value.trim();
-        return trimmed.isBlank() ? null : trimmed;
-    }
-
-    private String normalizeTemplate(String value) {
-        if (value == null) {
-            return null;
-        }
-        String normalized = value.replace("\r\n", "\n").trim();
-        return normalized.isBlank() ? null : normalized;
     }
 
     private NotificationTemplateEntity resolveTemplate(Long templateId) {

@@ -1,6 +1,7 @@
 package top.fusb.deploybot.notification.service;
 
 import org.springframework.stereotype.Service;
+import top.fusb.deploybot.kit.TextKit;
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorSubCode;
 import top.fusb.deploybot.notification.dto.NotificationWebhookConfigRequest;
@@ -25,10 +26,10 @@ public class NotificationWebhookConfigService {
     public NotificationWebhookConfigEntity save(NotificationWebhookConfigRequest request, Long id) {
         NotificationWebhookConfigEntity entity = id == null ? new NotificationWebhookConfigEntity() : repository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorSubCode.NOTIFICATION_WEBHOOK_CONFIG_NOT_FOUND));
-        entity.setName(request.name().trim());
-        entity.setDescription(trimToNull(request.description()));
+        entity.setName(TextKit.trimToNull(request.name()));
+        entity.setDescription(TextKit.trimToNull(request.description()));
         entity.setType(request.type());
-        entity.setWebhookUrl(request.webhookUrl().trim());
+        entity.setWebhookUrl(TextKit.trimToNull(request.webhookUrl()));
         entity.setSecret(mergeOptionalSecret(entity.getSecret(), request.secret()));
         entity.setEnabled(request.enabled() == null ? Boolean.TRUE : request.enabled());
         return repository.save(entity);
@@ -41,18 +42,10 @@ public class NotificationWebhookConfigService {
         repository.deleteById(id);
     }
 
-    private String trimToNull(String value) {
-        if (value == null) {
-            return null;
-        }
-        String trimmed = value.trim();
-        return trimmed.isBlank() ? null : trimmed;
-    }
-
     private String mergeOptionalSecret(String currentValue, String requestValue) {
         if (requestValue == null) {
             return currentValue;
         }
-        return trimToNull(requestValue);
+        return TextKit.trimToNull(requestValue);
     }
 }

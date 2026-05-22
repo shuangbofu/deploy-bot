@@ -3,14 +3,16 @@ package top.fusb.deploybot.service;
 import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.dto.PipelineHallSummary;
 import top.fusb.deploybot.dto.PipelineRequest;
-import top.fusb.deploybot.notification.dto.NotificationBinding;
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorSubCode;
+import top.fusb.deploybot.kit.CollectionKit;
+import top.fusb.deploybot.kit.TextKit;
 import top.fusb.deploybot.model.HostEntity;
 import top.fusb.deploybot.model.MavenSettingsEntity;
 import top.fusb.deploybot.model.RuntimeEnvironmentEntity;
 import top.fusb.deploybot.model.PipelineEntity;
 import top.fusb.deploybot.model.UserFavoritePipelineEntity;
+import top.fusb.deploybot.notification.dto.NotificationBinding;
 import top.fusb.deploybot.notification.repo.NotificationChannelRepository;
 import top.fusb.deploybot.repo.HostRepository;
 import top.fusb.deploybot.repo.MavenSettingsRepository;
@@ -187,11 +189,11 @@ public class PipelineService {
     }
 
     private String resolveDisplayName(String username) {
-        if (username == null || username.isBlank()) {
+        if (TextKit.isBlank(username)) {
             return "-";
         }
         return userRepository.findByUsername(username)
-                .map(item -> item.getDisplayName() == null || item.getDisplayName().isBlank() ? item.getUsername() : item.getDisplayName())
+                .map(item -> TextKit.isBlank(item.getDisplayName()) ? item.getUsername() : item.getDisplayName())
                 .orElse(username);
     }
 
@@ -216,7 +218,7 @@ public class PipelineService {
     ) {
         return PageResult.of(pipelineRepository.findAll((root, query, cb) -> {
             List<jakarta.persistence.criteria.Predicate> predicates = new java.util.ArrayList<>();
-            if (keyword != null && !keyword.isBlank()) {
+            if (TextKit.isNotBlank(keyword)) {
                 String pattern = "%" + keyword.trim().toLowerCase() + "%";
                 predicates.add(cb.or(
                         cb.like(cb.lower(root.get("name")), pattern),
@@ -235,7 +237,7 @@ public class PipelineService {
             }
             if (tags != null && !tags.isEmpty()) {
                 for (String tag : tags) {
-                    if (tag != null && !tag.isBlank()) {
+                    if (TextKit.isNotBlank(tag)) {
                         predicates.add(cb.like(root.get("tagsJson"), "%" + "\"" + tag + "\"" + "%"));
                     }
                 }
@@ -245,12 +247,11 @@ public class PipelineService {
     }
 
     public List<String> findAllTags() {
-        return pipelineRepository.findAll().stream()
-                .flatMap(item -> parseTags(item.getTagsJson()).stream())
-                .filter(item -> item != null && !item.isBlank())
-                .distinct()
-                .sorted(String::compareTo)
-                .toList();
+        return CollectionKit.sortedDistinctNonBlankStrings(
+                pipelineRepository.findAll().stream()
+                        .flatMap(item -> parseTags(item.getTagsJson()).stream())
+                        .toList()
+        );
     }
 
     /**
@@ -282,10 +283,10 @@ public class PipelineService {
         }
         entity.setMavenSettings(mavenSettings);
         entity.setRuntimeJavaEnvironment(resolveRuntimeJavaEnvironment(request.runtimeJavaEnvironmentId(), targetHost));
-        entity.setApplicationName(normalizeText(request.applicationName()));
-        entity.setSpringProfile(normalizeText(request.springProfile()));
-        entity.setRuntimeConfigYaml(normalizeMultilineText(request.runtimeConfigYaml()));
-        entity.setStartupKeyword(normalizeText(request.startupKeyword()));
+        entity.setApplicationName(TextKit.trimToNull(request.applicationName()));
+        entity.setSpringProfile(TextKit.trimToNull(request.springProfile()));
+        entity.setRuntimeConfigYaml(TextKit.normalizeMultiline(request.runtimeConfigYaml()));
+        entity.setStartupKeyword(TextKit.trimToNull(request.startupKeyword()));
         entity.setStartupTimeoutSeconds(normalizeStartupTimeout(request.startupTimeoutSeconds()));
         entity.setNotificationBindingsJson(normalizeNotificationBindings(request.notificationBindingsJson()));
         return pipelineRepository.save(entity);
@@ -354,28 +355,12 @@ public class PipelineService {
         return environment;
     }
 
-    private String normalizeText(String content) {
-        if (content == null) {
-            return null;
-        }
-        String trimmed = content.trim();
-        return trimmed.isBlank() ? null : trimmed;
-    }
-
     private AuthenticatedUser requireCurrentUser() {
         AuthenticatedUser currentUser = AuthContextHolder.get();
         if (currentUser == null) {
             throw new BusinessException(ErrorSubCode.AUTH_REQUIRED);
         }
         return currentUser;
-    }
-
-    private String normalizeMultilineText(String content) {
-        if (content == null) {
-            return null;
-        }
-        String normalized = content.replace("\r\n", "\n").trim();
-        return normalized.isBlank() ? null : normalized;
     }
 
     private Integer normalizeStartupTimeout(Integer startupTimeoutSeconds) {
@@ -386,7 +371,7 @@ public class PipelineService {
     }
 
     private String normalizeNotificationBindings(String content) {
-        if (content == null || content.isBlank()) {
+        if (TextKit.isBlank(content)) {
             return null;
         }
         List<NotificationBinding> bindings = jsonMapper.read(content, new com.fasterxml.jackson.core.type.TypeReference<>() {
@@ -410,13 +395,12 @@ public class PipelineService {
     }
 
     private boolean matchesKeyword(PipelineEntity item, String keyword) {
-        if (keyword == null || keyword.isBlank()) {
+        if (TextKit.isBlank(keyword)) {
             return true;
         }
-        String normalized = keyword.trim().toLowerCase();
-        return contains(item.getName(), normalized)
-                || contains(item.getDescription(), normalized)
-                || contains(item.getDefaultBranch(), normalized);
+        return TextKit.containsIgnoreCase(item.getName(), keyword)
+                || TextKit.containsIgnoreCase(item.getDescription(), keyword)
+                || TextKit.containsIgnoreCase(item.getDefaultBranch(), keyword);
     }
 
     private boolean containsAllTags(PipelineEntity item, List<String> tags) {
@@ -427,12 +411,8 @@ public class PipelineService {
         return tags.stream().allMatch(currentTags::contains);
     }
 
-    private boolean contains(String value, String keyword) {
-        return value != null && value.toLowerCase().contains(keyword);
-    }
-
     private List<String> parseTags(String content) {
-        if (content == null || content.isBlank()) {
+        if (TextKit.isBlank(content)) {
             return List.of();
         }
         return jsonMapper.read(content, new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {

@@ -1,6 +1,7 @@
 package top.fusb.deploybot.service;
 
 import org.springframework.stereotype.Service;
+import top.fusb.deploybot.kit.TextKit;
 import top.fusb.deploybot.dto.MavenSettingsRequest;
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorSubCode;
@@ -45,7 +46,7 @@ public class MavenSettingsService {
 
         entity.setName(request.name().trim());
         entity.setRuntimeEnvironment(runtimeEnvironment);
-        entity.setDescription(trimToNull(request.description()));
+        entity.setDescription(TextKit.trimToNull(request.description()));
         entity.setContentXml(request.contentXml().replace("\r\n", "\n").trim());
         entity.setEnabled(request.enabled() == null ? Boolean.TRUE : request.enabled());
         entity.setIsDefault(request.isDefault() == null ? Boolean.FALSE : request.isDefault());
@@ -78,13 +79,5 @@ public class MavenSettingsService {
                     item.setIsDefault(Boolean.FALSE);
                     repository.save(item);
                 });
-    }
-
-    private String trimToNull(String value) {
-        if (value == null) {
-            return null;
-        }
-        String trimmed = value.trim();
-        return trimmed.isBlank() ? null : trimmed;
     }
 }

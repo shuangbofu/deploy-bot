@@ -2,6 +2,8 @@ package top.fusb.deploybot.runner;
 
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorSubCode;
+import top.fusb.deploybot.kit.ShellKit;
+import top.fusb.deploybot.kit.TextKit;
 import top.fusb.deploybot.model.DeploymentEntity;
 import top.fusb.deploybot.model.DeploymentStatus;
 import top.fusb.deploybot.model.HostEntity;
@@ -569,14 +571,14 @@ public class DeploymentRunner {
         StringBuilder sshCommand = new StringBuilder();
         if (authType == HostSshAuthType.PASSWORD) {
             sshCommand.append("sshpass -p ")
-                    .append(shellSingleQuote(targetHost.getSshPassword() == null ? "" : targetHost.getSshPassword()))
+                    .append(ShellKit.singleQuote(targetHost.getSshPassword() == null ? "" : targetHost.getSshPassword()))
                     .append(" ");
         }
         sshCommand.append("ssh -o BatchMode=")
                 .append(authType == HostSshAuthType.PASSWORD ? "no" : "yes")
                 .append(" -o ConnectTimeout=30 ");
         if (Files.exists(privateKey)) {
-            sshCommand.append("-i ").append(shellSingleQuote(privateKey.toAbsolutePath().toString())).append(" ");
+            sshCommand.append("-i ").append(ShellKit.singleQuote(privateKey.toAbsolutePath().toString())).append(" ");
             sshCommand.append("-o IdentitiesOnly=yes ");
         }
         if (targetHost.getPort() != null) {
@@ -584,14 +586,14 @@ public class DeploymentRunner {
         }
         if (Files.exists(knownHosts)) {
             sshCommand.append("-o StrictHostKeyChecking=yes ");
-            sshCommand.append("-o UserKnownHostsFile=").append(shellSingleQuote(knownHosts.toAbsolutePath().toString())).append(" ");
+            sshCommand.append("-o UserKnownHostsFile=").append(ShellKit.singleQuote(knownHosts.toAbsolutePath().toString())).append(" ");
         } else {
             sshCommand.append("-o StrictHostKeyChecking=no ");
         }
-        sshCommand.append(shellSingleQuote(userAtHost)).append(" ");
-        sshCommand.append(shellSingleQuote("mkdir -p " + shellSingleQuote(remoteTarget) + " && tar -xf - -C " + shellSingleQuote(remoteTarget)));
+        sshCommand.append(ShellKit.singleQuote(userAtHost)).append(" ");
+        sshCommand.append(ShellKit.singleQuote("mkdir -p " + ShellKit.singleQuote(remoteTarget) + " && tar -xf - -C " + ShellKit.singleQuote(remoteTarget)));
         String shellCommand = "tar -cf - -C "
-                + shellSingleQuote(localSource.toAbsolutePath().normalize().toString())
+                + ShellKit.singleQuote(localSource.toAbsolutePath().normalize().toString())
                 + " . | "
                 + sshCommand;
         log.info("Built artifact sync command to stream {} to {}:{}", localSource.toAbsolutePath().normalize(), userAtHost, remoteTarget);
@@ -928,16 +930,26 @@ public class DeploymentRunner {
 
     private String buildKeywordLookupScript(String escapedKeyword, String rawKeyword) {
         StringBuilder script = new StringBuilder();
-        String quotedKeyword = shellSingleQuote(rawKeyword);
-        script.append("PID=$(ps -efww | awk -v kw=").append(quotedKeyword)
-                .append(" '($8 ~ /(^|\\/)java$/) && index($0, kw) {print $2; exit}' || true)\n");
+        String quotedKeyword = ShellKit.singleQuote(rawKeyword);
+        script.append("""
+                # 优先按完整命令特征查找 PID，避免误接管到其他同名进程。
+                PID=$(ps -efww | awk -v kw=%s '($8 ~ /(^|\\/)java$/) && index($0, kw) {print $2; exit}' || true)
+                """.formatted(quotedKeyword));
         String jarName = resolveJarName(rawKeyword);
-        if (jarName != null && !jarName.isBlank()) {
-            script.append("if [ -z \"$PID\" ]; then PID=$(ps -efww | awk -v jar=").append(shellSingleQuote(jarName))
-                    .append(" '($8 ~ /(^|\\/)java$/) && index($0, jar) {print $2; exit}' || true); fi\n");
+        if (TextKit.isNotBlank(jarName)) {
+            script.append("""
+                    # 完整命令没命中时，再按 jar 名做一次兜底查找。
+                    if [ -z "$PID" ]; then
+                      PID=$(ps -efww | awk -v jar=%s '($8 ~ /(^|\\/)java$/) && index($0, jar) {print $2; exit}' || true)
+                    fi
+                    """.formatted(ShellKit.singleQuote(jarName)));
         }
         if (rawKeyword.endsWith(".jar")) {
-            script.append("if [ -z \"$PID\" ]; then PID=$(pgrep -f \"").append(escapedKeyword).append("\" | head -n 1 || true); fi\n");
+            script.append("""
+                    if [ -z "$PID" ]; then
+                      PID=$(pgrep -f "%s" | head -n 1 || true)
+                    fi
+                    """.formatted(escapedKeyword));
         }
         script.append("if [ -z \"$PID\" ]");
         if (rawKeyword.endsWith(".jar")) {
@@ -980,7 +992,7 @@ public class DeploymentRunner {
     }
 
     private String resolveJarName(String keyword) {
-        if (keyword == null || keyword.isBlank()) {
+        if (TextKit.isBlank(keyword)) {
             return null;
         }
         Matcher matcher = Pattern.compile("-jar\\s+([^\\s]+\\.jar)").matcher(keyword);
@@ -991,10 +1003,6 @@ public class DeploymentRunner {
             return Path.of(keyword).getFileName().toString();
         }
         return null;
-    }
-
-    private String shellSingleQuote(String value) {
-        return "'" + value.replace("'", "'\"'\"'") + "'";
     }
 
     private boolean isProcessAlive(HostEntity targetHost, Long pid) {

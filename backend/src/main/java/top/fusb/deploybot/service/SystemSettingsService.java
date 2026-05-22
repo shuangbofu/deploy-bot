@@ -1,6 +1,7 @@
 package top.fusb.deploybot.service;
 
 import top.fusb.deploybot.dto.SystemSettingsRequest;
+import top.fusb.deploybot.kit.TextKit;
 import top.fusb.deploybot.model.GitAuthType;
 import top.fusb.deploybot.model.SystemSettingsEntity;
 import top.fusb.deploybot.repo.SystemSettingsRepository;
@@ -50,11 +51,11 @@ public class SystemSettingsService {
 
     public SystemSettingsEntity save(SystemSettingsRequest request) {
         SystemSettingsEntity entity = get();
-        entity.setWorkspaceRoot(isBlank(request.workspaceRoot()) ? defaultWorkspaceRoot : request.workspaceRoot().trim());
-        entity.setGitExecutable(isBlank(request.gitExecutable()) ? "git" : request.gitExecutable().trim());
+        entity.setWorkspaceRoot(TextKit.isBlank(request.workspaceRoot()) ? defaultWorkspaceRoot : request.workspaceRoot().trim());
+        entity.setGitExecutable(TextKit.isBlank(request.gitExecutable()) ? "git" : request.gitExecutable().trim());
         entity.setGitAuthType(request.gitAuthType() == null ? GitAuthType.NONE : request.gitAuthType());
-        entity.setGitUsername(trimToNull(request.gitUsername()));
-        entity.setGitPassword(trimToNull(request.gitPassword()));
+        entity.setGitUsername(TextKit.trimToNull(request.gitUsername()));
+        entity.setGitPassword(TextKit.trimToNull(request.gitPassword()));
         entity.setGitSshPrivateKey(mergeOptionalSecret(entity.getGitSshPrivateKey(), request.gitSshPrivateKey()));
         entity.setGitSshPublicKey(mergeOptionalSecret(entity.getGitSshPublicKey(), request.gitSshPublicKey()));
         entity.setGitSshKnownHosts(mergeOptionalSecret(entity.getGitSshKnownHosts(), request.gitSshKnownHosts()));
@@ -87,14 +88,6 @@ public class SystemSettingsService {
         return repository.save(entity);
     }
 
-    private boolean isBlank(String value) {
-        return value == null || value.isBlank();
-    }
-
-    private String trimToNull(String value) {
-        return isBlank(value) ? null : value.trim();
-    }
-
     private int normalizeCount(Integer value, int defaultValue) {
         int normalized = value == null ? defaultValue : value;
         return Math.max(0, normalized);
@@ -108,6 +101,6 @@ public class SystemSettingsService {
         if (requestValue == null) {
             return currentValue;
         }
-        return trimToNull(requestValue);
+        return TextKit.trimToNull(requestValue);
     }
 }

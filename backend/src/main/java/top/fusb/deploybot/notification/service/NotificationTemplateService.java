@@ -2,6 +2,7 @@ package top.fusb.deploybot.notification.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
+import top.fusb.deploybot.kit.TextKit;
 import top.fusb.deploybot.notification.dto.NotificationTemplateRequest;
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorSubCode;
@@ -31,10 +32,14 @@ public class NotificationTemplateService {
     public NotificationTemplateEntity save(NotificationTemplateRequest request, Long id) {
         NotificationTemplateEntity entity = id == null ? new NotificationTemplateEntity() : repository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorSubCode.NOTIFICATION_TEMPLATE_NOT_FOUND));
-        entity.setName(request.name().trim());
-        entity.setDescription(trimToNull(request.description()));
+        entity.setName(TextKit.trimToNull(request.name()));
+        entity.setDescription(TextKit.trimToNull(request.description()));
         entity.setTemplateMode(request.templateMode());
-        entity.setMessageTemplate(normalizeTemplate(request.messageTemplate(), request.templateMode()));
+        String normalizedTemplate = TextKit.normalizeMultiline(request.messageTemplate());
+        if (request.templateMode() == NotificationTemplateMode.FEISHU_CARD && TextKit.isNotBlank(normalizedTemplate)) {
+            validateFeishuCardTemplate(normalizedTemplate);
+        }
+        entity.setMessageTemplate(normalizedTemplate);
         entity.setEnabled(request.enabled() == null ? Boolean.TRUE : request.enabled());
         return repository.save(entity);
     }
@@ -46,25 +51,6 @@ public class NotificationTemplateService {
             throw new BusinessException(ErrorSubCode.NOTIFICATION_TEMPLATE_BUILT_IN);
         }
         repository.delete(entity);
-    }
-
-    private String trimToNull(String value) {
-        if (value == null) {
-            return null;
-        }
-        String trimmed = value.trim();
-        return trimmed.isBlank() ? null : trimmed;
-    }
-
-    private String normalizeTemplate(String value, NotificationTemplateMode templateMode) {
-        String normalized = value.replace("\r\n", "\n").trim();
-        if (normalized.isBlank()) {
-            return null;
-        }
-        if (templateMode == NotificationTemplateMode.FEISHU_CARD) {
-            validateFeishuCardTemplate(normalized);
-        }
-        return normalized;
     }
 
     private void validateFeishuCardTemplate(String content) {
