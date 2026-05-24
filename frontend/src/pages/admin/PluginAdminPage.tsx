@@ -21,9 +21,6 @@ const fieldKindLabelMap: Record<string, string> = {
   TEXTAREA: '代码',
 };
 
-const yesTagStyle = { backgroundColor: '#15803d', color: '#fff', borderColor: 'transparent' };
-const noTagStyle = { backgroundColor: '#cbd5e1', color: '#334155', borderColor: 'transparent' };
-
 function resolveTemplateTypeLabel(templateType?: string | null) {
   return templateType ? templateType.replace(/_/g, ' / ') : '通用';
 }
@@ -202,16 +199,16 @@ export default function PluginAdminPage() {
                       <div className="truncate text-base font-semibold text-slate-900">
                         {row.descriptor.displayName}
                       </div>
-                      <Tag style={yesTagStyle} className="!m-0 !border-0">
+                      <Tag className="app-tag-success !m-0">
                         已安装
                       </Tag>
                       {row.descriptor.builtin ? (
-                        <Tag style={{ backgroundColor: '#0f766e', color: '#fff', borderColor: 'transparent' }} className="!m-0 !border-0">
+                        <Tag className="app-tag-system !m-0">
                           系统插件
                         </Tag>
                       ) : null}
                       {row.descriptor.composite ? (
-                        <Tag style={{ backgroundColor: '#1d4ed8', color: '#fff', borderColor: 'transparent' }} className="!m-0 !border-0">
+                        <Tag className="app-tag-composite !m-0">
                           复合类型
                         </Tag>
                       ) : null}
@@ -220,7 +217,7 @@ export default function PluginAdminPage() {
                   <div className="mt-2 text-sm text-slate-600">{row.descriptor.description || '当前插件未提供额外描述。'}</div>
                 </div>
               </div>
-                <Tag style={noTagStyle} className="!m-0 !border-0">
+                <Tag className="app-tag-muted !m-0">
                   {row.descriptor.category}
                 </Tag>
               </div>
@@ -312,11 +309,11 @@ export default function PluginAdminPage() {
                           <div key={`${section.key}-${row.key}`} className="grid grid-cols-1 gap-2 py-3 md:grid-cols-[220px_1fr]">
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="text-sm font-medium text-slate-800">{row.label}</span>
-                              <Tag style={row.required ? yesTagStyle : noTagStyle} className="!m-0 !border-0">
+                              <Tag className={`${row.required ? 'app-tag-required' : 'app-tag-muted'} !m-0`}>
                                 {row.required ? '必填' : '可选'}
                               </Tag>
                               {fieldKindLabelMap[row.type] ? (
-                                <Tag style={{ backgroundColor: '#e2e8f0', color: '#334155', borderColor: 'transparent' }} className="!m-0 !border-0">
+                                <Tag className="app-tag-kind !m-0">
                                   {fieldKindLabelMap[row.type]}
                                 </Tag>
                               ) : null}
@@ -358,7 +355,7 @@ export default function PluginAdminPage() {
                       <span className="truncate text-slate-600" title={row.description || '-'}>
                         {row.description || '-'}
                       </span>
-                      <Tag style={row.monitorProcess ? yesTagStyle : noTagStyle} className="!m-0 !border-0 text-center">
+                      <Tag className={`${row.monitorProcess ? 'app-tag-success' : 'app-tag-muted'} !m-0 text-center`}>
                         {row.monitorProcess ? '是' : '否'}
                       </Tag>
                       <Button size="small" onClick={() => setPreviewBuiltinTemplate(row)}>
@@ -379,8 +376,8 @@ export default function PluginAdminPage() {
       <Modal
         title={previewBuiltinTemplate ? (
           <div className="flex flex-wrap items-center gap-2">
-            <Tag color="green" className="!m-0">插件自带</Tag>
-            <Tag color="blue" className="!m-0">{previewBuiltinTemplate.templateType ? previewBuiltinTemplate.templateType.replace(/_/g, ' / ') : '通用'}</Tag>
+            <Tag className="app-tag-success !m-0">插件自带</Tag>
+            <Tag className="app-tag-info !m-0">{previewBuiltinTemplate.templateType ? previewBuiltinTemplate.templateType.replace(/_/g, ' / ') : '通用'}</Tag>
             <span>{previewBuiltinTemplate.name}</span>
             <span className="ml-1 inline-flex items-center gap-1 text-sm font-normal text-slate-600">
               <span className={`h-2 w-2 rounded-full ${previewBuiltinTemplate.monitorProcess ? 'bg-emerald-500' : 'bg-slate-300'}`} />

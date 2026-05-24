@@ -4,6 +4,7 @@ import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import 'monaco-editor/esm/vs/basic-languages/shell/shell.contribution';
 import 'monaco-editor/esm/vs/basic-languages/yaml/yaml.contribution';
 import 'monaco-editor/esm/vs/basic-languages/xml/xml.contribution';
+import { useAppTheme } from '../theme/AppThemeProvider';
 
 type EditorLanguage = 'shell' | 'yaml' | 'xml' | 'text';
 type TemplateVariablePhase = 'build' | 'deploy' | 'shared';
@@ -26,6 +27,8 @@ const languageIdMap: Record<EditorLanguage, string> = {
 };
 
 let monacoConfigured = false;
+const LIGHT_EDITOR_THEME = 'vs';
+const DARK_EDITOR_THEME = 'deploy-bot-dark';
 
 self.MonacoEnvironment = {
   getWorker() {
@@ -38,6 +41,38 @@ function configureMonaco() {
     return;
   }
   monacoConfigured = true;
+  monaco.editor.defineTheme(DARK_EDITOR_THEME, {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: '', foreground: 'd8e3f0', background: '0f172a' },
+      { token: 'comment', foreground: '64748b', fontStyle: 'italic' },
+      { token: 'string', foreground: '86efac' },
+      { token: 'number', foreground: '93c5fd' },
+      { token: 'keyword', foreground: '60a5fa' },
+      { token: 'type', foreground: '7dd3fc' },
+      { token: 'delimiter', foreground: '94a3b8' },
+      { token: 'variable', foreground: 'bfdbfe' },
+    ],
+    colors: {
+      'editor.background': '#0f172a',
+      'editor.foreground': '#d8e3f0',
+      'editorLineNumber.foreground': '#475569',
+      'editorLineNumber.activeForeground': '#cbd5e1',
+      'editorCursor.foreground': '#93c5fd',
+      'editor.selectionBackground': '#1d4ed866',
+      'editor.inactiveSelectionBackground': '#33415588',
+      'editor.lineHighlightBackground': '#1e293b88',
+      'editorLineNumber.dimmedForeground': '#334155',
+      'editorIndentGuide.background1': '#334155',
+      'editorIndentGuide.activeBackground1': '#64748b',
+      'editorWhitespace.foreground': '#334155',
+      'editorWidget.background': '#111c2f',
+      'editorWidget.border': '#334155',
+      'input.background': '#0f172a',
+      'dropdown.background': '#111c2f',
+    },
+  });
 }
 
 function resolvePlaceholder(language: EditorLanguage, placeholder?: string) {
@@ -98,6 +133,7 @@ export default function CodeEditor({
   readOnly = false,
   templateVariablePhases = {},
 }: Props) {
+  const { isDark } = useAppTheme();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const decorationsRef = useRef<monaco.editor.IEditorDecorationsCollection | null>(null);
@@ -134,7 +170,7 @@ export default function CodeEditor({
     const editor = monaco.editor.create(containerRef.current, {
       value,
       language: languageIdMap[language],
-      theme: 'vs',
+      theme: isDark ? DARK_EDITOR_THEME : LIGHT_EDITOR_THEME,
       readOnly,
       automaticLayout: true,
       minimap: { enabled: false },
@@ -170,6 +206,10 @@ export default function CodeEditor({
       editorRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    monaco.editor.setTheme(isDark ? DARK_EDITOR_THEME : LIGHT_EDITOR_THEME);
+  }, [isDark]);
 
   useEffect(() => {
     const editor = editorRef.current;

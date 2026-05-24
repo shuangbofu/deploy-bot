@@ -2,6 +2,7 @@ import axios from 'axios';
 import { message } from 'antd';
 import type { ApiResult } from './types';
 import { authStorage } from '../auth/authStorage';
+import { isRemoteExecutionError } from '../utils/requestError';
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 const originalMessageError = message.error.bind(message);
@@ -85,7 +86,9 @@ client.interceptors.response.use(
         const errorMessage = result.subMessage || result.message || '请求失败';
         handleAuthExpired(result.subCode);
         markNextLocalErrorSuppressed();
-        originalMessageError(errorMessage);
+        if (!isRemoteExecutionError(errorMessage)) {
+          originalMessageError(errorMessage);
+        }
         return Promise.reject(Object.assign(new Error(errorMessage), { apiResult: result, requestErrorToastShown: true }));
       }
       response.data = result.data;
@@ -99,7 +102,9 @@ client.interceptors.response.use(
       ? '请求超时，请稍后重试'
       : (error?.response?.data?.message || error?.message || '请求失败');
     markNextLocalErrorSuppressed();
-    originalMessageError(errorMessage);
+    if (!isRemoteExecutionError(errorMessage)) {
+      originalMessageError(errorMessage);
+    }
     error.requestErrorToastShown = true;
     return Promise.reject(error);
   },

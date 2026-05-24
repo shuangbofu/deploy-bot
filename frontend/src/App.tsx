@@ -116,6 +116,7 @@ export default function App() {
           <Route path="pipelines" element={<UserPipelinesPage />} />
           <Route path="deployments" element={<UserDeploymentRecordsPage />} />
           <Route path="notification-records" element={<UserNotificationRecordsPage />} />
+          <Route path="system-settings" element={<SystemSettingsPage scope="user" />} />
           <Route path="pipelines/:pipelineId/history" element={<UserPipelineHistoryPage />} />
           <Route path="deployments/:deploymentId" element={<UserDeploymentDetailPage />} />
         </Route>

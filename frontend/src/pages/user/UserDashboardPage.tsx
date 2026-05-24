@@ -1,62 +1,35 @@
-import { message } from 'antd';
 import { useEffect, useState } from 'react';
 import { dashboardApi } from '../../api/dashboard';
 import DashboardConsole from '../../components/DashboardConsole';
-import type { DashboardSummary } from '../../types/domain';
+import type { DashboardAnalytics, DashboardAnalyticsQuery } from '../../types/domain';
 
 export default function UserDashboardPage() {
   const [loading, setLoading] = useState(false);
-  const [summary, setSummary] = useState<DashboardSummary>();
-  const [tick, setTick] = useState(() => Date.now());
+  const [analytics, setAnalytics] = useState<DashboardAnalytics>();
+  const [query, setQuery] = useState<DashboardAnalyticsQuery>({ range: '30d', granularity: 'day' });
 
-  const loadData = async () => {
+  const loadData = async (nextQuery = query) => {
     setLoading(true);
     try {
-      setSummary(await dashboardApi.summary());
+      setAnalytics(await dashboardApi.analytics(nextQuery));
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadData().catch(() => message.error('加载仪表盘数据失败'));
-  }, []);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setTick(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
+    loadData().catch(() => undefined);
+  }, [query]);
 
   return (
     <DashboardConsole
       title="仪表盘"
-      description="查看可用流水线、近期部署趋势和当前部署情况。"
+      description="查看你的部署趋势、状态分布、流水线排行和耗时分析。"
       loading={loading}
-      stats={summary?.stats ?? {
-        projects: 0,
-        templates: 0,
-        pipelines: 0,
-        deployments: 0,
-        hosts: 0,
-        services: 0,
-        users: 0,
-        runningServices: 0,
-        successRate: 0,
-        runningDeployments: 0,
-        failedDeployments: 0,
-      }}
-      trend={summary?.trend ?? []}
-      latestDeployments={summary?.latestDeployments ?? []}
-      attentionDeployments={summary?.attentionDeployments ?? []}
-      services={summary?.services ?? []}
-      resources={[]}
+      analytics={analytics}
+      query={query}
+      onQueryChange={setQuery}
       isAdmin={false}
-      detailBasePath="/user/deployments"
-      listPath="/user/deployments"
-      backFrom="/user/dashboard"
-      backLabel="返回仪表盘"
-      idPrefix="user-dashboard"
-      tick={tick}
     />
   );
 }

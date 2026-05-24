@@ -1,4 +1,5 @@
 import { AppstoreOutlined, BarsOutlined, BorderOutlined, SettingOutlined, StarFilled, StarOutlined } from '@ant-design/icons';
+import type { CSSProperties } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Col, Input, Modal, Popconfirm, Progress, Row, Segmented, Select, Skeleton, Space, Switch, Table, Tag, Typography, message } from 'antd';
 import { useNavigate } from 'react-router-dom';
@@ -14,7 +15,13 @@ import { formatDateTime } from '../../utils/datetime';
 import { formatDeploymentElapsed } from '../../utils/deploymentDuration';
 import { getDeploymentProgressColor, getDeploymentProgressLabel } from '../../utils/deploymentProgress';
 import { formatDurationSince } from '../../utils/duration';
-import { getStableTagColor, sortTagNames } from '../../utils/tagColors';
+import { getStableTagColor, getStableTagDarkColor, sortTagNames } from '../../utils/tagColors';
+
+const stableTagStyle = (tag: string): CSSProperties => ({
+  '--app-tag-bg': getStableTagColor(tag),
+  '--app-tag-bg-dark': getStableTagDarkColor(tag),
+  '--app-tag-fg': '#ffffff',
+} as CSSProperties);
 
 /**
  * 用户端流水线大厅。
@@ -631,12 +638,10 @@ export default function UserPipelinesPage() {
                       <Tag
                         key={tag}
                         style={{
-                          backgroundColor: active ? getStableTagColor(tag) : '#e2e8f0',
-                          color: active ? '#fff' : '#475569',
-                          borderColor: 'transparent',
+                          ...(active ? stableTagStyle(tag) : {}),
                           opacity: disabled ? 0.36 : 1,
                         }}
-                        className={`${disabled ? 'cursor-not-allowed' : 'cursor-pointer'} select-none !border-0 !px-3 !py-1`}
+                        className={`${active ? 'app-color-tag' : 'app-muted-tag'} ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'} select-none !border-0 !px-3 !py-1`}
                         onClick={() => !disabled && setTagFilter((previous) => {
                           const next = previous?.includes(tag)
                             ? previous.filter((item) => item !== tag)
@@ -780,12 +785,8 @@ export default function UserPipelinesPage() {
                                 {tags.map((tag) => (
                                   <Tag
                                     key={tag}
-                                    style={{
-                                      backgroundColor: getStableTagColor(tag),
-                                      color: '#fff',
-                                      borderColor: 'transparent',
-                                    }}
-                                    className="!border-0"
+                                    style={stableTagStyle(tag)}
+                                    className="app-color-tag !border-0"
                                   >
                                     {tag}
                                   </Tag>
@@ -927,12 +928,8 @@ export default function UserPipelinesPage() {
                             {tags.map((tag) => (
                               <Tag
                                 key={tag}
-                                style={{
-                                  backgroundColor: getStableTagColor(tag),
-                                  color: '#fff',
-                                  borderColor: 'transparent',
-                                }}
-                                className="!border-0"
+                                style={stableTagStyle(tag)}
+                                className="app-color-tag !border-0"
                               >
                                 {tag}
                               </Tag>
@@ -1059,7 +1056,7 @@ export default function UserPipelinesPage() {
       >
           <div className="space-y-4">
           {deployingPipeline && hallItems.some((item) => item.pipelineId === deployingPipeline.id && item.latestStatus && ACTIVE_DEPLOYMENT_STATUSES.includes(item.latestStatus)) ? (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
+            <div className="app-inline-alert app-inline-alert--warning rounded-xl p-3 text-sm">
               检测到当前流水线还有部署中的任务。继续部署会先停止前一个正在运行的任务。
             </div>
           ) : null}

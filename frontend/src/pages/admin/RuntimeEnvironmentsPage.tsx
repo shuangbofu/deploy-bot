@@ -380,15 +380,15 @@ export default function RuntimeEnvironmentsPage() {
 
   const renderInstallTaskStatus = (item: RuntimeEnvironmentInstallTaskStatus) => {
     if (item.status === 'SUCCESS') {
-      return <Tag color="success">安装完成</Tag>;
+      return <Tag className="app-tag-success">安装完成</Tag>;
     }
     if (item.status === 'FAILED') {
-      return <Tag color="error">安装失败</Tag>;
+      return <Tag className="app-tag-danger">安装失败</Tag>;
     }
     if (item.status === 'RUNNING') {
-      return <Tag color="processing">安装中</Tag>;
+      return <Tag className="app-tag-info">安装中</Tag>;
     }
-    return <Tag color="default">等待中</Tag>;
+    return <Tag className="app-tag-muted">等待中</Tag>;
   };
 
   const getPresetUsages = (preset) => {
@@ -752,9 +752,9 @@ export default function RuntimeEnvironmentsPage() {
                 <div>
                   <div className="flex items-center gap-2">
                     <div className="font-medium text-slate-800">{item.name}</div>
-                    <Tag>{getRuntimeEnvironmentTypeLabel(item.type)}</Tag>
+                    <Tag className="app-tag-kind">{getRuntimeEnvironmentTypeLabel(item.type)}</Tag>
                     {getPresetUsages(item).map((usage) => (
-                      <Tag key={usage} color={usage === 'deploy' ? 'blue' : 'green'}>
+                      <Tag key={usage} className={usage === 'deploy' ? 'app-tag-info' : 'app-tag-success'}>
                         {usage === 'deploy' ? '部署' : '构建'}
                       </Tag>
                     ))}

@@ -8,6 +8,7 @@ import StatusTag from '../../components/StatusTag';
 import type { ServicePidHistorySummary, ServiceProcessSummary, ServiceSummary } from '../../api/types';
 import { formatDateTime } from '../../utils/datetime';
 import { formatDurationSince } from '../../utils/duration';
+import { getRequestErrorMessage } from '../../utils/requestError';
 
 const PID_HISTORY_SOURCE_LABELS: Record<string, string> = {
   DEPLOYMENT_CONFIRMED: '部署接管',
@@ -39,12 +40,14 @@ export default function ServiceManagementPage() {
   const [historyTabKey, setHistoryTabKey] = useState('switches');
   const [switchPagination, setSwitchPagination] = useState({ current: 1, pageSize: 8 });
   const [eventPagination, setEventPagination] = useState({ current: 1, pageSize: 8 });
+  const [refreshError, setRefreshError] = useState('');
   const navigate = useNavigate();
 
   const loadServices = async () => {
     setLoading(true);
     try {
       setServices(await servicesApi.list());
+      setRefreshError('');
     } finally {
       setLoading(false);
     }
@@ -56,7 +59,7 @@ export default function ServiceManagementPage() {
 
   useEffect(() => {
     const timer = window.setInterval(() => {
-      loadServices().catch(() => message.error('刷新服务失败'));
+      loadServices().catch((error) => setRefreshError(getRequestErrorMessage(error, '刷新服务失败')));
     }, 15000);
     return () => window.clearInterval(timer);
   }, []);
@@ -312,6 +315,11 @@ export default function ServiceManagementPage() {
       />
       <div className="app-page-scroll">
       <Card className="app-card">
+        {refreshError ? (
+          <div className="app-inline-alert app-inline-alert--warning mb-4 rounded-2xl px-4 py-3 text-sm">
+            服务状态刷新异常：{refreshError}
+          </div>
+        ) : null}
         <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
           <Input
             value={keyword}

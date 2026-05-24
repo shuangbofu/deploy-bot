@@ -1,12 +1,12 @@
-import { DashboardOutlined, ProfileOutlined, DeploymentUnitOutlined, LogoutOutlined, LockOutlined, GithubOutlined, RobotOutlined, BellOutlined } from '@ant-design/icons';
-import { Avatar, Button, Dropdown, Layout, Menu, Space, Typography } from 'antd';
+import { DashboardOutlined, ProfileOutlined, DeploymentUnitOutlined, LogoutOutlined, LockOutlined, GithubOutlined, RobotOutlined, BellOutlined, SettingOutlined } from '@ant-design/icons';
+import { Avatar, Button, Dropdown, Space } from 'antd';
 import { useState } from 'react';
-import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { resolveBackendAssetUrl } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { resolvePortalSwitchPath } from '../utils/portalSwitch';
 import ChangePasswordModal from './ChangePasswordModal';
-import deployBotLogo from '../assets/deploy-bot-logo.svg';
+import PortalLayoutShell from './PortalLayoutShell';
 
 const GITHUB_REPOSITORY_URL = 'https://github.com/shuangbofu/deploy-bot';
 
@@ -14,10 +14,11 @@ const GITHUB_REPOSITORY_URL = 'https://github.com/shuangbofu/deploy-bot';
  * 用户端菜单只保留用户真实需要的三个入口，避免出现配置感。
  */
 const menuItems = [
-  { key: '/user/dashboard', icon: <DashboardOutlined />, label: '仪表盘' },
-  { key: '/user/pipelines', icon: <DeploymentUnitOutlined />, label: '流水线大厅' },
-  { key: '/user/deployments', icon: <ProfileOutlined />, label: '部署记录' },
-  { key: '/user/notification-records', icon: <BellOutlined />, label: '通知记录' },
+  { key: '/user/dashboard', icon: <DashboardOutlined />, label: '仪表盘', shortLabel: '仪表' },
+  { key: '/user/pipelines', icon: <DeploymentUnitOutlined />, label: '流水线大厅', shortLabel: '大厅' },
+  { key: '/user/deployments', icon: <ProfileOutlined />, label: '部署记录', shortLabel: '记录' },
+  { key: '/user/notification-records', icon: <BellOutlined />, label: '通知记录', shortLabel: '通知' },
+  { key: '/user/system-settings', icon: <SettingOutlined />, label: '系统设置', shortLabel: '设置' },
 ];
 
 /**
@@ -33,29 +34,12 @@ export default function UserLayout() {
   const switchPath = resolvePortalSwitchPath(location.pathname, 'admin');
 
   return (
-    <Layout className="min-h-screen bg-app">
-      <Layout.Header className="app-header px-6">
-        <div className="flex items-center gap-3 text-white">
-          <div className="app-logo">
-            <img src={deployBotLogo} alt="Deploy Bot Logo" className="app-logo-image" />
-          </div>
-          <div>
-            <Typography.Text className="block text-[11px] uppercase tracking-[0.3em] !text-white/55">
-              Deploy Bot
-            </Typography.Text>
-            <Typography.Title level={4} className="!mb-0 !mt-0 !text-white">
-              部署工作台
-            </Typography.Title>
-          </div>
-        </div>
-        <Menu
-          mode="horizontal"
-          theme="dark"
-          items={menuItems}
-          selectedKeys={[selectedKey]}
-          onClick={({ key }) => navigate(key)}
-          className="admin-nav"
-        />
+    <>
+      <PortalLayoutShell
+        title="部署工作台"
+        menuItems={menuItems}
+        selectedKey={selectedKey}
+        actions={(
         <Space>
           {isAdmin ? (
             <Link to={switchPath}>
@@ -99,13 +83,9 @@ export default function UserLayout() {
             icon={<GithubOutlined />}
           />
         </Space>
-      </Layout.Header>
-      <Layout.Content className="app-content">
-        <div className="app-page">
-          <Outlet />
-        </div>
-      </Layout.Content>
+        )}
+      />
       <ChangePasswordModal open={passwordModalOpen} onClose={() => setPasswordModalOpen(false)} />
-    </Layout>
+    </>
   );
 }

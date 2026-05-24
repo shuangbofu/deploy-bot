@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Steps, Table, Tag, message } from 'antd';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -15,7 +16,7 @@ import PageHeaderBar from '../../components/PageHeaderBar';
 import PipelineVariablesEditor from '../../components/PipelineVariablesEditor';
 import PipelineIcon from '../../components/PipelineIcon';
 import { copyText } from '../../utils/clipboard';
-import { getStableTagColor, PHASE_LABEL_MAP, PHASE_TAG_COLOR_MAP, sortByPhase, sortTagNames } from '../../utils/tagColors';
+import { getStableTagColor, getStableTagDarkColor, PHASE_LABEL_MAP, sortByPhase, sortTagNames } from '../../utils/tagColors';
 import type {
   HostSummary,
   NotificationBinding,
@@ -29,6 +30,15 @@ import type {
   TemplateSummary,
   TemplateVariableDefinition,
 } from '../../types/domain';
+
+const stableTagStyle = (tag: string): CSSProperties => ({
+  '--app-tag-bg': getStableTagColor(tag),
+  '--app-tag-bg-dark': getStableTagDarkColor(tag),
+  '--app-tag-fg': '#ffffff',
+} as CSSProperties);
+
+const phaseClassName = (phase?: string | null) => `app-phase-tag--${phase || 'shared'}`;
+const phaseLabelClassName = (phase?: string | null) => `app-phase-label--${phase || 'shared'}`;
 
 const PIPELINE_TABLE_SCROLL_LEFT_KEY = 'deploy-bot:pipeline-table-scroll-left';
 
@@ -899,7 +909,7 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
         />
       );
     }
-    return <div className="rounded-lg bg-slate-50 px-3 py-2 whitespace-pre-wrap">{value || '-'}</div>;
+    return <div className="runtime-config-value">{value || '-'}</div>;
   };
 
   if (mode === 'view') {
@@ -952,12 +962,12 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
             </Card>
             <Card title="运行配置" className="app-card">
               {pluginConfigItems.length ? (
-                <div className="space-y-3 text-sm">
+                <div className="runtime-config-list">
                   {pluginConfigItems.map((item: any) => (
-                    <div key={item.field.key}>
-                      <div className="mb-1 flex items-center gap-2 text-slate-500">
-                        <span>{item.field.label}</span>
-                        {item.sectionTitle ? <span className="text-xs text-slate-400">/{item.sectionTitle}</span> : null}
+                    <div key={item.field.key} className={`runtime-config-item ${item.field.type === 'CODE' ? 'runtime-config-item--code' : ''}`}>
+                      <div className="runtime-config-item__header">
+                        <span className="runtime-config-item__label">{item.field.label}</span>
+                        {item.sectionTitle ? <span className="runtime-config-item__section">{item.sectionTitle}</span> : null}
                       </div>
                       {renderReadonlyPluginConfigValue(item.field, item.value)}
                     </div>
@@ -1182,12 +1192,8 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
               return (
                 <Tag
                   key={tag}
-                  style={{
-                    backgroundColor: active ? getStableTagColor(tag) : '#e2e8f0',
-                    color: active ? '#fff' : '#475569',
-                    borderColor: 'transparent',
-                  }}
-                  className="cursor-pointer select-none !border-0 !px-3 !py-1"
+                  style={active ? stableTagStyle(tag) : undefined}
+                  className={`${active ? 'app-color-tag' : 'app-muted-tag'} cursor-pointer select-none !border-0 !px-3 !py-1`}
                   onClick={() => {
                     setTagFilter((previous) => {
                       const next = previous?.includes(tag)
@@ -1270,12 +1276,8 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
                       {sortTagNames(row.parsedTags).map((tag: string) => (
                         <Tag
                           key={tag}
-                          style={{
-                            backgroundColor: getStableTagColor(tag),
-                            color: '#fff',
-                            borderColor: 'transparent',
-                          }}
-                          className="!border-0"
+                          style={stableTagStyle(tag)}
+                          className="app-color-tag !border-0"
                         >
                           {tag}
                         </Tag>
@@ -1293,20 +1295,10 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
                     {sortByPhase(row.parsedTemplateVariables).map((item) => (
                       <Tag
                         key={item.name}
-                        style={{
-                          backgroundColor: `${(PHASE_TAG_COLOR_MAP[item.phase || 'shared'] || PHASE_TAG_COLOR_MAP.shared)}1A`,
-                          color: '#334155',
-                          borderColor: 'transparent',
-                        }}
-                        className="!border-0 !pl-0 !py-0"
+                        className={`app-phase-tag ${phaseClassName(item.phase)} !border-0 !pl-0 !py-0`}
                       >
                         <span
-                          className="mr-1.5 inline-flex items-center rounded-md px-2 py-1 text-xs font-normal text-white"
-                          style={{
-                            backgroundColor: PHASE_TAG_COLOR_MAP[item.phase || 'shared'] || PHASE_TAG_COLOR_MAP.shared,
-                            borderTopRightRadius: 0,
-                            borderBottomRightRadius: 0,
-                          }}
+                          className={`app-phase-tag__label ${phaseLabelClassName(item.phase)} mr-1.5 inline-flex items-center rounded-md px-2 py-1 text-xs font-normal text-white`}
                         >
                           <span>[{PHASE_LABEL_MAP[item.phase || 'shared'] || '共用'}]</span>
                           <span className="ml-1">{item.label || item.name}</span>

@@ -574,6 +574,8 @@ export interface HostResourceSnapshot {
   diskUsagePercent?: number | null;
   /** 预览文本。 */
   preview?: string;
+  /** 前端资源采集错误提示。 */
+  errorMessage?: string;
 }
 
 export interface DashboardTrendItem {
@@ -631,6 +633,54 @@ export interface DashboardSummary {
   latestDeployments: DashboardDeploymentSummary[];
   attentionDeployments: DashboardDeploymentSummary[];
   services: DashboardServiceSummary[];
+}
+
+export interface DashboardMetricCard {
+  key: string;
+  label: string;
+  value: string;
+  suffix?: string | null;
+  trendLabel?: string | null;
+}
+
+export interface DashboardChartPoint {
+  key: string;
+  label: string;
+  category: string;
+  value: number;
+  extra?: string | null;
+}
+
+export interface DashboardRecentPoint {
+  id: number;
+  time: string;
+  axisName: string;
+  pipelineName?: string | null;
+  projectName?: string | null;
+  status?: DeploymentStatus | null;
+  durationSeconds: number;
+}
+
+export interface DashboardAnalytics {
+  metrics: DashboardMetricCard[];
+  trend: DashboardChartPoint[];
+  statusDistribution: DashboardChartPoint[];
+  projectRanking: DashboardChartPoint[];
+  pipelineRanking: DashboardChartPoint[];
+  triggerRanking: DashboardChartPoint[];
+  templateTypeDistribution: DashboardChartPoint[];
+  hostDistribution: DashboardChartPoint[];
+  recentDeployments: DashboardRecentPoint[];
+  durationDistribution: DashboardChartPoint[];
+}
+
+export interface DashboardAnalyticsQuery {
+  range?: string;
+  granularity?: string;
+  projectName?: string;
+  pipelineName?: string;
+  triggeredBy?: string;
+  status?: DeploymentStatus;
 }
 
 export interface DeploymentRecordFilters {

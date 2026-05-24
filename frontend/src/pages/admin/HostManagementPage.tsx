@@ -15,6 +15,7 @@ import type {
 } from '../../types/domain';
 import { formatDateTime } from '../../utils/datetime';
 import { getRuntimeEnvironmentTypeLabel, sortRuntimeEnvironmentTypes } from '../../utils/runtimeEnvironment';
+import { getRequestErrorMessage } from '../../utils/requestError';
 
 const hostTypeOptions: { label: string; value: HostType }[] = [
   { label: 'SSH 远程主机', value: 'SSH' },
@@ -131,6 +132,7 @@ export default function HostManagementPage() {
   const [previewingHostId, setPreviewingHostId] = useState<number | undefined>();
   const [resourceModalOpen, setResourceModalOpen] = useState(false);
   const [resourceSnapshot, setResourceSnapshot] = useState<HostResourceSnapshot>();
+  const [hostResourceErrors, setHostResourceErrors] = useState<Record<number, string>>({});
   const [keyword, setKeyword] = useState('');
   const [typeFilter, setTypeFilter] = useState<HostType>();
   const [enabledFilter, setEnabledFilter] = useState<string>();
@@ -246,7 +248,17 @@ export default function HostManagementPage() {
     setPreviewingHostId(id);
     try {
       setResourceSnapshot(await hostsApi.previewResources(id));
+      setHostResourceErrors((previous) => {
+        const next = { ...previous };
+        delete next[id];
+        return next;
+      });
       setResourceModalOpen(true);
+    } catch (error) {
+      setHostResourceErrors((previous) => ({
+        ...previous,
+        [id]: getRequestErrorMessage(error, '读取主机资源失败'),
+      }));
     } finally {
       setPreviewingHostId(undefined);
     }
@@ -349,6 +361,15 @@ export default function HostManagementPage() {
               },
               { title: '状态', render: (_, row) => renderEnabledStatus(row.enabled !== false), width: 100 },
               {
+                title: '资源状态',
+                width: 220,
+                render: (_, row) => hostResourceErrors[row.id] ? (
+                  <span className="app-tag-warning inline-flex max-w-full rounded-full px-2 py-1 text-xs" title={hostResourceErrors[row.id]}>
+                    资源读取失败
+                  </span>
+                ) : <span className="text-slate-400">-</span>,
+              },
+              {
                 title: '操作',
                 width: 420,
                 render: (_, record) => (
@@ -359,7 +380,7 @@ export default function HostManagementPage() {
                     <Button size="small" loading={testingHostId === record.id} onClick={() => testConnection(record.id).catch((error) => message.error(error?.response?.data?.message || '测试连接失败'))}>
                       测试连接
                     </Button>
-                    <Button size="small" loading={previewingHostId === record.id} onClick={() => previewResources(record.id).catch((error) => message.error(error?.response?.data?.message || '读取主机资源失败'))}>
+                    <Button size="small" loading={previewingHostId === record.id} onClick={() => previewResources(record.id)}>
                       资源预览
                     </Button>
                     <Button size="small" onClick={() => openEdit(record)}>编辑</Button>

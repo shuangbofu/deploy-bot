@@ -265,9 +265,9 @@ export default function NotificationAdminPage() {
                 width: 160,
                 render: (_, record) => (
                   <Space>
-                    <Button size="small" type="link" onClick={() => openEditChannel(record)}>编辑</Button>
+                    <Button size="small" onClick={() => openEditChannel(record)}>编辑</Button>
                     <Popconfirm title="确认删除这条通知配置吗？" onConfirm={() => removeChannel(record.id)}>
-                      <Button size="small" type="link" danger>删除</Button>
+                      <Button size="small" danger>删除</Button>
                     </Popconfirm>
                   </Space>
                 ),
@@ -401,10 +401,7 @@ export default function NotificationAdminPage() {
                     label: (
                       <div className="flex items-center gap-2 py-0.5">
                         <span className="font-medium text-slate-800">{item.name}</span>
-                        <span
-                          className="rounded-full px-2 py-0.5 text-xs font-medium text-white"
-                          style={{ backgroundColor: '#0f766e' }}
-                        >
+                        <span className="app-tag-system rounded-full px-2 py-0.5 text-xs font-medium">
                           {getNotificationChannelTypeLabel(item.type)}
                         </span>
                       </div>

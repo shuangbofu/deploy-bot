@@ -1,6 +1,6 @@
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { Button, Form, Input, Select, Space, Switch, Typography } from 'antd';
-import { PHASE_LABEL_MAP, PHASE_TAG_COLOR_MAP } from '../utils/tagColors';
+import { PHASE_LABEL_MAP } from '../utils/tagColors';
 
 /**
  * 新增变量时的默认结构。
@@ -12,6 +12,8 @@ const emptyVariable = {
   required: false,
   mutationRuleIds: [],
 };
+
+const phaseLabelClassName = (phase?: string | null) => `app-phase-label--${phase || 'shared'}`;
 
 /**
  * 阶段文案映射，用于把 build / deploy / shared 渲染成中文。
@@ -79,10 +81,7 @@ export default function TemplateVariablesEditor({
               <Space>
                 <Typography.Text strong>变量 {index + 1}</Typography.Text>
                 <span
-                  className="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold text-white"
-                  style={{
-                    backgroundColor: PHASE_TAG_COLOR_MAP[item.phase || phase || 'shared'] || PHASE_TAG_COLOR_MAP.shared,
-                  }}
+                  className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold text-white ${phaseLabelClassName(item.phase || phase)}`}
                 >
                   {PHASE_LABEL_MAP[item.phase || phase || 'shared'] || '共用'}
                 </span>

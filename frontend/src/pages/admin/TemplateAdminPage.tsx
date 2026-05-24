@@ -13,7 +13,7 @@ import ShellVariableHint from '../../components/ShellVariableHint';
 import TemplatePreviewStage from '../../components/TemplatePreviewStage';
 import TemplateVariablesEditor from '../../components/TemplateVariablesEditor';
 import type { DeploymentPluginDefinitionSummary, PluginValueReferenceSummary, PluginVariableMutationRuleSummary, ShellVariableSummary } from '../../types/domain';
-import { PHASE_LABEL_MAP, PHASE_TAG_COLOR_MAP, sortByPhase } from '../../utils/tagColors';
+import { PHASE_LABEL_MAP, sortByPhase } from '../../utils/tagColors';
 
 interface TemplateFormState {
   name: string;
@@ -33,6 +33,8 @@ interface TemplateFormState {
   deployScriptContent: string;
   monitorProcess: boolean;
 }
+
+const phaseClassName = (phase?: string | null) => `app-phase-tag--${phase || 'shared'}`;
 
 const emptyTemplate: TemplateFormState = {
   name: '',
@@ -596,12 +598,7 @@ export default function TemplateAdminPage() {
                     {sortByPhase(record.parsedVariables).map((item) => (
                       <Tag
                         key={item.name}
-                        style={{
-                          backgroundColor: PHASE_TAG_COLOR_MAP[item.phase || 'shared'] || PHASE_TAG_COLOR_MAP.shared,
-                          color: '#fff',
-                          borderColor: 'transparent',
-                        }}
-                        className="!border-0"
+                        className={`app-phase-tag ${phaseClassName(item.phase)} !border-0`}
                       >
                         [{PHASE_LABEL_MAP[item.phase || 'shared'] || '共用'}] {renderVariableTitle(item)}
                         {item.required ? ' *' : ''}
@@ -846,8 +843,8 @@ export default function TemplateAdminPage() {
       <Modal
         title={previewBuiltinTemplate ? (
           <div className="flex flex-wrap items-center gap-2">
-            <Tag color="green" className="!m-0">插件自带</Tag>
-            <Tag color="blue" className="!m-0">{previewBuiltinTemplate.templateType ? previewBuiltinTemplate.templateType.replace(/_/g, ' / ') : '通用'}</Tag>
+            <Tag className="app-tag-success !m-0">插件自带</Tag>
+            <Tag className="app-tag-info !m-0">{previewBuiltinTemplate.templateType ? previewBuiltinTemplate.templateType.replace(/_/g, ' / ') : '通用'}</Tag>
             <span>{previewBuiltinTemplate.name}</span>
             <span className="ml-1 inline-flex items-center gap-1 text-sm font-normal text-slate-600">
               <span className={`h-2 w-2 rounded-full ${previewBuiltinTemplate.monitorProcess ? 'bg-emerald-500' : 'bg-slate-300'}`} />

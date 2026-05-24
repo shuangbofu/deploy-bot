@@ -1,9 +1,7 @@
 import type {
-  DashboardDeploymentSummary,
-  DashboardServiceSummary,
-  DashboardStatsSummary,
+  DashboardAnalytics,
+  DashboardAnalyticsQuery,
   DashboardSummary,
-  DashboardTrendItem,
   DeploymentSummary,
   HostConnectionTestResult,
   HostResourceSnapshot,
@@ -26,6 +24,8 @@ import type {
   TemplateSummary,
   UserSummary,
 } from '../types/domain';
+
+export type { DashboardAnalytics, DashboardAnalyticsQuery };
 
 /**
  * 后端统一响应包装结构。

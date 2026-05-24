@@ -14,6 +14,8 @@ import type {
 import EmptyPane from '../../components/EmptyPane';
 import PageHeaderBar from '../../components/PageHeaderBar';
 import { getNotificationChannelTypeLabel, notificationTemplateVariableOptions } from '../../constants/notification';
+import { useAppTheme } from '../../theme/AppThemeProvider';
+import { useLayoutMode } from '../../theme/LayoutModeProvider';
 import { copyText } from '../../utils/clipboard';
 
 const emptySettings: SystemSettingsPayload = {
@@ -132,7 +134,14 @@ const defaultFeishuCardTemplate = `{
   ]
 }`;
 
-export default function SystemSettingsPage() {
+type Props = {
+  scope?: 'admin' | 'user';
+};
+
+export default function SystemSettingsPage({ scope = 'admin' }: Props) {
+  const adminScope = scope === 'admin';
+  const { mode: themeMode, followSystem, autoDarkAtNight, setMode: setThemeMode, setFollowSystem, setAutoDarkAtNight } = useAppTheme();
+  const { mode: layoutMode, setMode: setLayoutMode } = useLayoutMode();
   const [form, setForm] = useState<SystemSettingsPayload>(emptySettings);
   const [saving, setSaving] = useState(false);
   const [previewTitle, setPreviewTitle] = useState('');
@@ -202,10 +211,13 @@ export default function SystemSettingsPage() {
   };
 
   useEffect(() => {
+    if (!adminScope) {
+      return;
+    }
     loadSettings().catch(() => message.error('加载系统设置失败'));
     loadWebhookConfigs().catch(() => message.error('加载 Webhook 配置失败'));
     loadTemplates().catch(() => message.error('加载通知模板失败'));
-  }, []);
+  }, [adminScope]);
 
   const saveSettings = async () => {
     setSaving(true);
@@ -337,10 +349,95 @@ export default function SystemSettingsPage() {
     <>
       <PageHeaderBar
         title="系统设置"
-        description="集中维护平台级 Git、主机和通知相关配置。"
-        extra={<Button type="primary" loading={saving} onClick={() => saveSettings().catch(() => message.error('保存系统设置失败'))}>保存设置</Button>}
+        description={adminScope ? '集中维护界面偏好、平台基础能力和通知相关配置。' : '设置自己的界面显示偏好。'}
+        extra={adminScope ? <Button type="primary" loading={saving} onClick={() => saveSettings().catch(() => message.error('保存系统设置失败'))}>保存设置</Button> : null}
       />
       <div className="app-page-scroll">
+        <Tabs
+          className="system-settings-tabs"
+          items={[
+            {
+              key: 'appearance',
+              label: '界面设置',
+              children: (
+                <div className="space-y-4">
+                  <Card className="app-card">
+                    <div className="mb-4">
+                      <div className="text-base font-semibold text-slate-800">菜单样式</div>
+                      <div className="mt-1 text-sm text-slate-500">选择平台主导航显示在顶部还是左侧。</div>
+                    </div>
+                    <div className="settings-choice-grid">
+                      <button
+                        type="button"
+                        className={`settings-choice ${layoutMode === 'top' ? 'settings-choice--active' : ''}`}
+                        onClick={() => setLayoutMode('top')}
+                      >
+                        <span className="settings-choice__title">顶部菜单</span>
+                        <span className="settings-choice__description">页面横向空间更完整，适合宽屏少菜单场景。</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`settings-choice ${layoutMode === 'side' ? 'settings-choice--active' : ''}`}
+                        onClick={() => setLayoutMode('side')}
+                      >
+                        <span className="settings-choice__title">左侧菜单</span>
+                        <span className="settings-choice__description">导航层级更稳定，适合管理端常驻操作。</span>
+                      </button>
+                    </div>
+                  </Card>
+                  <Card className="app-card">
+                    <div className="mb-4">
+                      <div className="text-base font-semibold text-slate-800">主题模式</div>
+                      <div className="mt-1 text-sm text-slate-500">控制浅色、深色以及系统外观联动。</div>
+                    </div>
+                    <div className="settings-choice-grid">
+                      <button
+                        type="button"
+                        className={`settings-choice ${!followSystem && themeMode === 'light' ? 'settings-choice--active' : ''}`}
+                        onClick={() => setThemeMode('light')}
+                      >
+                        <span className="settings-choice__title">浅色</span>
+                        <span className="settings-choice__description">固定使用浅色界面。</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`settings-choice ${!followSystem && themeMode === 'dark' ? 'settings-choice--active' : ''}`}
+                        onClick={() => setThemeMode('dark')}
+                      >
+                        <span className="settings-choice__title">深色</span>
+                        <span className="settings-choice__description">固定使用深色界面。</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`settings-choice ${followSystem ? 'settings-choice--active' : ''}`}
+                        onClick={() => setFollowSystem(true)}
+                      >
+                        <span className="settings-choice__title">跟随系统</span>
+                        <span className="settings-choice__description">跟随操作系统的浅色/深色偏好。</span>
+                      </button>
+                    </div>
+                    <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold text-slate-800">晚上自动打开深色模式</div>
+                          <div className="mt-1 text-xs text-slate-500">18:00 到次日 06:00 自动使用深色，优先级高于手动和跟随系统。</div>
+                        </div>
+                        <Switch
+                          checked={autoDarkAtNight}
+                          checkedChildren="开启"
+                          unCheckedChildren="关闭"
+                          onChange={setAutoDarkAtNight}
+                        />
+                      </div>
+                    </div>
+                  </Card>
+                </div>
+              ),
+            },
+            ...(adminScope ? [{
+              key: 'basic',
+              label: '基础设置',
+              children: (
         <div className="space-y-6">
           <section className="space-y-4">
             <div className="px-1">
@@ -551,6 +648,14 @@ export default function SystemSettingsPage() {
             </Card>
           </section>
 
+        </div>
+              ),
+            },
+            {
+              key: 'notification',
+              label: '通知设置',
+              children: (
+        <div className="space-y-6">
           <section className="space-y-4">
             <div className="px-1">
               <div className="text-lg font-semibold text-slate-900">通知</div>
@@ -588,9 +693,9 @@ export default function SystemSettingsPage() {
                               width: 160,
                               render: (_, record) => (
                                 <Space>
-                                  <Button size="small" type="link" onClick={() => openEditWebhook(record)}>编辑</Button>
+                                  <Button size="small" onClick={() => openEditWebhook(record)}>编辑</Button>
                                   <Popconfirm title="确认删除这条 Webhook 配置吗？" onConfirm={() => removeWebhook(record.id)}>
-                                    <Button size="small" type="link" danger>删除</Button>
+                                    <Button size="small" danger>删除</Button>
                                   </Popconfirm>
                                 </Space>
                               ),
@@ -633,10 +738,10 @@ export default function SystemSettingsPage() {
                               width: 160,
                               render: (_, record) => (
                                 <Space>
-                                  <Button size="small" type="link" onClick={() => openEditTemplate(record)}>编辑</Button>
+                                  <Button size="small" onClick={() => openEditTemplate(record)}>编辑</Button>
                                   {record.builtIn ? null : (
                                     <Popconfirm title="确认删除这条通知模板吗？" onConfirm={() => removeTemplate(record.id)}>
-                                      <Button size="small" type="link" danger>删除</Button>
+                                      <Button size="small" danger>删除</Button>
                                     </Popconfirm>
                                   )}
                                 </Space>
@@ -652,7 +757,13 @@ export default function SystemSettingsPage() {
             </Card>
           </section>
         </div>
-      <Modal
+              ),
+            }] : []),
+          ]}
+        />
+      {adminScope ? (
+      <>
+        <Modal
         title={previewTitle}
         open={previewOpen}
         onCancel={() => setPreviewOpen(false)}
@@ -762,6 +873,8 @@ export default function SystemSettingsPage() {
           </Form.Item>
         </Form>
       </Modal>
+      </>
+      ) : null}
       </div>
     </>
   );

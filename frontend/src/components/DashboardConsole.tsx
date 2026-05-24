@@ -1,339 +1,424 @@
-import {
-  CloudServerOutlined,
-  DeploymentUnitOutlined,
-  FileTextOutlined,
-  FolderOpenOutlined,
-  ProfileOutlined,
-  RadarChartOutlined,
-  TeamOutlined,
-} from '@ant-design/icons';
-import { Card, Col, Empty, Progress, Row, Skeleton, Statistic, Tooltip } from 'antd';
-import { useNavigate } from 'react-router-dom';
+import { AppstoreOutlined, DeploymentUnitOutlined, ProfileOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { Card, DatePicker, Segmented, Select, Space, Tabs } from 'antd';
+import type { EChartsOption } from 'echarts';
+import { useMemo, useState } from 'react';
 import PageHeaderBar from './PageHeaderBar';
-import StatusTag from './StatusTag';
-import type {
-  DashboardDeploymentSummary,
-  DashboardServiceSummary,
-  DashboardStatsSummary,
-  DashboardTrendItem,
-  HostResourceSnapshot,
-} from '../types/domain';
-import { buildTrendAreaPath, buildTrendPoints, buildTrendSmoothPath } from '../utils/dashboard';
-import { formatDateTime } from '../utils/datetime';
-import { formatDeploymentElapsed } from '../utils/deploymentDuration';
+import DashboardChartCard from './DashboardChartCard';
+import type { DashboardAnalytics, DashboardAnalyticsQuery, DeploymentStatus } from '../types/domain';
+import { useAppTheme } from '../theme/AppThemeProvider';
 
 interface DashboardConsoleProps {
   title: string;
   description: string;
   loading: boolean;
-  resourceLoading?: boolean;
-  stats: DashboardStatsSummary;
-  trend: DashboardTrendItem[];
-  latestDeployments: DashboardDeploymentSummary[];
-  attentionDeployments: DashboardDeploymentSummary[];
-  services: DashboardServiceSummary[];
-  resources?: HostResourceSnapshot[];
+  analytics?: DashboardAnalytics;
+  query: DashboardAnalyticsQuery;
+  onQueryChange: (query: DashboardAnalyticsQuery) => void;
   isAdmin: boolean;
-  detailBasePath: string;
-  listPath: string;
-  backFrom: string;
-  backLabel: string;
-  idPrefix: string;
-  tick?: number;
+}
+
+const { RangePicker } = DatePicker;
+
+const RANGE_OPTIONS = [
+  { label: '今天', value: 'today' },
+  { label: '近 7 天', value: '7d' },
+  { label: '近 30 天', value: '30d' },
+  { label: '近 90 天', value: '90d' },
+];
+
+const GRANULARITY_OPTIONS = [
+  { label: '小时', value: 'hour' },
+  { label: '天', value: 'day' },
+  { label: '周', value: 'week' },
+  { label: '月', value: 'month' },
+];
+
+const STATUS_OPTIONS: Array<{ label: string; value: DeploymentStatus }> = [
+  { label: '等待中', value: 'PENDING' },
+  { label: '运行中', value: 'RUNNING' },
+  { label: '成功', value: 'SUCCESS' },
+  { label: '失败', value: 'FAILED' },
+  { label: '已停止', value: 'STOPPED' },
+];
+
+const LIGHT_COLORS = ['#4f8fd8', '#2db7a3', '#f0a44d', '#e8697a', '#55b6d8', '#8d7fe6', '#94a3b8', '#6fc28a'];
+const DARK_COLORS = ['#7da6e2', '#5eead4', '#fbbf24', '#fb7185', '#38bdf8', '#a5b4fc', '#94a3b8', '#86efac'];
+const LIGHT_STATUS_COLORS: Record<string, string> = {
+  成功: '#2db7a3',
+  失败: '#e8697a',
+  运行中: '#4f8fd8',
+  已停止: '#94a3b8',
+  等待中: '#f0a44d',
+};
+const DARK_STATUS_COLORS: Record<string, string> = {
+  成功: '#5eead4',
+  失败: '#fb7185',
+  运行中: '#7da6e2',
+  已停止: '#94a3b8',
+  等待中: '#fbbf24',
+};
+
+type DimensionKey = 'project' | 'pipeline' | 'trigger' | 'templateType' | 'host';
+
+function chartColors(isDark: boolean) {
+  return isDark ? DARK_COLORS : LIGHT_COLORS;
+}
+
+function statusColor(label: string, isDark: boolean) {
+  return (isDark ? DARK_STATUS_COLORS : LIGHT_STATUS_COLORS)[label];
+}
+
+function emptyAnalytics(): DashboardAnalytics {
+  return {
+    metrics: [],
+    trend: [],
+    statusDistribution: [],
+    projectRanking: [],
+    pipelineRanking: [],
+    triggerRanking: [],
+    templateTypeDistribution: [],
+    hostDistribution: [],
+    recentDeployments: [],
+    durationDistribution: [],
+  };
+}
+
+function baseChartOption(isDark: boolean): EChartsOption {
+  return {
+    color: chartColors(isDark),
+    backgroundColor: 'transparent',
+    textStyle: { color: isDark ? '#d8e3f0' : '#173055' },
+    grid: { top: 40, right: 20, bottom: 42, left: 44 },
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: isDark ? '#0f172a' : '#ffffff',
+      borderColor: isDark ? '#334155' : '#e2e8f0',
+      textStyle: { color: isDark ? '#d8e3f0' : '#173055' },
+    },
+    legend: {
+      top: 0,
+      textStyle: { color: isDark ? '#cbd5e1' : '#475569' },
+    },
+    xAxis: {
+      axisLine: { lineStyle: { color: isDark ? '#334155' : '#cbd5e1' } },
+      axisLabel: { color: isDark ? '#94a3b8' : '#64748b' },
+      splitLine: { lineStyle: { color: isDark ? '#1e293b' : '#e2e8f0' } },
+    },
+    yAxis: {
+      axisLine: { lineStyle: { color: isDark ? '#334155' : '#cbd5e1' } },
+      axisLabel: { color: isDark ? '#94a3b8' : '#64748b' },
+      splitLine: { lineStyle: { color: isDark ? '#1e293b' : '#e2e8f0' } },
+    },
+  };
+}
+
+function rankingOption(title: string, data: DashboardAnalytics['projectRanking'], isDark: boolean): EChartsOption {
+  const sorted = [...data].reverse();
+  return {
+    ...baseChartOption(isDark),
+    tooltip: { trigger: 'axis' },
+    grid: { top: 16, right: 24, bottom: 24, left: 92 },
+    xAxis: { type: 'value' },
+    yAxis: { type: 'category', data: sorted.map((item) => item.label) },
+    series: [{
+      name: title,
+      type: 'bar',
+      data: sorted.map((item, index) => ({
+        value: item.value,
+        itemStyle: { color: chartColors(isDark)[index % chartColors(isDark).length] },
+      })),
+      barWidth: 14,
+      itemStyle: { borderRadius: [0, 8, 8, 0] },
+    }],
+  };
+}
+
+function roseOption(title: string, data: DashboardAnalytics['durationDistribution'], isDark: boolean): EChartsOption {
+  return {
+    ...baseChartOption(isDark),
+    tooltip: { trigger: 'item' },
+    legend: { bottom: 0, textStyle: { color: isDark ? '#cbd5e1' : '#475569' } },
+    series: [{
+      name: title,
+      type: 'pie',
+      roseType: 'radius',
+      radius: ['18%', '72%'],
+      center: ['50%', '44%'],
+      label: { color: isDark ? '#d8e3f0' : '#173055' },
+      data: data.map((item, index) => ({
+        name: item.label,
+        value: item.value,
+        itemStyle: { color: statusColor(item.label, isDark) || chartColors(isDark)[index % chartColors(isDark).length] },
+      })),
+    }],
+  };
+}
+
+function polarRankingOption(title: string, data: DashboardAnalytics['pipelineRanking'], isDark: boolean): EChartsOption {
+  const items = data.slice(0, 6);
+  return {
+    ...baseChartOption(isDark),
+    tooltip: { trigger: 'item' },
+    angleAxis: { type: 'category', data: items.map((item) => item.label), axisLabel: { color: isDark ? '#94a3b8' : '#64748b' } },
+    radiusAxis: { axisLabel: { color: isDark ? '#94a3b8' : '#64748b' } },
+    polar: { radius: ['12%', '72%'] },
+    series: [{
+      name: title,
+      type: 'bar',
+      coordinateSystem: 'polar',
+      data: items.map((item, index) => ({
+        value: item.value,
+        itemStyle: { color: chartColors(isDark)[index % chartColors(isDark).length] },
+      })),
+      roundCap: true,
+    }],
+    legend: { show: false },
+  };
+}
+
+function bubbleOption(title: string, data: DashboardAnalytics['pipelineRanking'], isDark: boolean): EChartsOption {
+  const items = data.slice(0, 12);
+  return {
+    ...baseChartOption(isDark),
+    tooltip: {
+      trigger: 'item',
+      formatter: (params: any) => `${params.name}<br/>${title}：${params.value?.[2] || 0}`,
+    },
+    grid: { top: 20, right: 24, bottom: 34, left: 44 },
+    xAxis: { type: 'value', show: false, min: 0, max: 100 },
+    yAxis: { type: 'value', show: false, min: 0, max: 100 },
+    series: [{
+      name: title,
+      type: 'scatter',
+      data: items.map((item, index) => ({
+        name: item.label,
+        value: [
+          12 + (index % 4) * 24,
+          78 - Math.floor(index / 4) * 28,
+          item.value,
+        ],
+        symbolSize: Math.max(18, Math.min(58, item.value * 8 + 14)),
+        itemStyle: {
+          color: chartColors(isDark)[index % chartColors(isDark).length],
+          opacity: 0.82,
+        },
+        label: {
+          show: true,
+          formatter: item.label.length > 6 ? `${item.label.slice(0, 6)}...` : item.label,
+          color: isDark ? '#e2e8f0' : '#173055',
+          fontSize: 11,
+        },
+      })),
+    }],
+  };
 }
 
 export default function DashboardConsole({
   title,
   description,
   loading,
-  resourceLoading = false,
-  stats,
-  trend,
-  latestDeployments,
-  attentionDeployments,
-  services,
-  resources = [],
+  analytics,
+  query,
+  onQueryChange,
   isAdmin,
-  detailBasePath,
-  listPath,
-  backFrom,
-  backLabel,
-  idPrefix,
-  tick,
 }: DashboardConsoleProps) {
-  const navigate = useNavigate();
-  const trendAxisMax = Math.max(...trend.map((item) => item.total), 1);
-  const totalTrendPoints = buildTrendPoints(trend.map((item) => item.total), 560, 220, 18, trendAxisMax);
-  const successTrendPoints = buildTrendPoints(trend.map((item) => item.success), 560, 220, 18, trendAxisMax);
-  const totalTrendPath = buildTrendSmoothPath(totalTrendPoints);
-  const successTrendPath = buildTrendSmoothPath(successTrendPoints);
-  const totalTrendArea = buildTrendAreaPath(totalTrendPoints, 220);
-  const successTrendArea = buildTrendAreaPath(successTrendPoints, 220);
+  const { isDark } = useAppTheme();
+  const data = analytics || emptyAnalytics();
+  const [dimensionKey, setDimensionKey] = useState<DimensionKey>('pipeline');
+  const dimensionOptions = useMemo<Array<{ label: string; value: DimensionKey }>>(() => {
+    const options: Array<{ label: string; value: DimensionKey }> = [
+      { label: '流水线', value: 'pipeline' },
+      { label: '项目', value: 'project' },
+      { label: '模板类型', value: 'templateType' },
+    ];
+    if (isAdmin) {
+      options.push({ label: '触发人', value: 'trigger' });
+      options.push({ label: '目标主机', value: 'host' });
+    }
+    return options;
+  }, [isAdmin]);
+  const dimensionConfig = useMemo(() => {
+    const configs: Record<DimensionKey, { title: string; data: DashboardAnalytics['projectRanking'] }> = {
+      project: { title: '项目', data: data.projectRanking },
+      pipeline: { title: '流水线', data: data.pipelineRanking },
+      trigger: { title: '触发人', data: data.triggerRanking },
+      templateType: { title: '模板类型', data: data.templateTypeDistribution },
+      host: { title: '目标主机', data: data.hostDistribution },
+    };
+    return configs[dimensionKey];
+  }, [data.hostDistribution, data.pipelineRanking, data.projectRanking, data.templateTypeDistribution, data.triggerRanking, dimensionKey]);
+  const dimensionCharts = useMemo(() => [
+    { key: 'bar', title: `${dimensionConfig.title}排行`, description: '按部署次数排序，适合精确对比。', height: 360, option: rankingOption(`${dimensionConfig.title}部署次数`, dimensionConfig.data, isDark) },
+    { key: 'rose', title: `${dimensionConfig.title}占比`, description: '查看不同项在当前范围内的占比。', height: 360, option: roseOption(`${dimensionConfig.title}占比`, dimensionConfig.data, isDark) },
+    { key: 'polar', title: `${dimensionConfig.title}热度`, description: '用环形热度看头部集中程度。', height: 360, option: polarRankingOption(`${dimensionConfig.title}热度`, dimensionConfig.data, isDark) },
+    { key: 'bubble', title: `${dimensionConfig.title}规模分布`, description: '气泡大小表示部署次数，适合快速找出大头。', height: 360, option: bubbleOption(`${dimensionConfig.title}部署次数`, dimensionConfig.data, isDark) },
+  ], [dimensionConfig, isDark]);
 
-  const formatMemoryMb = (value?: number | null) => {
-    if (value == null) return '-';
-    if (value >= 1024) return `${(value / 1024).toFixed(value >= 10240 ? 0 : 1)} GB`;
-    return `${value} MB`;
-  };
+  const trendOption = useMemo<EChartsOption>(() => {
+    const labels = Array.from(new Set(data.trend.map((item) => item.label)));
+    const categories = Array.from(new Set(data.trend.map((item) => item.category)));
+    return {
+      ...baseChartOption(isDark),
+      xAxis: { type: 'category', boundaryGap: false, data: labels },
+      yAxis: { type: 'value' },
+      series: categories.map((category) => ({
+        name: category,
+        type: 'line',
+        smooth: true,
+        symbolSize: 7,
+        lineStyle: { width: category === '部署总数' ? 3 : 2, color: statusColor(category, isDark) },
+        itemStyle: { color: statusColor(category, isDark) },
+        areaStyle: { opacity: category === '部署总数' ? 0.18 : 0.08 },
+        data: labels.map((label) => data.trend.find((item) => item.label === label && item.category === category)?.value || 0),
+      })),
+    };
+  }, [data.trend, isDark]);
 
-  const getUsageColor = (value?: number | null) => {
-    const percent = typeof value === 'number' ? value : 0;
-    if (percent < 20) return '#166534';
-    if (percent < 40) return '#16a34a';
-    if (percent < 65) return '#eab308';
-    if (percent < 85) return '#f97316';
-    return '#dc2626';
-  };
+  const statusOption = useMemo<EChartsOption>(() => ({
+    ...baseChartOption(isDark),
+    tooltip: { trigger: 'item' },
+    legend: { bottom: 0, textStyle: { color: isDark ? '#cbd5e1' : '#475569' } },
+    series: [{
+      type: 'pie',
+      radius: ['48%', '72%'],
+      center: ['50%', '45%'],
+      label: { color: isDark ? '#d8e3f0' : '#173055' },
+      data: data.statusDistribution.map((item) => ({
+        name: item.label,
+        value: item.value,
+        itemStyle: { color: statusColor(item.label, isDark) },
+      })),
+    }],
+  }), [data.statusDistribution, isDark]);
 
-  const statItems = [
-    { key: 'projects', title: '项目数', value: stats.projects, prefix: <FolderOpenOutlined style={{ color: '#2563eb' }} /> },
-    { key: 'hosts', title: '主机数', value: stats.hosts, prefix: <CloudServerOutlined style={{ color: '#0f766e' }} /> },
-    { key: 'templates', title: '模板数', value: stats.templates, prefix: <FileTextOutlined style={{ color: '#7c3aed' }} /> },
-    { key: 'pipelines', title: '流水线数', value: stats.pipelines, prefix: <DeploymentUnitOutlined style={{ color: '#ea580c' }} /> },
-    { key: 'deployments', title: '部署记录', value: stats.deployments, prefix: <ProfileOutlined style={{ color: '#dc2626' }} /> },
-    { key: 'services', title: '服务数', value: stats.services, prefix: <RadarChartOutlined style={{ color: '#0891b2' }} /> },
-    { key: 'users', title: '用户数', value: stats.users, prefix: <TeamOutlined style={{ color: '#ca8a04' }} /> },
-  ];
-
-  const renderDeploymentList = (items: DashboardDeploymentSummary[], emptyText: string) => {
-    if (items.length === 0) return <Empty description={emptyText} />;
-    return (
-      <div className="dashboard-recent-list">
-        {items.map((item) => (
-          <div
-            key={item.id}
-            className="dashboard-recent-item dashboard-recent-item--clickable"
-            onClick={() => navigate(`${detailBasePath}/${item.id}`, { state: { from: backFrom, backLabel } })}
-          >
-            <div>
-              <div className="dashboard-recent-title">
-                <span>{item.pipelineName || `部署 #${item.id}`}</span>
-                <StatusTag status={item.status ?? undefined} />
-              </div>
-              <div className="dashboard-recent-meta">
-                {item.projectName || '-'} · {item.branchName || '-'}
-                {item.triggeredByDisplayName || item.triggeredBy ? ` · ${item.triggeredByDisplayName || item.triggeredBy}` : ''}
-              </div>
-              <div className="dashboard-recent-timeline">
-                <div>{formatDateTime(item.startedAt || item.createdAt)} ~ {formatDateTime(item.finishedAt)}</div>
-                <div>{formatDeploymentElapsed(item, tick)}</div>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    );
-  };
+  const recentOption = useMemo<EChartsOption>(() => ({
+    ...baseChartOption(isDark),
+    tooltip: {
+      trigger: 'item',
+      formatter: (params: any) => {
+        const item = data.recentDeployments[params.dataIndex];
+        if (!item) return '';
+        return `${item.time}<br/>${item.pipelineName || '-'}<br/>${item.projectName || '-'}<br/>耗时 ${item.durationSeconds || 0} 秒`;
+      },
+    },
+    grid: { top: 24, right: 24, bottom: 42, left: 110 },
+    xAxis: { type: 'category', data: data.recentDeployments.map((item) => item.time) },
+    yAxis: { type: 'category', data: Array.from(new Set(data.recentDeployments.map((item) => item.axisName))) },
+    series: [{
+      name: '最近部署',
+      type: 'scatter',
+      symbolSize: (value: any) => Math.max(8, Math.min(24, Number(value?.[2] || 0) / 20 + 8)),
+      data: data.recentDeployments.map((item) => ({
+        value: [item.time, item.axisName, item.durationSeconds || 1, item.status],
+        itemStyle: { color: statusColor(item.status === 'SUCCESS' ? '成功' : item.status === 'FAILED' ? '失败' : item.status === 'STOPPED' ? '已停止' : item.status === 'PENDING' ? '等待中' : '运行中', isDark) },
+      })),
+    }],
+  }), [data.recentDeployments, isDark]);
 
   return (
     <>
-      <PageHeaderBar title={title} description={description} />
+      <PageHeaderBar
+        title={title}
+        description={description}
+        extra={(
+          <Space wrap>
+            <Select
+              className="min-w-28"
+              value={query.range || '30d'}
+              options={RANGE_OPTIONS}
+              onChange={(range) => onQueryChange({ ...query, range })}
+            />
+            <Select
+              className="min-w-24"
+              value={query.granularity || 'day'}
+              options={GRANULARITY_OPTIONS}
+              onChange={(granularity) => onQueryChange({ ...query, granularity })}
+            />
+            <Select
+              allowClear
+              className="min-w-28"
+              placeholder="状态"
+              value={query.status}
+              options={STATUS_OPTIONS}
+              onChange={(status) => onQueryChange({ ...query, status })}
+            />
+            {isAdmin ? <RangePicker disabled className="hidden" /> : null}
+          </Space>
+        )}
+      />
       <div className="app-page-scroll">
-        <div className="dashboard-stat-grid">
-          {statItems.map((item) => (
-            <Card key={item.key} className="app-card dashboard-stat-card" loading={loading}>
-              <Statistic title={item.title} value={item.value} prefix={item.prefix} />
+        <div className="dashboard-metric-grid">
+          {data.metrics.map((item, index) => (
+            <Card key={item.key} className="app-card dashboard-metric-card" loading={loading}>
+              <div className="dashboard-metric-icon">
+                {index % 4 === 0 ? <DeploymentUnitOutlined /> : index % 4 === 1 ? <ThunderboltOutlined /> : index % 4 === 2 ? <ProfileOutlined /> : <AppstoreOutlined />}
+              </div>
+              <div className="dashboard-metric-label">{item.label}</div>
+              <div className="dashboard-metric-value">
+                {item.value}<span>{item.suffix || ''}</span>
+              </div>
+              {item.trendLabel ? <div className="dashboard-metric-help">{item.trendLabel}</div> : null}
             </Card>
           ))}
         </div>
 
-        <div style={{ height: 16 }} />
-
-        {isAdmin ? (
-          <>
-            <Row gutter={[16, 16]}>
-              <Col xs={24}>
-                <Card className="app-card dashboard-panel-card" title={`主机资源概览 · ${stats.hosts} 台`} loading={loading}>
-                  {resources.length === 0 ? (
-                    <Empty description="当前没有主机资源数据。" />
-                  ) : (
-                    <div className="dashboard-host-list">
-                      {resources.map((resource) => (
-                        <div key={resource.hostId} className="dashboard-recent-item dashboard-host-item">
-                          <div className="min-w-0 flex-1">
-                            <div className="dashboard-recent-title">
-                              <span>{resource.hostName}</span>
-                            </div>
-                            {resource.loading ? (
-                              <div className="mt-2 space-y-3">
-                                <Skeleton.Input active block size="small" style={{ height: 14 }} />
-                                <Skeleton.Input active block size="small" style={{ height: 14 }} />
-                                <Skeleton.Input active block size="small" style={{ height: 14 }} />
-                                <Skeleton.Input active block size="small" style={{ height: 14 }} />
-                              </div>
-                            ) : (
-                              <>
-                                <div className="dashboard-recent-meta">
-                                  {resource.osType || '-'} · CPU {resource.cpuCores ?? '-'} 核 · 负载 {resource.loadAverage ?? '-'} · 工作空间 {resource.workspaceRoot || '-'}
-                                </div>
-                                <div className="mt-3">
-                                  <div className="mb-1 text-xs text-slate-500">CPU 使用率</div>
-                                  <Progress percent={resource.cpuUsagePercent ?? 0} size="small" strokeColor={getUsageColor(resource.cpuUsagePercent)} />
-                                  <div className="mt-1 text-xs text-slate-500">CPU {resource.cpuUsagePercent ?? '-'}%</div>
-                                </div>
-                                <div className="mt-3">
-                                  <div className="mb-1 text-xs text-slate-500">内存使用率</div>
-                                  <Progress percent={resource.memoryUsagePercent ?? 0} size="small" strokeColor={getUsageColor(resource.memoryUsagePercent)} />
-                                  <div className="mt-1 text-xs text-slate-500">
-                                    {formatMemoryMb(resource.memoryUsedMb)} / {formatMemoryMb(resource.memoryTotalMb)}
-                                  </div>
-                                </div>
-                                <div className="mt-2">
-                                  <div className="mb-1 text-xs text-slate-500">磁盘使用率</div>
-                                  <Progress percent={resource.diskUsagePercent ?? 0} size="small" strokeColor={getUsageColor(resource.diskUsagePercent)} />
-                                  <div className="mt-1 text-xs text-slate-500">
-                                    {resource.diskUsedGb ?? '-'} / {resource.diskTotalGb ?? '-'} GB
-                                  </div>
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </Card>
-              </Col>
-            </Row>
-            <div style={{ height: 16 }} />
-          </>
-        ) : null}
-
-        <Row gutter={[16, 16]}>
-          <Col xs={24} xl={6}>
-            <div className="flex flex-col gap-4">
-              <Card className="app-card dashboard-soft-card" title="状态分布" loading={loading}>
-                <div className="dashboard-circle-wrap">
-                  <Progress
-                    type="circle"
-                    percent={stats.successRate}
-                    strokeColor="#16a34a"
-                    trailColor="#dbe5f0"
-                    format={() => `${stats.successRate}%`}
-                  />
-                  <div className="dashboard-status-legend">
-                    <div className="dashboard-status-row">
-                      <span>部署中</span>
-                      <strong>{stats.runningDeployments}</strong>
-                    </div>
-                    <div className="dashboard-status-row">
-                      <span>失败</span>
-                      <strong>{stats.failedDeployments}</strong>
-                    </div>
-                    <div className="dashboard-status-row">
-                      <span>总记录</span>
-                      <strong>{stats.deployments}</strong>
-                    </div>
+        <Tabs
+          className="dashboard-chart-tabs"
+          defaultActiveKey="overview"
+          items={[
+            {
+              key: 'overview',
+              label: '常用看板',
+              children: (
+                <>
+                  <div className="dashboard-chart-grid dashboard-chart-grid--main">
+                    <DashboardChartCard title="部署趋势" description="按时间粒度统计部署总数、成功、失败和运行中" loading={loading} empty={data.trend.length === 0} height={340} option={trendOption} />
+                    <DashboardChartCard title="状态分布" description="当前筛选范围内的部署状态占比" loading={loading} empty={data.statusDistribution.length === 0} height={340} option={statusOption} />
                   </div>
-                </div>
-              </Card>
-              <Card
-                className="app-card dashboard-soft-card"
-                title="近 7 天部署趋势"
-                extra={(
-                  <div className="dashboard-line-legend dashboard-line-legend--header">
-                    <span><i className="dashboard-line-legend-dot dashboard-line-legend-dot--total" />总部署</span>
-                    <span><i className="dashboard-line-legend-dot dashboard-line-legend-dot--success" />成功部署</span>
+                  <div className="dashboard-chart-grid dashboard-chart-grid--main">
+                    <DashboardChartCard title="最近部署分布" description="以时间和流水线展示最近部署，点大小表示耗时" loading={loading} empty={data.recentDeployments.length === 0} height={340} option={recentOption} />
+                    <DashboardChartCard title="部署耗时分布" description="按执行耗时区间统计，玫瑰图更容易看出耗时集中区间" loading={loading} empty={data.durationDistribution.length === 0} height={340} option={roseOption('部署次数', data.durationDistribution, isDark)} />
                   </div>
-                )}
-                loading={loading}
-              >
-                <div className="dashboard-line-chart">
-                  <svg viewBox="0 0 560 220" className="dashboard-line-svg" preserveAspectRatio="xMidYMid meet">
-                    <defs>
-                      <linearGradient id={`${idPrefix}-total-area`} x1="0" x2="0" y1="0" y2="1">
-                        <stop offset="0%" stopColor="#2563eb" stopOpacity="0.24" />
-                        <stop offset="100%" stopColor="#2563eb" stopOpacity="0.02" />
-                      </linearGradient>
-                      <linearGradient id={`${idPrefix}-success-area`} x1="0" x2="0" y1="0" y2="1">
-                        <stop offset="0%" stopColor="#16a34a" stopOpacity="0.22" />
-                        <stop offset="100%" stopColor="#16a34a" stopOpacity="0.02" />
-                      </linearGradient>
-                    </defs>
-                    {[48, 96, 144, 192].map((y) => (
-                      <line key={y} className="dashboard-grid-line" x1="18" x2="542" y1={y} y2={y} />
-                    ))}
-                    <path className="dashboard-area" fill={`url(#${idPrefix}-total-area)`} d={totalTrendArea} />
-                    <path className="dashboard-area" fill={`url(#${idPrefix}-success-area)`} d={successTrendArea} />
-                    <path className="dashboard-line dashboard-line--total" d={totalTrendPath} />
-                    <path className="dashboard-line dashboard-line--success" d={successTrendPath} />
-                    {trend.map((item, index) => {
-                      const totalPoint = totalTrendPoints[index];
-                      const successPoint = successTrendPoints[index];
-                      if (!totalPoint) return null;
-                      return (
-                        <g key={item.key}>
-                          <circle className="dashboard-line-dot-svg dashboard-line-dot-svg--total" cx={totalPoint.x} cy={totalPoint.y} r="4" />
-                          {successPoint ? <circle className="dashboard-line-dot-svg dashboard-line-dot-svg--success" cx={successPoint.x} cy={successPoint.y} r="4" /> : null}
-                          <text className="dashboard-line-value-svg" x={totalPoint.x} y={Math.max(totalPoint.y - 12, 14)} textAnchor="middle">
-                            {item.total}
-                          </text>
-                        </g>
-                      );
-                    })}
-                  </svg>
-                  <div className="dashboard-line-overlay">
-                    {trend.map((item, index) => {
-                      const totalPoint = totalTrendPoints[index];
-                      return (
-                        <Tooltip key={item.key} title={`${item.label}｜总部署 ${item.total} 次｜成功 ${item.success} 次`} placement="top">
-                          <button
-                            type="button"
-                            className="dashboard-line-hotspot"
-                            style={{ left: `calc(${((totalPoint?.x || 0) / 560) * 100}% - 20px)` }}
-                            aria-label={`${item.label} 总部署 ${item.total} 次，成功 ${item.success} 次`}
-                          />
-                        </Tooltip>
-                      );
-                    })}
+                  <div className="dashboard-chart-grid dashboard-chart-grid--main">
+                    <DashboardChartCard title="流水线热度" description="最近范围内使用最频繁的流水线" loading={loading} empty={data.pipelineRanking.length === 0} height={340} option={polarRankingOption('流水线热度', data.pipelineRanking, isDark)} />
+                    <DashboardChartCard title="项目部署排行" loading={loading} empty={data.projectRanking.length === 0} height={340} option={rankingOption('项目部署', data.projectRanking, isDark)} />
                   </div>
-                </div>
-                <div className="dashboard-line-labels">
-                  {trend.map((item) => (
-                    <div key={item.key} className="dashboard-line-label-item">
-                      <div className="dashboard-line-label">{item.label}</div>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            </div>
-          </Col>
-          <Col xs={24} xl={18}>
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-              <Card className="app-card dashboard-panel-card" title={`服务概况 · 运行中 ${stats.runningServices}`} loading={loading}>
-                {services.length === 0 ? (
-                  <Empty description="当前没有受管服务。" />
-                ) : (
-                  <div className="dashboard-recent-list">
-                    {services.slice(0, 6).map((service) => (
-                      <div key={service.id} className="dashboard-recent-item">
-                        <div>
-                          <div className="dashboard-recent-title">
-                            <span>{service.serviceName || `服务 #${service.id}`}</span>
-                            <StatusTag status={(service.status as never) || undefined} runningLabel="运行中" />
-                          </div>
-                          <div className="dashboard-recent-meta">
-                            {service.pipelineName || '-'} · {service.targetHostName || '本机'}
-                          </div>
-                          <div className="dashboard-recent-timeline">
-                            <div>{formatDateTime(service.updatedAt)}</div>
-                            {isAdmin ? <div>成功率 {stats.successRate}%</div> : null}
-                          </div>
-                        </div>
-                      </div>
+                </>
+              ),
+            },
+            {
+              key: 'dimensions',
+              label: '维度分析',
+              children: (
+                <>
+                  <div className="dashboard-dimension-toolbar">
+                    <Space wrap>
+                      <Segmented
+                        value={dimensionKey}
+                        options={dimensionOptions}
+                        onChange={(value) => setDimensionKey(value as DimensionKey)}
+                      />
+                    </Space>
+                  </div>
+                  <div className="dashboard-chart-grid dashboard-chart-grid--two">
+                    {dimensionCharts.map((item) => (
+                      <DashboardChartCard
+                        key={item.key}
+                        title={item.title}
+                        chartKey={`dimension-${dimensionKey}-${item.key}`}
+                        description={item.description}
+                        loading={loading}
+                        empty={dimensionConfig.data.length === 0}
+                        height={item.height}
+                        option={item.option}
+                      />
                     ))}
                   </div>
-                )}
-              </Card>
-              <Card className="app-card dashboard-panel-card" title="最近部署" extra={<a onClick={() => navigate(listPath)}>查看全部</a>} loading={loading}>
-                {renderDeploymentList(latestDeployments, '还没有部署记录。')}
-              </Card>
-              <Card className="app-card dashboard-panel-card" title="部署异常" extra={<a onClick={() => navigate(listPath)}>查看全部</a>} loading={loading}>
-                {renderDeploymentList(attentionDeployments, '当前没有需要优先处理的部署。')}
-              </Card>
-            </div>
-          </Col>
-        </Row>
+                </>
+              ),
+            },
+          ]}
+        />
       </div>
     </>
   );

@@ -205,12 +205,12 @@ export default function UserAdminPage() {
               title: '操作',
               render: (_, record) => (
                 <Space>
-                  <Button type="link" onClick={() => openEdit(record)}>编辑</Button>
+                  <Button size="small" onClick={() => openEdit(record)}>编辑</Button>
                   <Popconfirm title={`确认将 ${record.displayName} 的密码重置为系统默认密码吗？`} onConfirm={() => resetPassword(record)}>
-                    <Button type="link">重置密码</Button>
+                    <Button size="small">重置密码</Button>
                   </Popconfirm>
                   <Popconfirm title="确认删除这个用户吗？" onConfirm={() => removeUser(record.id)}>
-                    <Button type="link" danger>删除</Button>
+                    <Button size="small" danger>删除</Button>
                   </Popconfirm>
                 </Space>
               ),

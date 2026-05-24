@@ -30,6 +30,20 @@ const TAG_COLOR_STOPS: Array<[number, number, number]> = [
   [239, 68, 68],
 ];
 
+const DARK_TAG_COLOR_STOPS: Array<[number, number, number]> = [
+  [248, 113, 113],
+  [251, 146, 60],
+  [250, 204, 21],
+  [163, 230, 53],
+  [52, 211, 153],
+  [34, 211, 238],
+  [96, 165, 250],
+  [129, 140, 248],
+  [192, 132, 252],
+  [244, 114, 182],
+  [248, 113, 113],
+];
+
 function interpolate(start: number, end: number, ratio: number) {
   return Math.round(start + (end - start) * ratio);
 }
@@ -38,13 +52,13 @@ function rgb([red, green, blue]: [number, number, number]) {
   return `rgb(${red}, ${green}, ${blue})`;
 }
 
-function colorAtRatio(ratio: number) {
-  const scaled = ratio * (TAG_COLOR_STOPS.length - 1);
+function colorAtRatio(ratio: number, stops = TAG_COLOR_STOPS) {
+  const scaled = ratio * (stops.length - 1);
   const leftIndex = Math.floor(scaled);
-  const rightIndex = Math.min(leftIndex + 1, TAG_COLOR_STOPS.length - 1);
+  const rightIndex = Math.min(leftIndex + 1, stops.length - 1);
   const localRatio = scaled - leftIndex;
-  const start = TAG_COLOR_STOPS[leftIndex];
-  const end = TAG_COLOR_STOPS[rightIndex];
+  const start = stops[leftIndex];
+  const end = stops[rightIndex];
   return rgb([
     interpolate(start[0], end[0], localRatio),
     interpolate(start[1], end[1], localRatio),
@@ -75,6 +89,12 @@ export function getStableTagColor(tag: string) {
   const mixed = mixHash(hashTag(tag));
   const ratio = mixed / 0xffffffff;
   return colorAtRatio(ratio);
+}
+
+export function getStableTagDarkColor(tag: string) {
+  const mixed = mixHash(hashTag(tag));
+  const ratio = mixed / 0xffffffff;
+  return colorAtRatio(ratio, DARK_TAG_COLOR_STOPS);
 }
 
 export function sortTagNames(tags: string[]) {
