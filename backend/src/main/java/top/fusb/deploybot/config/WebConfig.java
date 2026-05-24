@@ -1,5 +1,7 @@
 package top.fusb.deploybot.config;
 
+import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
@@ -9,17 +11,11 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import java.nio.file.Path;
 
 @Configuration
+@RequiredArgsConstructor
 public class WebConfig implements WebMvcConfigurer {
     private final AuthInterceptor authInterceptor;
-    private final String workspaceRoot;
-
-    public WebConfig(
-            AuthInterceptor authInterceptor,
-            @org.springframework.beans.factory.annotation.Value("${deploybot.workspace-root:./runtime}") String workspaceRoot
-    ) {
-        this.authInterceptor = authInterceptor;
-        this.workspaceRoot = workspaceRoot;
-    }
+    @Value("${deploybot.workspace-root:./runtime}")
+    private String workspaceRoot;
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {

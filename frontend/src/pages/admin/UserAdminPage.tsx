@@ -124,7 +124,7 @@ export default function UserAdminPage() {
       />
       <div className="app-page-scroll">
       <Card className="app-card">
-        <div className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-4">
+        <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
           <Input
             value={keyword}
             placeholder="搜索用户名 / 显示名称"
@@ -225,7 +225,7 @@ export default function UserAdminPage() {
         title={editingId ? '编辑用户' : '新建用户'}
         onCancel={() => setModalOpen(false)}
         onOk={() => saveUser().catch(() => undefined)}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form layout="vertical">
           <Form.Item label="用户名" required>

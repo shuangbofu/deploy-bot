@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Card, Col, DatePicker, Input, Popconfirm, Row, Select, Space, Table, message } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { deploymentsApi } from '../../api/deployments';
@@ -82,7 +82,7 @@ export default function UserDeploymentRecordsPage() {
       <div className="app-page-scroll">
       <Card className="app-card">
         <Row gutter={[12, 12]} className="mb-4">
-          <Col xs={24} md={12} xl={5}>
+          <Col xs={24} md={12} lg={5}>
             <Select
               className="w-full"
               showSearch
@@ -97,7 +97,7 @@ export default function UserDeploymentRecordsPage() {
               }}
             />
           </Col>
-          <Col xs={24} md={12} xl={5}>
+          <Col xs={24} md={12} lg={5}>
             <Select
               className="w-full"
               showSearch
@@ -112,7 +112,7 @@ export default function UserDeploymentRecordsPage() {
               }}
             />
           </Col>
-          <Col xs={24} md={12} xl={4}>
+          <Col xs={24} md={12} lg={4}>
             <Input
               value={filters.triggeredBy}
               placeholder="筛选触发人"
@@ -122,7 +122,7 @@ export default function UserDeploymentRecordsPage() {
               }}
             />
           </Col>
-          <Col xs={24} md={12} xl={4}>
+          <Col xs={24} md={12} lg={4}>
             <Select
               className="w-full"
               showSearch
@@ -137,7 +137,7 @@ export default function UserDeploymentRecordsPage() {
               }}
             />
           </Col>
-          <Col xs={24} xl={6}>
+          <Col xs={24} md={12} lg={6}>
             <DatePicker.RangePicker
               className="w-full"
               value={filters.timeRange}

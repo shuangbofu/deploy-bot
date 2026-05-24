@@ -7,6 +7,7 @@ export const notificationEventTypeOptions: Array<{ label: string; value: Notific
 
 export const notificationTemplateVariableOptions = [
   { token: '{{pipelineName}}', label: '流水线名称' },
+  { token: '{{serviceName}}', label: '服务名' },
   { token: '{{projectName}}', label: '项目名称' },
   { token: '{{branch}}', label: '部署分支' },
   { token: '{{eventLabel}}', label: '通知结果' },

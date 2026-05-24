@@ -1,7 +1,7 @@
 package top.fusb.deploybot.notification.sender;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
+import top.fusb.deploybot.kit.JsonKit;
 import top.fusb.deploybot.notification.model.NotificationChannelEntity;
 import top.fusb.deploybot.notification.model.NotificationChannelType;
 import top.fusb.deploybot.notification.model.NotificationTemplateMode;
@@ -14,19 +14,14 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.LinkedHashMap;
+import java.util.Base64;
 import java.util.Map;
 
 @Component
 public class FeishuNotificationSender implements NotificationSender {
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
-    private final ObjectMapper objectMapper;
-
-    public FeishuNotificationSender(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
-    }
 
     @Override
     public NotificationChannelType getType() {
@@ -43,7 +38,8 @@ public class FeishuNotificationSender implements NotificationSender {
         Map<String, Object> payload = new LinkedHashMap<>();
         if (message.mode() == NotificationTemplateMode.FEISHU_CARD) {
             payload.put("msg_type", "interactive");
-            payload.put("card", objectMapper.readValue(message.content(), Map.class));
+            payload.put("card", JsonKit.read(message.content(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {
+            }));
         } else {
             payload.put("msg_type", "text");
             payload.put("content", Map.of("text", message.content()));
@@ -55,13 +51,14 @@ public class FeishuNotificationSender implements NotificationSender {
         }
         HttpRequest request = HttpRequest.newBuilder(URI.create(webhookUrl.trim()))
                 .header("Content-Type", "application/json; charset=UTF-8")
-                .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload), StandardCharsets.UTF_8))
+                .POST(HttpRequest.BodyPublishers.ofString(JsonKit.writeCompact(payload), StandardCharsets.UTF_8))
                 .build();
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
             throw new IllegalStateException("飞书通知发送失败，HTTP 状态码：" + response.statusCode() + "，响应：" + response.body());
         }
-        Map<String, Object> body = objectMapper.readValue(response.body(), Map.class);
+        Map<String, Object> body = JsonKit.read(response.body(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {
+        });
         Object code = body.get("code");
         if (code instanceof Number number && number.intValue() != 0) {
             throw new IllegalStateException("飞书通知发送失败，code=" + number + "，msg=" + body.get("msg"));

@@ -1,5 +1,6 @@
 package top.fusb.deploybot.service;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import top.fusb.deploybot.kit.TextKit;
 import top.fusb.deploybot.dto.MavenSettingsRequest;
@@ -14,15 +15,11 @@ import top.fusb.deploybot.repo.RuntimeEnvironmentRepository;
 import java.util.List;
 
 @Service
+@RequiredArgsConstructor
 public class MavenSettingsService {
 
     private final MavenSettingsRepository repository;
     private final RuntimeEnvironmentRepository runtimeEnvironmentRepository;
-
-    public MavenSettingsService(MavenSettingsRepository repository, RuntimeEnvironmentRepository runtimeEnvironmentRepository) {
-        this.repository = repository;
-        this.runtimeEnvironmentRepository = runtimeEnvironmentRepository;
-    }
 
     public List<MavenSettingsEntity> findAll(Long runtimeEnvironmentId) {
         if (runtimeEnvironmentId == null) {

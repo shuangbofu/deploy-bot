@@ -6,6 +6,7 @@ import top.fusb.deploybot.model.TemplateEntity;
 import top.fusb.deploybot.security.AdminOnly;
 import top.fusb.deploybot.service.TemplateService;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -21,13 +22,10 @@ import java.util.List;
 @AdminOnly
 @RestController
 @RequestMapping("/api/templates")
+@RequiredArgsConstructor
 public class TemplateController {
 
     private final TemplateService service;
-
-    public TemplateController(TemplateService service) {
-        this.service = service;
-    }
 
     /**
      * 列出全部模板。
@@ -43,9 +41,10 @@ public class TemplateController {
             @RequestParam(defaultValue = "10") int pageSize,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String templateType,
+            @RequestParam(required = false) String pluginId,
             @RequestParam(required = false) Boolean monitorProcess
     ) {
-        return service.findPage(page, pageSize, keyword, templateType, monitorProcess);
+        return service.findPage(page, pageSize, keyword, templateType, pluginId, monitorProcess);
     }
 
     /**

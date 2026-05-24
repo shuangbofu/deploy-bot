@@ -1,5 +1,6 @@
 package top.fusb.deploybot.config;
 
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -16,6 +17,7 @@ import java.time.LocalDateTime;
  * 初始化默认管理员账号。
  */
 @Component
+@RequiredArgsConstructor
 public class UserBootstrap {
     private static final Logger log = LoggerFactory.getLogger(UserBootstrap.class);
     private static final String DEFAULT_ADMIN_USERNAME = "admin";
@@ -24,11 +26,6 @@ public class UserBootstrap {
 
     private final UserRepository userRepository;
     private final AuthService authService;
-
-    public UserBootstrap(UserRepository userRepository, AuthService authService) {
-        this.userRepository = userRepository;
-        this.authService = authService;
-    }
 
     @EventListener(ApplicationReadyEvent.class)
     public void bootstrapAdmin() {

@@ -1,5 +1,6 @@
 package top.fusb.deploybot.notification.controller;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -16,13 +17,10 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/notification-records")
+@RequiredArgsConstructor
 public class NotificationDeliveryRecordController {
 
     private final NotificationDeliveryRecordService service;
-
-    public NotificationDeliveryRecordController(NotificationDeliveryRecordService service) {
-        this.service = service;
-    }
 
     @AdminOnly
     @GetMapping

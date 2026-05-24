@@ -2,25 +2,21 @@ package top.fusb.deploybot.service;
 
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorSubCode;
+import top.fusb.deploybot.kit.ProcessKit;
 import top.fusb.deploybot.model.SystemSettingsEntity;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
 public class SystemSshKeyService {
 
     private final SystemSettingsService systemSettingsService;
-
-    public SystemSshKeyService(SystemSettingsService systemSettingsService) {
-        this.systemSettingsService = systemSettingsService;
-    }
 
     public SystemSettingsEntity generateKeyPair() throws IOException, InterruptedException {
         return generateKeyPair("deploy-bot", true);
@@ -34,22 +30,15 @@ public class SystemSshKeyService {
         Path tempDir = Files.createTempDirectory("deploybot-ssh-keygen-");
         Path keyPath = tempDir.resolve("id_ed25519");
 
-        Process process = new ProcessBuilder(
+        ProcessKit.ProcessResult result = ProcessKit.runAndCapture(ProcessKit.mergedBuilder(
                 "ssh-keygen",
                 "-t", "ed25519",
                 "-N", "",
                 "-C", comment,
                 "-f", keyPath.toAbsolutePath().toString()
-        ).redirectErrorStream(true).start();
-
-        String output;
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-            output = reader.lines().collect(Collectors.joining("\n"));
-        }
-
-        int exitCode = process.waitFor();
-        if (exitCode != 0) {
-            throw new BusinessException(ErrorSubCode.SSH_KEY_GENERATE_FAILED, output);
+        ));
+        if (result.exitCode() != 0) {
+            throw new BusinessException(ErrorSubCode.SSH_KEY_GENERATE_FAILED, result.output());
         }
 
         String privateKey = Files.readString(keyPath, StandardCharsets.UTF_8);

@@ -9,6 +9,7 @@ import top.fusb.deploybot.model.HostType;
 import top.fusb.deploybot.security.AdminOnly;
 import top.fusb.deploybot.service.HostService;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -24,13 +25,10 @@ import java.util.List;
 @AdminOnly
 @RestController
 @RequestMapping("/api/hosts")
+@RequiredArgsConstructor
 public class HostController {
 
     private final HostService hostService;
-
-    public HostController(HostService hostService) {
-        this.hostService = hostService;
-    }
 
     /**
      * 列出主机，可选只返回启用中的主机。

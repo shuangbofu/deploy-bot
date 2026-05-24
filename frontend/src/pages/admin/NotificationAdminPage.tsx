@@ -203,7 +203,7 @@ export default function NotificationAdminPage() {
                 label: '通知配置',
                 children: (
                   <>
-                    <div className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-5">
+                    <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-5">
             <Input value={channelKeyword} placeholder="搜索名称 / 描述 / Webhook 配置 / 类型" onChange={(event) => setChannelKeyword(event.target.value)} />
             <Select
               allowClear
@@ -282,7 +282,7 @@ export default function NotificationAdminPage() {
                 label: '通知记录',
                 children: (
                   <>
-                    <div className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-3">
+                    <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
             <Select
               allowClear
               value={recordChannelTypeFilter}

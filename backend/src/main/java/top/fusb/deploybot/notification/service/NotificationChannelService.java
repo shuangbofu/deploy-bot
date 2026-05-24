@@ -1,5 +1,6 @@
 package top.fusb.deploybot.notification.service;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import top.fusb.deploybot.kit.TextKit;
 import top.fusb.deploybot.notification.dto.NotificationChannelRequest;
@@ -15,21 +16,12 @@ import top.fusb.deploybot.notification.repo.NotificationWebhookConfigRepository;
 import java.util.List;
 
 @Service
+@RequiredArgsConstructor
 public class NotificationChannelService {
 
     private final NotificationChannelRepository repository;
     private final NotificationTemplateRepository templateRepository;
     private final NotificationWebhookConfigRepository webhookConfigRepository;
-
-    public NotificationChannelService(
-            NotificationChannelRepository repository,
-            NotificationTemplateRepository templateRepository,
-            NotificationWebhookConfigRepository webhookConfigRepository
-    ) {
-        this.repository = repository;
-        this.templateRepository = templateRepository;
-        this.webhookConfigRepository = webhookConfigRepository;
-    }
 
     public List<NotificationChannelEntity> findAll() {
         return repository.findAll();

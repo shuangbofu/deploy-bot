@@ -1,6 +1,7 @@
 package top.fusb.deploybot.model;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -16,6 +17,8 @@ import jakarta.persistence.Transient;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.ToString;
+import top.fusb.deploybot.model.converter.ObjectMapJsonConverter;
+import top.fusb.deploybot.model.converter.StringMapJsonConverter;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -24,6 +27,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -46,9 +50,9 @@ public class DeploymentEntity {
     /**
      * 系统阶段标记由执行器写入日志，实体读取日志时据此判断当前处于构建还是发布。
      */
-    private static final String BUILD_STAGE_MARKER = "[系统] 开始本机构建阶段。";
-    private static final String DEPLOY_STAGE_MARKER = "[系统] 本机构建完成，开始发布阶段。";
-    private static final String STARTUP_STAGE_MARKER = "[系统] 检测到候选进程 PID";
+    private static final String BUILD_STAGE_MARKER = "开始本机构建阶段。";
+    private static final String DEPLOY_STAGE_MARKER = "本机构建完成，开始发布阶段。";
+    private static final String STARTUP_STAGE_MARKER = "检测到候选进程 PID";
     private static final String ROLLBACK_STAGE_MARKER = "[回滚 ";
     private static final String BUILD_STAGE = "BUILD";
     private static final String DEPLOY_STAGE = "DEPLOY";
@@ -78,9 +82,11 @@ public class DeploymentEntity {
     @Column(length = 255)
     private String projectName;
 
-    /** 本次部署实际使用的变量 JSON。 */
+    /** 本次部署实际使用的变量。 */
+    @Convert(converter = StringMapJsonConverter.class)
     @Lob
-    private String variablesJson;
+    @Column(name = "variables_json")
+    private Map<String, String> variables;
 
     /** 部署状态。 */
     @Enumerated(EnumType.STRING)
@@ -138,8 +144,10 @@ public class DeploymentEntity {
     private String artifactPath;
 
     /** 本次部署创建时固化的执行快照，便于后续排查历史版本差异。 */
+    @Convert(converter = ObjectMapJsonConverter.class)
     @Lob
-    private String executionSnapshotJson;
+    @Column(name = "execution_snapshot_json")
+    private Map<String, Object> executionSnapshot;
 
     /** 若这是重新发布历史版本的任务，则记录来源部署 ID。 */
     private Long rollbackFromDeploymentId;
@@ -199,10 +207,10 @@ public class DeploymentEntity {
         }
         ProgressSnapshot snapshot = readProgressSnapshot();
         if (status == DeploymentStatus.FAILED) {
-            return snapshot == null ? "部署失败" : buildSnapshotProgressText(snapshot) + "（失败）";
+            return snapshot == null ? null : buildSnapshotProgressText(snapshot);
         }
         if (status == DeploymentStatus.STOPPED) {
-            return snapshot == null ? "已停止" : buildSnapshotProgressText(snapshot) + "（已停止）";
+            return snapshot == null ? null : buildSnapshotProgressText(snapshot);
         }
         if (snapshot == null) {
             return null;
@@ -294,8 +302,7 @@ public class DeploymentEntity {
 
     private boolean requiresStartupObservation() {
         return pipeline != null
-                && pipeline.getTemplate() != null
-                && Boolean.TRUE.equals(pipeline.getTemplate().getMonitorProcess());
+                && Boolean.TRUE.equals(pipeline.getTemplateMonitorProcess());
     }
 
     private int resolveStartupObservationAttemptTotal() {

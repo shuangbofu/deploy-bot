@@ -1,5 +1,6 @@
 package top.fusb.deploybot.service;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import top.fusb.deploybot.dto.ChangePasswordRequest;
@@ -20,15 +21,12 @@ import java.util.UUID;
  * 登录鉴权服务。
  */
 @Service
+@RequiredArgsConstructor
 public class AuthService {
     private static final int TOKEN_EXPIRE_DAYS = 7;
 
     private final UserRepository userRepository;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
-
-    public AuthService(UserRepository userRepository) {
-        this.userRepository = userRepository;
-    }
 
     public LoginResponse login(LoginRequest request) {
         UserEntity user = userRepository.findByUsername(request.username().trim())

@@ -6,6 +6,7 @@ import top.fusb.deploybot.security.AdminOnly;
 import top.fusb.deploybot.service.SystemSshKeyService;
 import top.fusb.deploybot.service.SystemSettingsService;
 import java.io.IOException;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -16,15 +17,11 @@ import org.springframework.web.bind.annotation.RestController;
 @AdminOnly
 @RestController
 @RequestMapping("/api/system-settings")
+@RequiredArgsConstructor
 public class SystemSettingsController {
 
     private final SystemSettingsService service;
     private final SystemSshKeyService systemSshKeyService;
-
-    public SystemSettingsController(SystemSettingsService service, SystemSshKeyService systemSshKeyService) {
-        this.service = service;
-        this.systemSshKeyService = systemSshKeyService;
-    }
 
     /**
      * 读取系统设置。

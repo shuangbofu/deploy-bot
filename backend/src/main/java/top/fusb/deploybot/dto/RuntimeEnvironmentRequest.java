@@ -4,6 +4,8 @@ import top.fusb.deploybot.model.RuntimeEnvironmentType;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
+import java.util.Map;
+
 /**
  * 运行环境新增或编辑请求体。
  */
@@ -22,8 +24,8 @@ public record RuntimeEnvironmentRequest(
         String binPath,
         /** 激活脚本。 */
         String activationScript,
-        /** 附加环境变量 JSON。 */
-        String environmentJson,
+        /** 附加环境变量。 */
+        Map<String, Object> environment,
         /** 是否启用。 */
         Boolean enabled
 ) {

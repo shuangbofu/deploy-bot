@@ -1,0 +1,63 @@
+{
+  "descriptor": {
+    "pluginId": "node-static-deployment",
+    "displayName": "Node 静态站点",
+    "category": "静态站点",
+    "templateTypes": ["react", "vue"],
+    "composite": false,
+    "builtin": true,
+    "provider": "deploy-bot",
+    "description": "适用于 React、Vue、Vite 等构建为静态资源目录的前端站点。"
+  },
+  "bannerResource": "/plugin-banner/node-static.txt",
+  "runtimeRequirement": {
+    "buildRuntimeTypes": ["NODE"],
+    "targetRuntimeTypes": []
+  },
+  "variableDefinitions": [
+    {
+      "key": "buildCommand",
+      "label": "构建命令",
+      "description": "用于执行前端依赖安装和构建。",
+      "required": true,
+      "secret": false,
+      "pipelineInput": false,
+      "defaultValue": "npm ci --cache \"$BUILD_WORKSPACE_ROOT/caches/npm\" --prefer-offline && npm run build",
+      "binding": {
+        "scope": "COMMAND_SLOT",
+        "key": "BUILD_COMMAND"
+      }
+    },
+    {
+      "key": "distDir",
+      "label": "产物目录",
+      "description": "构建后输出的静态资源目录。",
+      "required": true,
+      "secret": false,
+      "pipelineInput": false,
+      "defaultValue": "dist"
+    }
+  ],
+  "builtinTemplates": [
+    {
+      "templateKey": "react-static-default",
+      "name": "React 静态站点部署",
+      "description": "在本机构建 React 项目，再将静态产物发布到目标主机或本机目录。",
+      "templateType": "react",
+      "buildScriptResource": "/scripts/node-static/build.sh",
+      "deployScriptResource": "/scripts/node-static/deploy.sh",
+      "variablesSchema": "[]",
+      "monitorProcess": false
+    },
+    {
+      "templateKey": "vue-static-default",
+      "name": "Vue 静态站点部署",
+      "description": "在本机构建 Vue 项目，再将静态产物发布到目标主机或本机目录。",
+      "templateType": "vue",
+      "buildScriptResource": "/scripts/node-static/build.sh",
+      "deployScriptResource": "/scripts/node-static/deploy.sh",
+      "variablesSchema": "[]",
+      "monitorProcess": false
+    }
+  ]
+}

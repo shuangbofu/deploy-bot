@@ -5,6 +5,7 @@ import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.dto.ProjectRequest;
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorSubCode;
+import lombok.RequiredArgsConstructor;
 import top.fusb.deploybot.model.GitAuthType;
 import top.fusb.deploybot.model.ProjectEntity;
 import top.fusb.deploybot.repo.ProjectRepository;
@@ -13,30 +14,23 @@ import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import top.fusb.deploybot.kit.ProcessKit;
 import top.fusb.deploybot.kit.TextKit;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
 public class ProjectService {
 
     private static final Logger log = LoggerFactory.getLogger(ProjectService.class);
 
     private final ProjectRepository repository;
     private final GitCredentialService gitCredentialService;
-
-    public ProjectService(ProjectRepository repository, GitCredentialService gitCredentialService) {
-        this.repository = repository;
-        this.gitCredentialService = gitCredentialService;
-    }
 
     public List<ProjectEntity> findAll() {
         return repository.findAll();
@@ -116,14 +110,13 @@ public class ProjectService {
                         processConfig.gitUrl(),
                         processConfig.environment().containsKey("GIT_SSH")
                 );
-                ProcessBuilder processBuilder = new ProcessBuilder(
+                ProcessBuilder processBuilder = ProcessKit.mergedBuilder(
                         gitCredentialService.getGitExecutable(),
                         "ls-remote",
                         "--heads",
                         processConfig.gitUrl()
                 );
                 processBuilder.directory(tempDir.toFile());
-                processBuilder.redirectErrorStream(true);
                 processBuilder.environment().putAll(processConfig.environment());
                 log.info(
                         "执行 Git 连通性测试命令：project='{}', command='{}', workdir='{}'.",
@@ -132,27 +125,20 @@ public class ProjectService {
                         tempDir.toAbsolutePath().normalize()
                 );
 
-                Process process = processBuilder.start();
-                boolean finished = process.waitFor(Duration.ofSeconds(20).toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
-                if (!finished) {
-                    process.destroyForcibly();
+                ProcessKit.ProcessResult result = ProcessKit.runAndCapture(processBuilder, Duration.ofSeconds(20));
+                if (result.timedOut()) {
                     log.warn("项目仓库连通性测试超时：project='{}', timeoutSeconds=20。", project.getName());
                     throw new BusinessException(ErrorSubCode.PROJECT_GIT_CONNECTIVITY_FAILED, "连接 Git 仓库超时。");
                 }
 
-                String output;
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                    output = reader.lines().collect(Collectors.joining("\n"));
-                }
-
-                String summarizedOutput = TextKit.summarizeHead(output, 20);
+                String summarizedOutput = TextKit.summarizeHead(result.output(), 20);
                 log.info(
                         "项目仓库连通性测试结束：project='{}', exitCode={}, output='{}'.",
                         project.getName(),
-                        process.exitValue(),
+                        result.exitCode(),
                         summarizedOutput
                 );
-                if (process.exitValue() != 0) {
+                if (result.exitCode() != 0) {
                     logGitSshDiagnosticsIfNecessary(project, processConfig);
                     throw new BusinessException(ErrorSubCode.PROJECT_GIT_CONNECTIVITY_FAILED, summarizedOutput);
                 }
@@ -187,10 +173,6 @@ public class ProjectService {
         }
     }
 
-    private String summarizeOutputTail(String output, int maxLines) {
-        return TextKit.summarizeTail(output, maxLines);
-    }
-
     private void logGitSshDiagnosticsIfNecessary(ProjectEntity project, GitCredentialService.GitProcessConfig processConfig) {
         if (project.getGitAuthType() != GitAuthType.SSH) {
             return;
@@ -213,8 +195,7 @@ public class ProjectService {
             String diagnosticCommand = "\"" + sshWrapper + "\""
                     + (sshTarget.port() == null ? "" : " -p " + sshTarget.port())
                     + " -vvv -T " + remoteHost;
-            ProcessBuilder builder = new ProcessBuilder("/bin/bash", "-lc", diagnosticCommand);
-            builder.redirectErrorStream(true);
+            ProcessBuilder builder = ProcessKit.mergedBuilder("/bin/bash", "-lc", diagnosticCommand);
             builder.environment().putAll(processConfig.environment());
 
             log.info(
@@ -227,23 +208,17 @@ public class ProjectService {
                     diagnosticCommand
             );
 
-            Process process = builder.start();
-            boolean finished = process.waitFor(Duration.ofSeconds(15).toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS);
-            if (!finished) {
-                process.destroyForcibly();
+            ProcessKit.ProcessResult result = ProcessKit.runAndCapture(builder, Duration.ofSeconds(15));
+            if (result.timedOut()) {
                 log.warn("项目 '{}' Git SSH 诊断超时。", project.getName());
                 return;
             }
 
-            String output;
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                output = reader.lines().collect(Collectors.joining("\n"));
-            }
             log.info(
                     "项目 '{}' Git SSH 诊断结束：exitCode={}, output='{}'.",
                     project.getName(),
-                    process.exitValue(),
-                    summarizeOutputTail(output, 120)
+                    result.exitCode(),
+                    TextKit.summarizeTail(result.output(), 120)
             );
         } catch (Exception ex) {
             log.warn("项目 '{}' Git SSH 诊断执行失败：{}", project.getName(), ex.getMessage(), ex);

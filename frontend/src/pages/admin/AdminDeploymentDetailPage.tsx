@@ -6,10 +6,8 @@ import LogViewer from '../../components/LogViewer';
 import PageHeaderBar from '../../components/PageHeaderBar';
 import StatusTag from '../../components/StatusTag';
 import { ACTIVE_DEPLOYMENT_STATUSES } from '../../constants/deployment';
-import type { DeploymentSummary } from '../../types/domain';
+import type { DeploymentSummary, RuntimeEnvironmentSummary } from '../../types/domain';
 import { copyText } from '../../utils/clipboard';
-import { formatDateTime } from '../../utils/datetime';
-import { formatDeploymentElapsed } from '../../utils/deploymentDuration';
 import { getDeploymentProgress, getDeploymentProgressColor, getDeploymentProgressLabel } from '../../utils/deploymentProgress';
 import { formatDeploymentTimeline } from '../../utils/deploymentTimeline';
 
@@ -90,8 +88,14 @@ export default function AdminDeploymentDetailPage() {
   );
   const backPath = location.state?.from || (searchParams.get('from') === 'services' ? '/admin/services' : '/admin/deployments');
   const backLabel = location.state?.backLabel || (backPath === '/admin/services' ? '返回服务管理' : backPath === '/admin/dashboard' ? '返回仪表盘' : '返回部署记录');
+  const renderDescriptionItem = (label: string, value?: string | number | null) => {
+    if (value == null || String(value).trim() === '') {
+      return null;
+    }
+    return <Descriptions.Item label={label}>{value}</Descriptions.Item>;
+  };
   const executionSnapshot = useMemo(() => {
-    const raw = deployment?.executionSnapshotJson;
+    const raw = deployment?.executionSnapshot;
     if (!raw) {
       return null;
     }
@@ -103,7 +107,16 @@ export default function AdminDeploymentDetailPage() {
     } catch {
       return null;
     }
-  }, [deployment?.executionSnapshotJson]);
+  }, [deployment?.executionSnapshot]);
+  const readSnapshotRuntimeEnvironments = (key: string, fallbackKeys: string[]): RuntimeEnvironmentSummary[] => {
+    const value = executionSnapshot?.[key];
+    if (Array.isArray(value)) {
+      return value.filter((item): item is RuntimeEnvironmentSummary => Boolean(item && typeof item === 'object'));
+    }
+    return fallbackKeys
+      .map((fallbackKey) => executionSnapshot?.[fallbackKey])
+      .filter((item): item is RuntimeEnvironmentSummary => Boolean(item && typeof item === 'object'));
+  };
   const snapshotVariables = useMemo(() => {
     const raw = executionSnapshot?.variables;
     if (Array.isArray(raw)) {
@@ -132,23 +145,31 @@ export default function AdminDeploymentDetailPage() {
       }
       items.push({ label, value: text });
     };
-    const envText = (env?: { name?: string; version?: string } | null) => {
+    const envText = (env?: RuntimeEnvironmentSummary | null) => {
       const name = String(env?.name ?? '').trim();
       const version = String(env?.version ?? '').trim();
       return [name, version].filter(Boolean).join(' ');
+    };
+    const pushRuntimeField = (labelPrefix: string, env?: RuntimeEnvironmentSummary | null) => {
+      const type = String(env?.type ?? '').trim();
+      pushField(type ? `${labelPrefix} ${type}` : labelPrefix, envText(env));
     };
 
     pushField('模板', executionSnapshot?.templateName);
     pushField('模板类型', executionSnapshot?.templateType);
     pushField('目标主机', executionSnapshot?.targetHost);
-    pushField('应用名', executionSnapshot?.applicationName);
-    pushField('Spring Profile', executionSnapshot?.springProfile);
+    pushField('部署目录', executionSnapshot?.targetDir);
+    pushField('服务名', executionSnapshot?.serviceName);
+    const pluginConfig = executionSnapshot?.pluginConfig;
+    if (pluginConfig && typeof pluginConfig === 'object' && !Array.isArray(pluginConfig)) {
+      Object.entries(pluginConfig).forEach(([key, value]) => pushField(`插件配置 ${key}`, value));
+    }
     pushField('启动关键字', executionSnapshot?.startupKeyword);
     pushField('启动超时', executionSnapshot?.startupTimeoutSeconds);
-    pushField('构建 Java', envText(executionSnapshot?.javaEnvironment as { name?: string; version?: string } | undefined));
-    pushField('构建 Node', envText(executionSnapshot?.nodeEnvironment as { name?: string; version?: string } | undefined));
-    pushField('构建 Maven', envText(executionSnapshot?.mavenEnvironment as { name?: string; version?: string } | undefined));
-    pushField('运行 Java', envText(executionSnapshot?.runtimeJavaEnvironment as { name?: string; version?: string } | undefined));
+    readSnapshotRuntimeEnvironments('buildRuntimeEnvironments', ['javaEnvironment', 'nodeEnvironment', 'mavenEnvironment'])
+      .forEach((item) => pushRuntimeField('构建组件', item));
+    readSnapshotRuntimeEnvironments('targetRuntimeEnvironments', ['runtimeJavaEnvironment'])
+      .forEach((item) => pushRuntimeField('运行组件', item));
 
     return items;
   }, [executionSnapshot]);
@@ -241,22 +262,22 @@ export default function AdminDeploymentDetailPage() {
                 format={() => getDeploymentProgressLabel(progress, deployment?.status, deployment?.progressText)}
               />
               <Descriptions column={1} size="small" className="mt-4">
-                <Descriptions.Item label="流水线">{deployment?.pipelineName || deployment?.pipeline?.name || '-'}</Descriptions.Item>
-                <Descriptions.Item label="项目">{deployment?.projectName || deployment?.pipeline?.project?.name || '-'}</Descriptions.Item>
-                <Descriptions.Item label="分支">{deployment?.branchName || '-'}</Descriptions.Item>
-                <Descriptions.Item label="触发人">{deployment?.triggeredByDisplayName || deployment?.triggeredBy || '-'}</Descriptions.Item>
-                <Descriptions.Item label="停止人">{deployment?.stoppedByDisplayName || deployment?.stoppedBy || '-'}</Descriptions.Item>
-                <Descriptions.Item label="部署时间">{formatDeploymentTimeline(deployment, tick)}</Descriptions.Item>
-                <Descriptions.Item label="产物目录">{deployment?.artifactPath || '-'}</Descriptions.Item>
-                <Descriptions.Item label="重发来源">
-                  {deployment?.rollbackFromDeploymentId ? (
+                {renderDescriptionItem('流水线', deployment?.pipelineName || deployment?.pipeline?.name)}
+                {renderDescriptionItem('项目', deployment?.projectName || deployment?.pipeline?.project?.name)}
+                {renderDescriptionItem('分支', deployment?.branchName)}
+                {renderDescriptionItem('触发人', deployment?.triggeredByDisplayName || deployment?.triggeredBy)}
+                {renderDescriptionItem('停止人', deployment?.stoppedByDisplayName || deployment?.stoppedBy)}
+                {renderDescriptionItem('部署时间', formatDeploymentTimeline(deployment, tick))}
+                {renderDescriptionItem('产物目录', deployment?.artifactPath)}
+                {deployment?.rollbackFromDeploymentId ? (
+                  <Descriptions.Item label="重发来源">
                     <Button type="link" className="!px-0" onClick={() => navigate(`/admin/deployments/${deployment.rollbackFromDeploymentId}`)}>
                       #{deployment.rollbackFromDeploymentId}
                     </Button>
-                  ) : '-'}
-                </Descriptions.Item>
-                <Descriptions.Item label="监控 PID">{deployment?.monitoredPid || '-'}</Descriptions.Item>
-                <Descriptions.Item label="错误信息">{deployment?.status === 'STOPPED' ? '-' : (deployment?.errorMessage || '-')}</Descriptions.Item>
+                  </Descriptions.Item>
+                ) : null}
+                {renderDescriptionItem('监控 PID', deployment?.monitoredPid)}
+                {deployment?.status !== 'STOPPED' ? renderDescriptionItem('错误信息', deployment?.errorMessage) : null}
               </Descriptions>
             </Card>
             <Card className="app-card deployment-detail-snapshot-card" title="部署快照" loading={detailLoading}>

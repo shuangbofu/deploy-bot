@@ -46,7 +46,8 @@ export default function PipelineVariablesEditor({ variables, values, onChange })
                   label={item.label || item.name}
                   required={Boolean(item.required)}
                 >
-                  <Input
+                  <Input.TextArea
+                    autoSize={{ minRows: 2, maxRows: 6 }}
                     placeholder={item.placeholder || `请输入 ${item.label || item.name}`}
                     value={currentValues[item.name] || ''}
                     onChange={(event) => updateValue(item.name, event.target.value)}

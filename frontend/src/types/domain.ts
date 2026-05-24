@@ -19,14 +19,20 @@ export type GitAuthType = 'NONE' | 'BASIC' | 'SSH';
 export type HostSshAuthType = 'PASSWORD' | 'PRIVATE_KEY' | 'SYSTEM_KEY_PAIR';
 
 /**
- * 运行环境类型用于约束 Java、Node、Maven 等工具链。
+ * 运行环境组件类型由后端和插件共同声明，前端不要限制为固定技术栈。
  */
-export type RuntimeEnvironmentType = 'JAVA' | 'NODE' | 'MAVEN';
+export type RuntimeEnvironmentType = string;
 export type UserRole = 'ADMIN' | 'USER';
 export type NotificationChannelType = 'FEISHU';
 export type NotificationEventType = 'DEPLOYMENT_STARTED' | 'DEPLOYMENT_FINISHED';
 export type NotificationTemplateMode = 'TEXT' | 'FEISHU_CARD';
 export type ServiceStatus = 'RUNNING' | 'STOPPED';
+export type PluginFormFieldType = 'TEXT' | 'TEXTAREA' | 'CODE' | 'SELECT' | 'SWITCH';
+export type PluginFormFieldBindingScope = 'PLUGIN_CONFIG' | 'PIPELINE_VARIABLE';
+export type TemplateVariableBindingScope = 'COMMAND_SLOT';
+export type PluginVariableMutationType = 'VARIABLE_INJECT' | 'COMMAND_REWRITE' | 'COMPOSITE_REUSE';
+export type PluginVariableTriggerMode = 'ALL_PRESENT' | 'ANY_PRESENT';
+export type PluginValueReferenceScope = 'CONTEXT' | 'COMMAND_SLOT' | 'VARIABLE';
 export type ServicePidChangeSource =
   | 'DEPLOYMENT_CONFIRMED'
   | 'PRE_DEPLOY_STOP'
@@ -132,6 +138,10 @@ export interface RuntimeEnvironmentSummary {
   enabled?: boolean;
   /** 归属主机。 */
   host?: HostSummary | null;
+  homePath?: string;
+  binPath?: string;
+  activationScript?: string;
+  environment?: Record<string, unknown>;
 }
 
 export interface TemplateVariableDefinition {
@@ -141,10 +151,19 @@ export interface TemplateVariableDefinition {
   label?: string;
   /** 是否必填。 */
   required?: boolean;
+  /** 是否允许在流水线层面填写。 */
+  pipelineInput?: boolean;
   /** 输入框占位提示。 */
   placeholder?: string;
   /** 变量所属阶段。 */
   phase?: TemplateVariablePhase;
+  /** 该变量默认挂载的自动改写规则标识。 */
+  mutationRuleIds?: string[];
+  /** 该变量绑定的平台标准语义。 */
+  binding?: {
+    scope: TemplateVariableBindingScope;
+    key: string;
+  };
 }
 
 export interface TemplateSummary {
@@ -156,10 +175,129 @@ export interface TemplateSummary {
   description?: string;
   /** 模板类型，用于图标和环境依赖推导。 */
   templateType?: string;
+  /** 归属插件标识。 */
+  pluginId?: string | null;
   /** 模板变量定义，接口里可能是 JSON 字符串也可能已被解析。 */
   variablesSchema?: string | TemplateVariableDefinition[];
+  /** 构建脚本。 */
+  buildScriptContent?: string;
+  /** 发布脚本。 */
+  deployScriptContent?: string;
   /** 发布后是否需要监控进程。 */
   monitorProcess?: boolean;
+}
+
+export interface PluginDescriptorSummary {
+  pluginId: string;
+  displayName: string;
+  category: string;
+  templateTypes: string[];
+  composite: boolean;
+  builtin: boolean;
+  provider: string;
+  description: string;
+}
+
+export interface PluginRuntimeRequirementSummary {
+  buildRuntimeTypes: string[];
+  targetRuntimeTypes: string[];
+}
+
+export interface PluginFormOptionSummary {
+  value: string;
+  label: string;
+}
+
+export interface PluginFormFieldBindingSummary {
+  scope: PluginFormFieldBindingScope;
+  key: string;
+}
+
+export interface PluginFormFieldSummary {
+  key: string;
+  label: string;
+  type: PluginFormFieldType;
+  required: boolean;
+  placeholder?: string | null;
+  helpText?: string | null;
+  options: PluginFormOptionSummary[];
+  binding?: PluginFormFieldBindingSummary | null;
+}
+
+export interface PluginFormSectionSummary {
+  key: string;
+  title: string;
+  description?: string | null;
+  fields: PluginFormFieldSummary[];
+}
+
+export interface PluginFormSchemaSummary {
+  sections: PluginFormSectionSummary[];
+}
+
+export interface PluginVariableDefinitionSummary {
+  key: string;
+  label: string;
+  description?: string | null;
+  required: boolean;
+  secret: boolean;
+  pipelineInput: boolean;
+  defaultValue?: string | null;
+  mutationRuleIds?: string[];
+  binding?: {
+    scope: TemplateVariableBindingScope;
+    key: string;
+  } | null;
+}
+
+export interface PluginVariableTriggerGroupSummary {
+  mode: PluginVariableTriggerMode;
+  references: PluginValueReferenceSummary[];
+}
+
+export interface PluginValueReferenceSummary {
+  scope: PluginValueReferenceScope;
+  key: string;
+  label?: string | null;
+}
+
+export interface PluginVariableMutationRuleSummary {
+  ruleId?: string | null;
+  phase: 'BUILD' | 'DEPLOY';
+  mutationType: PluginVariableMutationType;
+  sourceReferences: PluginValueReferenceSummary[];
+  targetReferences: PluginValueReferenceSummary[];
+  generatedReferences: PluginValueReferenceSummary[];
+  triggerGroups: PluginVariableTriggerGroupSummary[];
+}
+
+export interface PluginBuiltinTemplateSummary {
+  templateKey?: string | null;
+  name: string;
+  description?: string | null;
+  templateType?: string | null;
+  buildScriptContent?: string | null;
+  deployScriptContent?: string | null;
+  variablesSchema?: string | null;
+  monitorProcess?: boolean | null;
+}
+
+export interface DeploymentPluginDefinitionSummary {
+  descriptor: PluginDescriptorSummary;
+  runtimeRequirement: PluginRuntimeRequirementSummary;
+  pipelineFormSchema: PluginFormSchemaSummary;
+  variableDefinitions: PluginVariableDefinitionSummary[];
+  variableMutationRules: PluginVariableMutationRuleSummary[];
+  builtinTemplates: PluginBuiltinTemplateSummary[];
+}
+
+export interface ShellVariableSummary {
+  key: string;
+  expression: string;
+  description: string;
+  stage: 'BUILD' | 'DEPLOY' | 'ALL';
+  source: 'PLATFORM' | 'RUNTIME' | 'PLUGIN';
+  contextKey?: string | null;
 }
 
 export interface PipelineSummary {
@@ -175,8 +313,20 @@ export interface PipelineSummary {
   project?: ProjectSummary | null;
   /** 关联模板。 */
   template?: TemplateSummary | null;
+  /** 选用插件默认模板时的插件标识。 */
+  templatePluginId?: string | null;
+  /** 选用插件默认模板时的模板键。 */
+  builtinTemplateKey?: string | null;
+  /** 模板名称快照。 */
+  templateNameSnapshot?: string | null;
+  /** 模板类型快照。 */
+  templateTypeSnapshot?: string | null;
+  /** 模板监控进程开关快照。 */
+  templateMonitorProcess?: boolean | null;
   /** 目标主机。 */
   targetHost?: HostSummary | null;
+  /** 目标主机上的部署目录。 */
+  targetDir?: string | null;
   /** 本机构建 Java 环境。 */
   javaEnvironment?: RuntimeEnvironmentSummary | null;
   /** 本机构建 Node 环境。 */
@@ -185,24 +335,20 @@ export interface PipelineSummary {
   mavenEnvironment?: RuntimeEnvironmentSummary | null;
   /** 本机构建时使用的 Maven Settings。 */
   mavenSettings?: MavenSettingsSummary | null;
-  /** 目标主机运行 Java 环境。 */
+  /** 目标主机 Java 运行环境。 */
   runtimeJavaEnvironment?: RuntimeEnvironmentSummary | null;
-  /** 开启发布监控时用于生成唯一产物名的应用名。 */
-  applicationName?: string | null;
-  /** Spring Boot 运行时激活的 profile。 */
-  springProfile?: string | null;
-  /** Spring Boot 运行时附加 YAML 配置。 */
-  runtimeConfigYaml?: string | null;
+  /** 插件运行配置，前端按插件字段 key 读写。 */
+  pluginConfig?: Record<string, string> | null;
   /** 启用服务监测时的启动关键字。 */
   startupKeyword?: string | null;
   /** 启用服务监测时的启动观察窗口，单位秒。 */
   startupTimeoutSeconds?: number | null;
   /** 流水线绑定的通知配置。 */
-  notificationBindingsJson?: string | NotificationBinding[];
-  /** 流水线默认变量，可能是 JSON 字符串或对象。 */
-  variablesJson?: string | Record<string, string>;
-  /** 自定义标签，可能是 JSON 字符串或字符串数组。 */
-  tagsJson?: string | string[];
+  notificationBindings?: NotificationBinding[];
+  /** 流水线默认变量。 */
+  variables?: Record<string, string>;
+  /** 自定义标签。 */
+  tags?: string[];
 }
 
 export interface PipelineHallSummary {
@@ -212,7 +358,7 @@ export interface PipelineHallSummary {
   defaultBranch?: string | null;
   projectName?: string | null;
   templateType?: string | null;
-  tagsJson?: string | string[] | null;
+  tags?: string[] | null;
   latestDeploymentId?: number | null;
   latestDeploymentOrder?: number | null;
   latestStatus?: DeploymentStatus | null;
@@ -333,7 +479,7 @@ export interface DeploymentSummary {
   /** 本次部署保留下来的构建产物目录，可用于重新发布同一版本。 */
   artifactPath?: string | null;
   /** 本次部署创建时固化的执行快照。 */
-  executionSnapshotJson?: string | Record<string, unknown> | null;
+  executionSnapshot?: Record<string, unknown> | null;
   /** 若这是重新发布历史版本的任务，则记录来源部署 ID。 */
   rollbackFromDeploymentId?: number | null;
   /** 被监控的进程 PID。 */

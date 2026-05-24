@@ -1,5 +1,6 @@
 package top.fusb.deploybot.notification.config;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
@@ -8,13 +9,10 @@ import top.fusb.deploybot.notification.model.NotificationTemplateMode;
 import top.fusb.deploybot.notification.repo.NotificationTemplateRepository;
 
 @Component
+@RequiredArgsConstructor
 public class NotificationTemplateBootstrap {
 
     private final NotificationTemplateRepository repository;
-
-    public NotificationTemplateBootstrap(NotificationTemplateRepository repository) {
-        this.repository = repository;
-    }
 
     @EventListener(ApplicationReadyEvent.class)
     public void bootstrap() {

@@ -19,50 +19,6 @@ const iconMap = {
 };
 
 /**
- * 模板类型下拉选项。
- */
-export const templateTypeOptions = [
-  { label: '通用', value: 'generic' },
-  { label: 'React', value: 'react' },
-  { label: 'Vue', value: 'vue' },
-  { label: 'Java', value: 'java' },
-  { label: 'Spring Boot', value: 'springboot' },
-  { label: 'Spring Boot + 前端', value: 'springboot_frontend' },
-  { label: 'Node', value: 'node' },
-];
-
-/**
- * 根据模板类型推导本机构建阶段必须选择的运行环境。
- */
-export function getRequiredEnvironmentTypes(templateType) {
-  const normalized = templateType || 'generic';
-  if (normalized === 'springboot') {
-    return ['JAVA', 'MAVEN'];
-  }
-  if (normalized === 'springboot_frontend') {
-    return ['NODE', 'JAVA', 'MAVEN'];
-  }
-  if (['react', 'vue', 'node'].includes(normalized)) {
-    return ['NODE'];
-  }
-  if (normalized === 'java') {
-    return ['JAVA'];
-  }
-  return [];
-}
-
-/**
- * 根据模板类型推导目标主机运行阶段必须选择的环境。
- */
-export function getRequiredRuntimeEnvironmentTypes(templateType) {
-  const normalized = templateType || 'generic';
-  if (normalized === 'springboot' || normalized === 'springboot_frontend') {
-    return ['JAVA'];
-  }
-  return [];
-}
-
-/**
  * 流水线或模板类型图标展示组件。
  */
 export default function PipelineIcon({ type = 'generic' }) {

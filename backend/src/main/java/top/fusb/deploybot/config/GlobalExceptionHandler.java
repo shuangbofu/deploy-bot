@@ -3,6 +3,8 @@ package top.fusb.deploybot.config;
 import top.fusb.deploybot.dto.Result;
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorCode;
+import top.fusb.deploybot.exception.ErrorSubCode;
+import top.fusb.deploybot.kit.JsonKit;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,12 +42,36 @@ public class GlobalExceptionHandler {
         ));
     }
 
+    @ExceptionHandler(JsonKit.JsonException.class)
+    public ResponseEntity<Result<Void>> handleJsonException(JsonKit.JsonException ex, HttpServletRequest request) {
+        ErrorSubCode subCode = switch (ex.getErrorType()) {
+            case INVALID -> ErrorSubCode.JSON_INVALID;
+            case BLANK -> ErrorSubCode.JSON_BLANK;
+            case WRITE_FAILED -> ErrorSubCode.JSON_WRITE_FAILED;
+        };
+        log.warn(
+                "API json error on {} {}: [{}:{}] {}",
+                request.getMethod(),
+                request.getRequestURI(),
+                subCode.getErrorCode().getCode(),
+                subCode.getSubCode(),
+                ex.getMessage(),
+                ex
+        );
+        return ResponseEntity.ok(Result.failure(
+                subCode.getErrorCode().getCode(),
+                subCode.getErrorCode().getDefaultMessage(),
+                subCode.getSubCode(),
+                subCode.getMessage()
+        ));
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Result<Void>> handleValidation(MethodArgumentNotValidException ex, HttpServletRequest request) {
         String message = ex.getBindingResult()
                 .getFieldErrors()
                 .stream()
-                .map(FieldError::getDefaultMessage)
+                .map(fieldError -> fieldError.getField() + (fieldError.getDefaultMessage() == null ? "校验失败" : fieldError.getDefaultMessage()))
                 .filter(item -> item != null && !item.isBlank())
                 .collect(Collectors.joining("；"));
         if (message.isBlank()) {

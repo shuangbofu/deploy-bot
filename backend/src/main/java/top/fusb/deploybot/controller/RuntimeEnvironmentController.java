@@ -11,6 +11,7 @@ import top.fusb.deploybot.model.RuntimeEnvironmentType;
 import top.fusb.deploybot.security.AdminOnly;
 import top.fusb.deploybot.service.RuntimeEnvironmentService;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,13 +28,10 @@ import java.util.List;
 @AdminOnly
 @RestController
 @RequestMapping("/api/runtime-environments")
+@RequiredArgsConstructor
 public class RuntimeEnvironmentController {
 
     private final RuntimeEnvironmentService service;
-
-    public RuntimeEnvironmentController(RuntimeEnvironmentService service) {
-        this.service = service;
-    }
 
     /**
      * 列出运行环境。可按主机或类型过滤。

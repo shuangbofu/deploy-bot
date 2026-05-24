@@ -6,13 +6,13 @@ import { deploymentsApi } from '../../api/deployments';
 import { pipelinesApi } from '../../api/pipelines';
 import EmptyPane from '../../components/EmptyPane';
 import PageHeaderBar from '../../components/PageHeaderBar';
-import PipelineIcon, { templateTypeOptions } from '../../components/PipelineIcon';
+import PipelineIcon from '../../components/PipelineIcon';
 import StatusTag from '../../components/StatusTag';
 import { ACTIVE_DEPLOYMENT_STATUSES } from '../../constants/deployment';
 import type { PipelineHallRunningServiceSummary, PipelineHallSummary, PipelineSummary, UserRecentPipelineSummary } from '../../types/domain';
 import { formatDateTime } from '../../utils/datetime';
 import { formatDeploymentElapsed } from '../../utils/deploymentDuration';
-import { getDeploymentProgress, getDeploymentProgressColor, getDeploymentProgressLabel } from '../../utils/deploymentProgress';
+import { getDeploymentProgressColor, getDeploymentProgressLabel } from '../../utils/deploymentProgress';
 import { formatDurationSince } from '../../utils/duration';
 import { getStableTagColor, sortTagNames } from '../../utils/tagColors';
 
@@ -95,7 +95,7 @@ export default function UserPipelinesPage() {
   });
   const navigate = useNavigate();
 
-  const parseTagsJson = (content: unknown): string[] => {
+  const normalizeTags = (content: unknown): string[] => {
     if (!content) {
       return [];
     }
@@ -249,7 +249,11 @@ export default function UserPipelinesPage() {
   const frequentPipelines = useMemo(() => recentPipelines.slice(0, 8), [recentPipelines]);
 
   const availableTypeOptions = useMemo(
-    () => templateTypeOptions.filter((option) => hallItems.some((item) => item.templateType === option.value)),
+    () => Array.from(new Set(hallItems.map((item) => item.templateType).filter(Boolean)))
+      .map((type) => ({
+        label: String(type).replace(/_/g, ' / '),
+        value: String(type),
+      })),
     [hallItems],
   );
 
@@ -264,7 +268,7 @@ export default function UserPipelinesPage() {
       if (typeFilter && item.templateType !== typeFilter) {
         return false;
       }
-      const tags = parseTagsJson(item.tagsJson);
+      const tags = normalizeTags(item.tags);
       const normalizedKeyword = keyword.trim().toLowerCase();
       if (normalizedKeyword) {
         const matched = [item.pipelineName, item.pipelineDescription, item.projectName, item.defaultBranch, ...tags]
@@ -280,7 +284,7 @@ export default function UserPipelinesPage() {
 
   const filteredPipelineCards = useMemo(() => {
     const filteredItems = baseFilteredPipelineCards.filter((item) => {
-      const tags = parseTagsJson(item.tagsJson);
+      const tags = normalizeTags(item.tags);
       if (tagFilter && tagFilter.length > 0 && !tagFilter.every((tag) => tags.includes(tag))) {
         return false;
       }
@@ -300,7 +304,7 @@ export default function UserPipelinesPage() {
   }, [baseFilteredPipelineCards, pinActivePipelines, tagFilter]);
 
   const availableTags = useMemo(
-    () => sortTagNames(Array.from(new Set(baseFilteredPipelineCards.flatMap((item) => parseTagsJson(item.tagsJson))))),
+    () => sortTagNames(Array.from(new Set(baseFilteredPipelineCards.flatMap((item) => normalizeTags(item.tags))))),
     [baseFilteredPipelineCards],
   );
 
@@ -327,7 +331,7 @@ export default function UserPipelinesPage() {
     const next = new Set<string>();
     availableTags.forEach((tag) => {
       const enabled = baseFilteredPipelineCards.some((item) => {
-        const tags = parseTagsJson(item.tagsJson);
+        const tags = normalizeTags(item.tags);
         const nextFilter = tagFilter?.includes(tag)
           ? tagFilter.filter((itemTag) => itemTag !== tag)
           : [...(tagFilter || []), tag];
@@ -731,7 +735,7 @@ export default function UserPipelinesPage() {
                 ) : (
                   <Row gutter={[16, 16]}>
                     {filteredPipelineCards.map((item) => {
-                      const tags = sortTagNames(parseTagsJson(item.tagsJson));
+                      const tags = sortTagNames(normalizeTags(item.tags));
                       const activeDeployment = item.latestStatus && ACTIVE_DEPLOYMENT_STATUSES.includes(item.latestStatus)
                         ? item
                         : undefined;
@@ -828,7 +832,7 @@ export default function UserPipelinesPage() {
                                       name: item.pipelineName,
                                       description: item.pipelineDescription || undefined,
                                       defaultBranch: item.defaultBranch || undefined,
-                                      tagsJson: item.tagsJson || undefined,
+                                      tags: item.tags || undefined,
                                       project: item.projectName ? { id: 0, name: item.projectName } : undefined,
                                       template: item.templateType ? { id: 0, name: item.templateType, templateType: item.templateType } : undefined,
                                     } as PipelineSummary).catch(() => message.error('打开部署窗口失败'))}
@@ -917,7 +921,7 @@ export default function UserPipelinesPage() {
                       title: '标签',
                       width: 220,
                       render: (_, row) => {
-                        const tags = sortTagNames(parseTagsJson(row.tagsJson));
+                        const tags = sortTagNames(normalizeTags(row.tags));
                         return tags.length > 0 ? (
                           <Space wrap>
                             {tags.map((tag) => (
@@ -947,13 +951,16 @@ export default function UserPipelinesPage() {
                       width: 190,
                       render: (_, row) => {
                         const showProgressText = row.latestStatus === 'RUNNING' && row.latestProgressText;
+                        const progressText = getDeploymentProgressLabel(row.latestProgressPercent ?? 0, row.latestStatus, row.latestProgressText);
                         return (
-                          <div className="flex items-center gap-2">
-                            <StatusTag status={row.latestStatus || undefined} />
+                          <div className="space-y-1">
+                            <div>
+                              <StatusTag status={row.latestStatus || undefined} />
+                            </div>
                             {showProgressText ? (
-                              <span className="text-xs font-medium text-slate-500">
-                                {row.latestProgressText}
-                              </span>
+                              <div className="text-[11px] leading-4 text-slate-500">
+                                {progressText}
+                              </div>
                             ) : null}
                           </div>
                         );
@@ -1005,7 +1012,7 @@ export default function UserPipelinesPage() {
                                   name: row.pipelineName,
                                   description: row.pipelineDescription || undefined,
                                   defaultBranch: row.defaultBranch || undefined,
-                                  tagsJson: row.tagsJson || undefined,
+                                  tags: row.tags || undefined,
                                   project: row.projectName ? { id: 0, name: row.projectName } : undefined,
                                   template: row.templateType ? { id: 0, name: row.templateType, templateType: row.templateType } : undefined,
                                 } as PipelineSummary).catch(() => message.error('打开部署窗口失败'))}
@@ -1048,7 +1055,7 @@ export default function UserPipelinesPage() {
           setBranchOptions([]);
         }}
         onOk={() => createDeployment().catch(() => undefined)}
-        destroyOnClose
+        destroyOnHidden
       >
           <div className="space-y-4">
           {deployingPipeline && hallItems.some((item) => item.pipelineId === deployingPipeline.id && item.latestStatus && ACTIVE_DEPLOYMENT_STATUSES.includes(item.latestStatus)) ? (
@@ -1076,7 +1083,7 @@ export default function UserPipelinesPage() {
         open={settingsOpen}
         footer={null}
         onCancel={() => setSettingsOpen(false)}
-        destroyOnClose
+        destroyOnHidden
       >
         <div className="space-y-4">
           <button

@@ -1,5 +1,6 @@
 package top.fusb.deploybot.notification.service;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.data.domain.Sort;
@@ -16,6 +17,7 @@ import top.fusb.deploybot.security.AuthenticatedUser;
 import java.util.List;
 
 @Service
+@RequiredArgsConstructor
 public class NotificationDeliveryRecordService {
     private static final Sort NOTIFICATION_RECORD_SORT = Sort.by(
             Sort.Order.desc("createdAt"),
@@ -24,11 +26,6 @@ public class NotificationDeliveryRecordService {
 
     private final NotificationDeliveryRecordRepository repository;
     private final UserRepository userRepository;
-
-    public NotificationDeliveryRecordService(NotificationDeliveryRecordRepository repository, UserRepository userRepository) {
-        this.repository = repository;
-        this.userRepository = userRepository;
-    }
 
     public List<NotificationDeliveryRecordEntity> findAll() {
         return repository.findAll(NOTIFICATION_RECORD_SORT).stream()

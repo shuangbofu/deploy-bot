@@ -1,5 +1,7 @@
 package top.fusb.deploybot.service;
 
+import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -23,21 +25,18 @@ import java.nio.file.Path;
  * 用户管理服务。
  */
 @Service
+@RequiredArgsConstructor
 public class UserService {
     private final UserRepository userRepository;
     private final AuthService authService;
-    private final String defaultPassword;
-    private final Path avatarDirectory;
+    @Value("${deploybot.user.default-password:12345}")
+    private String defaultPassword;
+    @Value("${deploybot.workspace-root:./runtime}")
+    private String workspaceRoot;
+    private Path avatarDirectory;
 
-    public UserService(
-            UserRepository userRepository,
-            AuthService authService,
-            @Value("${deploybot.user.default-password:12345}") String defaultPassword,
-            @Value("${deploybot.workspace-root:./runtime}") String workspaceRoot
-    ) {
-        this.userRepository = userRepository;
-        this.authService = authService;
-        this.defaultPassword = defaultPassword;
+    @PostConstruct
+    public void initAvatarDirectory() {
         this.avatarDirectory = Path.of(workspaceRoot == null || workspaceRoot.isBlank() ? "./runtime" : workspaceRoot.trim())
                 .toAbsolutePath()
                 .normalize()

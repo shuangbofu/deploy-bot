@@ -15,6 +15,7 @@ export const pipelinesApi = {
   listPage: async (params: { page: number; pageSize: number; keyword?: string; projectId?: number; templateId?: number; hostId?: number; tags?: string[] }) =>
     (await client.get<PageResult<PipelineSummary>>('/pipelines/page', { params })).data,
   listTags: async () => (await client.get<string[]>('/pipelines/tags')).data,
+  get: async (id: number) => (await client.get<PipelineSummary>(`/pipelines/${id}`)).data,
   getBranches: async (pipelineId: number) => (await client.get<string[]>(`/pipelines/${pipelineId}/branches`)).data,
   create: async (payload: PipelinePayload) => (await client.post<PipelineSummary>('/pipelines', payload)).data,
   update: async (id: number, payload: PipelinePayload) => (await client.put<PipelineSummary>(`/pipelines/${id}`, payload)).data,

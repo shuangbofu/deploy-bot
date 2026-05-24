@@ -7,6 +7,5 @@ import java.util.List;
 
 public interface MavenSettingsRepository extends JpaRepository<MavenSettingsEntity, Long> {
     List<MavenSettingsEntity> findByRuntimeEnvironmentIdAndDeletedFalseOrderByIsDefaultDescNameAsc(Long runtimeEnvironmentId);
-    boolean existsByIdAndRuntimeEnvironmentIdAndDeletedFalse(Long id, Long runtimeEnvironmentId);
     java.util.Optional<MavenSettingsEntity> findByIdAndDeletedFalse(Long id);
 }

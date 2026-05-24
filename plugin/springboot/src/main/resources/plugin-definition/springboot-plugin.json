@@ -1,0 +1,274 @@
+{
+  "descriptor": {
+    "pluginId": "springboot-deployment",
+    "displayName": "Spring Boot 后端服务",
+    "category": "后端服务",
+    "templateTypes": ["springboot"],
+    "composite": false,
+    "builtin": true,
+    "provider": "deploy-bot",
+    "description": "适用于 Java Jar 形式的 Spring Boot 服务，支持 PID 接管与启动成功判定。"
+  },
+  "bannerResource": "/plugin-banner/springboot.txt",
+  "runtimeRequirement": {
+    "buildRuntimeTypes": ["JAVA", "MAVEN"],
+    "targetRuntimeTypes": ["JAVA"]
+  },
+  "pipelineFormSchema": {
+    "sections": [
+      {
+        "key": "runtime",
+        "title": "运行配置",
+        "description": "用于声明 JVM 参数、系统属性、应用参数以及运行期附加 YAML。",
+        "fields": [
+          {
+            "key": "javaOpts",
+            "label": "JVM 参数",
+            "type": "TEXTAREA",
+            "required": false,
+            "placeholder": "例如：-Xms256m -Xmx512m",
+            "helpText": "追加到 java 命令后的 JVM 参数。",
+            "options": [],
+            "binding": {
+              "scope": "PIPELINE_VARIABLE",
+              "key": "javaOpts"
+            }
+          },
+          {
+            "key": "javaSystemProperties",
+            "label": "系统属性",
+            "type": "TEXTAREA",
+            "required": false,
+            "placeholder": "例如：-Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai",
+            "helpText": "追加到 java 命令后的 -D 参数。",
+            "options": [],
+            "binding": {
+              "scope": "PIPELINE_VARIABLE",
+              "key": "javaSystemProperties"
+            }
+          },
+          {
+            "key": "springProfile",
+            "label": "Spring Profile",
+            "type": "TEXT",
+            "required": false,
+            "placeholder": "例如：prod / test / dev",
+            "helpText": "如填写，插件会自动把它注入启动参数。",
+            "options": [],
+            "binding": {
+              "scope": "PLUGIN_CONFIG",
+              "key": "springProfile"
+            }
+          },
+          {
+            "key": "applicationArgs",
+            "label": "应用参数",
+            "type": "TEXTAREA",
+            "required": false,
+            "placeholder": "例如：--server.port=8080",
+            "helpText": "追加到 Jar 后面的应用启动参数。",
+            "options": [],
+            "binding": {
+              "scope": "PIPELINE_VARIABLE",
+              "key": "applicationArgs"
+            }
+          },
+          {
+            "key": "runtimeConfigYaml",
+            "label": "application.yml",
+            "type": "CODE",
+            "required": false,
+            "placeholder": "例如：\\nspring:\\n  datasource:\\n    url: jdbc:mysql://...",
+            "helpText": "发布阶段会把这份 application.yml 写入目标主机，并通过附加配置参数自动生效。",
+            "options": [],
+            "binding": {
+              "scope": "PLUGIN_CONFIG",
+              "key": "runtimeConfigYaml"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "variableDefinitions": [
+    {
+      "key": "buildWorkDir",
+      "label": "构建目录",
+      "description": "执行 Maven 构建命令的仓库子目录。",
+      "required": true,
+      "secret": false,
+      "pipelineInput": false,
+      "defaultValue": "."
+    },
+    {
+      "key": "buildCommand",
+      "label": "构建命令",
+      "description": "用于执行 Maven 构建。",
+      "required": true,
+      "secret": false,
+      "pipelineInput": false,
+      "defaultValue": "mvn -U clean package -DskipTests",
+      "mutationRuleIds": ["springboot.build.maven-settings"],
+      "binding": {
+        "scope": "COMMAND_SLOT",
+        "key": "BUILD_COMMAND"
+      }
+    },
+    {
+      "key": "jarPath",
+      "label": "Jar 路径",
+      "description": "最终可发布的 Jar 文件路径。",
+      "required": true,
+      "secret": false,
+      "pipelineInput": false,
+      "defaultValue": "target/app.jar"
+    },
+    {
+      "key": "startCommand",
+      "label": "启动命令",
+      "description": "插件根据服务名与运行配置自动生成的受管启动命令。",
+      "required": false,
+      "secret": false,
+      "pipelineInput": false,
+      "defaultValue": "",
+      "mutationRuleIds": ["springboot.deploy.start-command"],
+      "binding": {
+        "scope": "COMMAND_SLOT",
+        "key": "START_COMMAND"
+      }
+    },
+    {
+      "key": "javaOpts",
+      "label": "JVM 参数",
+      "description": "追加到 java 命令后的 JVM 参数。",
+      "required": false,
+      "secret": false,
+      "pipelineInput": false,
+      "defaultValue": ""
+    },
+    {
+      "key": "javaSystemProperties",
+      "label": "系统属性",
+      "description": "追加到 java 命令后的 -D 参数。",
+      "required": false,
+      "secret": false,
+      "pipelineInput": false,
+      "defaultValue": ""
+    },
+    {
+      "key": "applicationArgs",
+      "label": "应用参数",
+      "description": "追加到 Jar 后面的应用启动参数。",
+      "required": false,
+      "secret": false,
+      "pipelineInput": false,
+      "defaultValue": ""
+    },
+    {
+      "key": "springBootArgs",
+      "label": "Spring Boot 启动参数",
+      "description": "插件根据 profile 与运行配置自动生成的启动参数。",
+      "required": false,
+      "secret": false,
+      "pipelineInput": false,
+      "defaultValue": "",
+      "mutationRuleIds": ["springboot.deploy.spring-args", "springboot.deploy.start-command"]
+    }
+  ],
+  "variableMutationRules": [
+    {
+      "ruleId": "springboot.build.maven-settings",
+      "phase": "BUILD",
+      "mutationType": "COMMAND_REWRITE",
+      "sourceReferences": [
+        {"scope": "CONTEXT", "key": "mavenSettingsFilePath", "label": "Maven Settings 文件"}
+      ],
+      "targetReferences": [
+        {"scope": "COMMAND_SLOT", "key": "BUILD_COMMAND", "label": "主构建命令"},
+        {"scope": "COMMAND_SLOT", "key": "BACKEND_BUILD_COMMAND", "label": "后端构建命令"}
+      ],
+      "generatedReferences": [
+        {"scope": "CONTEXT", "key": "mavenSettingsFilePath", "label": "Maven Settings 文件"},
+        {"scope": "VARIABLE", "key": "MAVEN_SETTINGS_FILE_PATH", "label": "Maven Settings 变量"}
+      ],
+      "triggerGroups": [
+        {
+          "mode": "ALL_PRESENT",
+          "references": [
+            {"scope": "CONTEXT", "key": "mavenSettingsFilePath", "label": "Maven Settings 文件"}
+          ]
+        }
+      ]
+    },
+    {
+      "ruleId": "springboot.deploy.spring-args",
+      "phase": "DEPLOY",
+      "mutationType": "VARIABLE_INJECT",
+      "sourceReferences": [
+        {"scope": "CONTEXT", "key": "springProfile", "label": "Spring Profile"},
+        {"scope": "VARIABLE", "key": "runtimeConfigYamlBase64", "label": "运行配置 YAML 内容"},
+        {"scope": "VARIABLE", "key": "runtimeConfigFilePath", "label": "运行配置 YAML 路径"}
+      ],
+      "targetReferences": [],
+      "generatedReferences": [
+        {"scope": "VARIABLE", "key": "springBootArgs", "label": "Spring Boot 启动参数"}
+      ],
+      "triggerGroups": [
+        {
+          "mode": "ANY_PRESENT",
+          "references": [
+            {"scope": "CONTEXT", "key": "springProfile", "label": "Spring Profile"}
+          ]
+        },
+        {
+          "mode": "ALL_PRESENT",
+          "references": [
+            {"scope": "VARIABLE", "key": "runtimeConfigYamlBase64", "label": "运行配置 YAML 内容"},
+            {"scope": "VARIABLE", "key": "runtimeConfigFilePath", "label": "运行配置 YAML 路径"}
+          ]
+        }
+      ]
+    },
+    {
+      "ruleId": "springboot.deploy.start-command",
+      "phase": "DEPLOY",
+      "mutationType": "COMMAND_REWRITE",
+      "sourceReferences": [
+        {"scope": "VARIABLE", "key": "javaOpts", "label": "JVM 参数"},
+        {"scope": "VARIABLE", "key": "javaSystemProperties", "label": "系统属性"},
+        {"scope": "VARIABLE", "key": "springBootArgs", "label": "Spring Boot 启动参数"},
+        {"scope": "VARIABLE", "key": "applicationArgs", "label": "应用参数"}
+      ],
+      "targetReferences": [
+        {"scope": "COMMAND_SLOT", "key": "START_COMMAND", "label": "启动命令槽位"}
+      ],
+      "generatedReferences": [
+        {"scope": "VARIABLE", "key": "startCommand", "label": "启动命令"},
+        {"scope": "COMMAND_SLOT", "key": "START_COMMAND", "label": "启动命令槽位"}
+      ],
+      "triggerGroups": [
+        {
+          "mode": "ANY_PRESENT",
+          "references": [
+            {"scope": "VARIABLE", "key": "javaOpts", "label": "JVM 参数"},
+            {"scope": "VARIABLE", "key": "javaSystemProperties", "label": "系统属性"},
+            {"scope": "VARIABLE", "key": "springBootArgs", "label": "Spring Boot 启动参数"},
+            {"scope": "VARIABLE", "key": "applicationArgs", "label": "应用参数"}
+          ]
+        }
+      ]
+    }
+  ],
+  "builtinTemplates": [
+    {
+      "templateKey": "springboot-jar-default",
+      "name": "Spring Boot Jar 部署",
+      "description": "在本机拉取并构建 Spring Boot Jar，再发布到目标主机或本机目录并启动受管进程。",
+      "templateType": "springboot",
+      "buildScriptResource": "/scripts/springboot/build.sh",
+      "deployScriptResource": "/scripts/springboot/deploy.sh",
+      "variablesSchema": "[]",
+      "monitorProcess": true
+    }
+  ]
+}

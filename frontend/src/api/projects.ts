@@ -11,5 +11,7 @@ export const projectsApi = {
   create: async (payload: ProjectPayload) => (await client.post<ProjectSummary>('/projects', payload)).data,
   update: async (id: number, payload: ProjectPayload) => (await client.put<ProjectSummary>(`/projects/${id}`, payload)).data,
   testConnection: async (payload: ProjectPayload) => (await client.post<ProjectConnectionTestResult>('/projects/test-connection', payload)).data,
+  getBranches: async (projectId: number, preferredBranch?: string) =>
+    (await client.get<string[]>(`/projects/${projectId}/branches`, { params: { preferredBranch } })).data,
   remove: async (id: number) => client.delete(`/projects/${id}`),
 };

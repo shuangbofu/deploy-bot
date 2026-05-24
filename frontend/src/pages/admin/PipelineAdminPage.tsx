@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Steps, Table, Tag, message } from 'antd';
+import { useNavigate, useParams } from 'react-router-dom';
+import { deploymentPluginsApi } from '../../api/deploymentPlugins';
 import { hostsApi } from '../../api/hosts';
 import { notificationsApi } from '../../api/notifications';
 import { pipelinesApi } from '../../api/pipelines';
@@ -8,16 +10,19 @@ import { runtimeEnvironmentsApi } from '../../api/runtimeEnvironments';
 import { templatesApi } from '../../api/templates';
 import type { PipelinePayload } from '../../api/types';
 import EmptyPane from '../../components/EmptyPane';
-import JsonEditor from '../../components/JsonEditor';
+import CodeEditor from '../../components/CodeEditor';
 import PageHeaderBar from '../../components/PageHeaderBar';
 import PipelineVariablesEditor from '../../components/PipelineVariablesEditor';
-import PipelineIcon, { getRequiredEnvironmentTypes, getRequiredRuntimeEnvironmentTypes } from '../../components/PipelineIcon';
+import PipelineIcon from '../../components/PipelineIcon';
 import { copyText } from '../../utils/clipboard';
 import { getStableTagColor, PHASE_LABEL_MAP, PHASE_TAG_COLOR_MAP, sortByPhase, sortTagNames } from '../../utils/tagColors';
 import type {
   HostSummary,
   NotificationBinding,
   NotificationChannelSummary,
+  DeploymentPluginDefinitionSummary,
+  PluginFormFieldBindingSummary,
+  PluginFormFieldSummary,
   MavenSettingsSummary,
   PipelineSummary,
   RuntimeEnvironmentSummary,
@@ -25,25 +30,28 @@ import type {
   TemplateVariableDefinition,
 } from '../../types/domain';
 
+const PIPELINE_TABLE_SCROLL_LEFT_KEY = 'deploy-bot:pipeline-table-scroll-left';
+
 interface PipelineFormState {
   name: string;
   description: string;
   tags: string[];
   projectId?: number;
   templateId?: number;
+  templatePluginId?: string;
+  builtinTemplateKey?: string;
   targetHostId?: number;
+  targetDir: string;
   defaultBranch: string;
-  variablesJson: Record<string, string>;
+  variables: Record<string, string>;
   javaEnvironmentId?: number;
   nodeEnvironmentId?: number;
   mavenEnvironmentId?: number;
   mavenSettingsId?: number;
   runtimeJavaEnvironmentId?: number;
-  applicationName: string;
-  springProfile: string;
-  runtimeConfigYaml: string;
   startupKeyword: string;
   startupTimeoutSeconds?: number;
+  pluginConfig: Record<string, string>;
   notificationIds: number[];
 }
 
@@ -53,20 +61,55 @@ const emptyPipeline: PipelineFormState = {
   tags: [],
   projectId: undefined,
   templateId: undefined,
+  templatePluginId: undefined,
+  builtinTemplateKey: undefined,
   targetHostId: undefined,
+  targetDir: '',
   defaultBranch: 'main',
-  variablesJson: {},
+  variables: {},
   javaEnvironmentId: undefined,
   nodeEnvironmentId: undefined,
   mavenEnvironmentId: undefined,
   mavenSettingsId: undefined,
   runtimeJavaEnvironmentId: undefined,
-  applicationName: '',
-  springProfile: '',
-  runtimeConfigYaml: '',
   startupKeyword: '',
-  startupTimeoutSeconds: 30,
+  startupTimeoutSeconds: undefined,
+  pluginConfig: {},
   notificationIds: [],
+};
+
+const normalizePluginFieldValue = (value: unknown) => {
+  if (value == null) {
+    return '';
+  }
+  return String(value);
+};
+
+const resolveFieldBinding = (field: PluginFormFieldSummary): PluginFormFieldBindingSummary => (
+  field.binding || { scope: 'PLUGIN_CONFIG', key: field.key }
+);
+
+const extractPluginConfig = (
+  record: PipelineSummary,
+  plugin: DeploymentPluginDefinitionSummary | null,
+): Record<string, string> => {
+  if (!plugin?.pipelineFormSchema?.sections?.length) {
+    return {};
+  }
+  const variables = normalizeVariables(record.variables);
+  const pluginConfigValues = normalizeVariables(record.pluginConfig);
+  const config: Record<string, string> = {};
+  plugin.pipelineFormSchema.sections.forEach((section) => {
+    section.fields.forEach((field) => {
+      const binding = resolveFieldBinding(field);
+      if (binding.scope === 'PIPELINE_VARIABLE') {
+        config[field.key] = normalizePluginFieldValue(variables[binding.key]);
+        return;
+      }
+      config[field.key] = normalizePluginFieldValue(pluginConfigValues[field.key]);
+    });
+  });
+  return config;
 };
 
 /**
@@ -87,10 +130,7 @@ const parseVariablesSchema = (content: unknown): TemplateVariableDefinition[] =>
   }
 };
 
-/**
- * 流水线默认变量在接口里可能是 JSON 字符串，也可能已经被前端处理成对象。
- */
-const parseVariablesJson = (content: unknown): Record<string, string> => {
+const normalizeVariables = (content: unknown): Record<string, string> => {
   if (!content) {
     return {};
   }
@@ -105,10 +145,44 @@ const parseVariablesJson = (content: unknown): Record<string, string> => {
   }
 };
 
-/**
- * 标签字段在接口里以 JSON 字符串存储，这里统一转成字符串数组。
- */
-const parseTagsJson = (content: unknown): string[] => {
+const stripContextVariables = (values: Record<string, string>) => {
+  const next = { ...(values || {}) };
+  delete next.targetDir;
+  return next;
+};
+
+const hasPipelineVariableValue = (values: Record<string, string>, name?: string) => {
+  return Boolean(name && Object.prototype.hasOwnProperty.call(values, name));
+};
+
+interface PipelineTemplateOption {
+  optionId: number;
+  source: 'saved' | 'builtin';
+  name: string;
+  templateType?: string;
+  pluginId?: string;
+  templateId?: number;
+  builtinTemplateKey?: string;
+  variablesSchema?: string | TemplateVariableDefinition[];
+  monitorProcess?: boolean;
+}
+
+const matchesPipelineTemplateOption = (
+  option: PipelineTemplateOption,
+  item: Pick<PipelineSummary, 'template' | 'templatePluginId' | 'builtinTemplateKey'>,
+) => {
+  if (item.template?.id != null) {
+    return option.source === 'saved' && option.templateId === item.template.id;
+  }
+  if (item.templatePluginId && item.builtinTemplateKey) {
+    return option.source === 'builtin'
+      && option.pluginId === item.templatePluginId
+      && option.builtinTemplateKey === item.builtinTemplateKey;
+  }
+  return false;
+};
+
+const normalizeTags = (content: unknown): string[] => {
   if (!content) {
     return [];
   }
@@ -123,7 +197,7 @@ const parseTagsJson = (content: unknown): string[] => {
   }
 };
 
-const parseNotificationBindings = (content: unknown): NotificationBinding[] => {
+const normalizeNotificationBindings = (content: unknown): NotificationBinding[] => {
   if (!content) {
     return [];
   }
@@ -141,6 +215,24 @@ const parseNotificationBindings = (content: unknown): NotificationBinding[] => {
 };
 
 const deriveNotificationIds = (bindings: NotificationBinding[]) => Array.from(new Set(bindings.map((item) => item.notificationId)));
+
+const buildRuntimeFieldConfigs = [
+  {
+    type: 'JAVA',
+    formKey: 'javaEnvironmentId',
+    label: 'Java',
+  },
+  {
+    type: 'NODE',
+    formKey: 'nodeEnvironmentId',
+    label: 'Node',
+  },
+  {
+    type: 'MAVEN',
+    formKey: 'mavenEnvironmentId',
+    label: 'Maven',
+  },
+] as const;
 
 const getLocalBuildEnvironmentOptions = (
   items: RuntimeEnvironmentSummary[],
@@ -189,11 +281,31 @@ const sortEnvironmentOptions = (left: RuntimeEnvironmentSummary, right: RuntimeE
   return String(left.name || '').localeCompare(String(right.name || ''), 'zh-CN');
 };
 
-export default function PipelineAdminPage() {
+const mergeBranchOptions = (branches: string[], currentBranch?: string) => {
+  const merged = new Set<string>();
+  if (currentBranch?.trim()) {
+    merged.add(currentBranch.trim());
+  }
+  branches.forEach((branch) => {
+    if (branch?.trim()) {
+      merged.add(branch.trim());
+    }
+  });
+  return Array.from(merged);
+};
+
+type PipelinePageMode = 'list' | 'create' | 'edit' | 'view';
+
+export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePageMode }) {
+  const navigate = useNavigate();
+  const { pipelineId } = useParams();
+  const routePipelineId = pipelineId ? Number(pipelineId) : undefined;
+  const tableWrapRef = useRef<HTMLDivElement | null>(null);
   const [projects, setProjects] = useState<PipelineSummary['project'][]>([]);
   const [hosts, setHosts] = useState<HostSummary[]>([]);
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [notifications, setNotifications] = useState<NotificationChannelSummary[]>([]);
+  const [plugins, setPlugins] = useState<DeploymentPluginDefinitionSummary[]>([]);
   const [mavenSettings, setMavenSettings] = useState<MavenSettingsSummary[]>([]);
   const [runtimeEnvironments, setRuntimeEnvironments] = useState<RuntimeEnvironmentSummary[]>([]);
   const [pipelines, setPipelines] = useState<PipelineSummary[]>([]);
@@ -201,8 +313,9 @@ export default function PipelineAdminPage() {
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState<PipelineFormState>(emptyPipeline);
+  const [branchOptions, setBranchOptions] = useState<string[]>([]);
+  const [branchesLoading, setBranchesLoading] = useState(false);
   const [editingId, setEditingId] = useState<number>();
-  const [modalOpen, setModalOpen] = useState(false);
   const [duplicateModalOpen, setDuplicateModalOpen] = useState(false);
   const [duplicateSource, setDuplicateSource] = useState<PipelineSummary>();
   const [duplicateName, setDuplicateName] = useState('');
@@ -215,14 +328,22 @@ export default function PipelineAdminPage() {
   const [tagFilter, setTagFilter] = useState<string[]>();
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
 
+  const rememberPipelineTableScrollLeft = () => {
+    const scrollBody = tableWrapRef.current?.querySelector('.ant-table-body') as HTMLDivElement | null;
+    if (scrollBody) {
+      sessionStorage.setItem(PIPELINE_TABLE_SCROLL_LEFT_KEY, String(scrollBody.scrollLeft));
+    }
+  };
+
   const loadMeta = async () => {
-    const [projectResponse, hostResponse, templateResponse, runtimeEnvironmentsResponse, notificationResponse, tagResponse] = await Promise.all([
+    const [projectResponse, hostResponse, templateResponse, runtimeEnvironmentsResponse, notificationResponse, tagResponse, pluginResponse] = await Promise.all([
       projectsApi.list(),
       hostsApi.list(true),
       templatesApi.list(),
       runtimeEnvironmentsApi.list(),
       notificationsApi.list(),
       pipelinesApi.listTags(),
+      deploymentPluginsApi.list(),
     ]);
     setProjects(projectResponse);
     setHosts(hostResponse);
@@ -230,7 +351,32 @@ export default function PipelineAdminPage() {
     setRuntimeEnvironments(runtimeEnvironmentsResponse);
     setNotifications(notificationResponse);
     setAvailableTags(sortTagNames(tagResponse));
+    setPlugins(pluginResponse);
   };
+
+  const templateOptions = useMemo<PipelineTemplateOption[]>(() => {
+    const saved = templates.map((item, index) => ({
+      optionId: index + 1,
+      source: 'saved' as const,
+      name: item.name,
+      templateType: item.templateType || undefined,
+      pluginId: item.pluginId || undefined,
+      templateId: item.id,
+      variablesSchema: item.variablesSchema,
+      monitorProcess: item.monitorProcess === true,
+    }));
+    const builtin = plugins.flatMap((plugin, pluginIndex) => (plugin.builtinTemplates || []).map((item, templateIndex) => ({
+      optionId: templates.length + pluginIndex * 1000 + templateIndex + 1,
+      source: 'builtin' as const,
+      name: item.name,
+      templateType: item.templateType || undefined,
+      pluginId: plugin.descriptor.pluginId,
+      builtinTemplateKey: item.templateKey || undefined,
+      variablesSchema: item.variablesSchema || undefined,
+      monitorProcess: item.monitorProcess === true,
+    })));
+    return [...saved, ...builtin];
+  }, [plugins, templates]);
 
   const loadPipelines = async () => {
     setLoading(true);
@@ -256,8 +402,51 @@ export default function PipelineAdminPage() {
   }, []);
 
   useEffect(() => {
+    if (mode !== 'list') {
+      return;
+    }
     loadPipelines().catch(() => message.error('加载流水线数据失败'));
   }, [pagination.current, pagination.pageSize, keyword, projectFilter, templateFilter, hostFilter, tagFilter]);
+
+  useEffect(() => {
+    if (mode === 'list') {
+      setBranchOptions([]);
+      return;
+    }
+    if (!form.projectId) {
+      setBranchOptions([]);
+      return;
+    }
+
+    let cancelled = false;
+    setBranchesLoading(true);
+    projectsApi.getBranches(form.projectId, form.defaultBranch)
+      .then((branches) => {
+        if (cancelled) {
+          return;
+        }
+        const mergedBranches = mergeBranchOptions(branches, form.defaultBranch);
+        setBranchOptions(mergedBranches);
+        if (!form.defaultBranch && mergedBranches.length > 0) {
+          setForm((previous) => ({ ...previous, defaultBranch: mergedBranches[0] }));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setBranchOptions(mergeBranchOptions([], form.defaultBranch));
+          message.error('加载项目分支失败');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setBranchesLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, form.projectId]);
 
   useEffect(() => {
     const loadScopedMavenSettings = async () => {
@@ -277,39 +466,66 @@ export default function PipelineAdminPage() {
     });
   }, [form.mavenEnvironmentId]);
 
+  useEffect(() => {
+    if (mode === 'create') {
+      setEditingId(undefined);
+      setForm(emptyPipeline);
+      setBranchOptions([]);
+      setMavenSettings([]);
+      setCurrentStep(0);
+      return;
+    }
+    if ((mode === 'edit' || mode === 'view') && routePipelineId) {
+      pipelinesApi.get(routePipelineId)
+        .then((record) => {
+          setEditingId(mode === 'edit' ? record.id : undefined);
+          fillFormFromRecord(record);
+          if (mode === 'edit') {
+            setEditingId(record.id);
+          }
+        })
+        .catch(() => message.error('加载流水线详情失败'));
+    }
+  }, [mode, routePipelineId, plugins.length, templates.length]);
+
   const openCreate = () => {
-    setEditingId(undefined);
-    setForm(emptyPipeline);
-    setMavenSettings([]);
-    setCurrentStep(0);
-    setModalOpen(true);
+    rememberPipelineTableScrollLeft();
+    navigate('/admin/pipelines/new');
   };
 
-  const openEdit = (record: PipelineSummary) => {
-    setEditingId(record.id);
+  const fillFormFromRecord = (record: PipelineSummary) => {
+    setEditingId(undefined);
+    const currentTemplateOption = templateOptions.find((item) => matchesPipelineTemplateOption(item, record));
+    const plugin = plugins.find((item) => item.descriptor.pluginId === (currentTemplateOption?.pluginId || record.templatePluginId || record.template?.pluginId)) || null;
     setForm({
       name: record.name || '',
       description: record.description || '',
-      tags: parseTagsJson(record.tagsJson),
+      tags: normalizeTags(record.tags),
       projectId: record.project?.id || undefined,
       templateId: record.template?.id || undefined,
+      templatePluginId: record.templatePluginId || undefined,
+      builtinTemplateKey: record.builtinTemplateKey || undefined,
       targetHostId: record.targetHost?.id || undefined,
+      targetDir: record.targetDir || '',
       defaultBranch: record.defaultBranch || 'main',
-      variablesJson: parseVariablesJson(record.variablesJson),
+      variables: normalizeVariables(record.variables),
       javaEnvironmentId: record.javaEnvironment?.id || undefined,
       nodeEnvironmentId: record.nodeEnvironment?.id || undefined,
       mavenEnvironmentId: record.mavenEnvironment?.id || undefined,
       mavenSettingsId: record.mavenSettings?.id || undefined,
       runtimeJavaEnvironmentId: record.runtimeJavaEnvironment?.id || undefined,
-      applicationName: record.applicationName || '',
-      springProfile: record.springProfile || '',
-      runtimeConfigYaml: record.runtimeConfigYaml || '',
       startupKeyword: record.startupKeyword || '',
-      startupTimeoutSeconds: record.startupTimeoutSeconds || 30,
-      notificationIds: deriveNotificationIds(parseNotificationBindings(record.notificationBindingsJson)),
+      startupTimeoutSeconds: record.startupTimeoutSeconds || undefined,
+      pluginConfig: extractPluginConfig(record, plugin),
+      notificationIds: deriveNotificationIds(normalizeNotificationBindings(record.notificationBindings)),
     });
+    setBranchOptions(mergeBranchOptions([], record.defaultBranch || 'main'));
     setCurrentStep(0);
-    setModalOpen(true);
+  };
+
+  const openEdit = (record: PipelineSummary) => {
+    rememberPipelineTableScrollLeft();
+    navigate(`/admin/pipelines/${record.id}/edit`);
   };
 
   const openDuplicate = (record: PipelineSummary) => {
@@ -323,21 +539,22 @@ export default function PipelineAdminPage() {
     description: record.description || '',
     projectId: record.project?.id || undefined,
     templateId: record.template?.id || undefined,
+    templatePluginId: record.templatePluginId || undefined,
+    builtinTemplateKey: record.builtinTemplateKey || undefined,
     targetHostId: record.targetHost?.id || undefined,
+    targetDir: record.targetDir || '',
     defaultBranch: record.defaultBranch || 'main',
-    variablesJson: JSON.stringify(parseVariablesJson(record.variablesJson), null, 2),
-    tagsJson: JSON.stringify(parseTagsJson(record.tagsJson), null, 2),
+    variables: stripContextVariables(normalizeVariables(record.variables)),
+    tags: normalizeTags(record.tags),
     javaEnvironmentId: record.javaEnvironment?.id || undefined,
     nodeEnvironmentId: record.nodeEnvironment?.id || undefined,
     mavenEnvironmentId: record.mavenEnvironment?.id || undefined,
     mavenSettingsId: record.mavenSettings?.id || undefined,
     runtimeJavaEnvironmentId: record.runtimeJavaEnvironment?.id || undefined,
-    applicationName: record.applicationName || '',
-    springProfile: record.springProfile || '',
-    runtimeConfigYaml: record.runtimeConfigYaml || '',
+    pluginConfig: normalizeVariables(record.pluginConfig),
     startupKeyword: record.startupKeyword || '',
     startupTimeoutSeconds: record.startupTimeoutSeconds || 30,
-    notificationBindingsJson: JSON.stringify(parseNotificationBindings(record.notificationBindingsJson), null, 2),
+    notificationBindings: normalizeNotificationBindings(record.notificationBindings),
   });
 
   const duplicatePipeline = async () => {
@@ -363,12 +580,75 @@ export default function PipelineAdminPage() {
   };
 
   const savePipeline = async () => {
+    if (!form.name.trim()) {
+      setCurrentStep(0);
+      message.error('请填写流水线名称');
+      return;
+    }
+    if (!form.projectId) {
+      setCurrentStep(0);
+      message.error('请选择项目');
+      return;
+    }
+    if (!selectedTemplate) {
+      setCurrentStep(0);
+      message.error('请选择模板');
+      return;
+    }
+    if (!form.defaultBranch.trim()) {
+      setCurrentStep(0);
+      message.error('请选择默认分支');
+      return;
+    }
+    const missingBuildRuntime = buildRuntimeFieldConfigs.find((item) => requiredEnvironmentTypes.includes(item.type) && !form[item.formKey]);
+    if (missingBuildRuntime) {
+      setCurrentStep(1);
+      message.error(`请选择本机构建 ${missingBuildRuntime.label} 环境`);
+      return;
+    }
+    if (!form.targetHostId) {
+      setCurrentStep(2);
+      message.error('请选择目标主机');
+      return;
+    }
+    if (!form.targetDir.trim()) {
+      setCurrentStep(2);
+      message.error('请填写部署目录');
+      return;
+    }
+    if (requiredRuntimeEnvironmentTypes.includes('JAVA') && !form.runtimeJavaEnvironmentId) {
+      setCurrentStep(2);
+      message.error('请选择目标主机运行组件环境');
+      return;
+    }
+    const missingVariable = selectedTemplateVariables.find((item) => item.required && !form.variables[item.name]?.trim());
+    if (missingVariable) {
+      setCurrentStep(stepItems.findIndex((item) => item.key === 'variables'));
+      message.error(`请填写变量：${missingVariable.label || missingVariable.name}`);
+      return;
+    }
+    const payloadVariables = stripContextVariables(form.variables || {});
     const payload: PipelinePayload = {
-      ...form,
-      variablesJson: JSON.stringify(form.variablesJson || {}, null, 2),
-      tagsJson: JSON.stringify(form.tags || [], null, 2),
-      notificationBindingsJson: JSON.stringify(
-        form.notificationIds
+      name: form.name,
+      description: form.description,
+      projectId: form.projectId,
+      templateId: form.templateId,
+      templatePluginId: form.templatePluginId,
+      builtinTemplateKey: form.builtinTemplateKey,
+      targetHostId: form.targetHostId,
+      targetDir: form.targetDir,
+      defaultBranch: form.defaultBranch,
+      variables: payloadVariables,
+      tags: form.tags || [],
+      javaEnvironmentId: form.javaEnvironmentId,
+      nodeEnvironmentId: form.nodeEnvironmentId,
+      mavenEnvironmentId: form.mavenEnvironmentId,
+      mavenSettingsId: form.mavenSettingsId,
+      runtimeJavaEnvironmentId: form.runtimeJavaEnvironmentId,
+      pluginConfig: form.pluginConfig || {},
+      startupKeyword: serviceMonitorEnabled ? form.startupKeyword : '',
+      startupTimeoutSeconds: serviceMonitorEnabled ? form.startupTimeoutSeconds : undefined,
+      notificationBindings: form.notificationIds
           .map((notificationId) => {
             const notification = notifications.find((item) => item.id === notificationId);
             const eventType = notification?.eventType;
@@ -377,11 +657,24 @@ export default function PipelineAdminPage() {
             }
             return { notificationId, eventType };
           })
-          .filter(Boolean),
-        null,
-        2,
-      ),
+          .filter((item): item is NotificationBinding => Boolean(item)),
     };
+    (selectedPlugin?.pipelineFormSchema.sections || []).forEach((section) => {
+      section.fields.forEach((field) => {
+        const binding = resolveFieldBinding(field);
+        const rawValue = form.pluginConfig[field.key];
+        const value = rawValue == null ? '' : rawValue;
+        if (binding.scope === 'PIPELINE_VARIABLE') {
+          if (value) {
+            payloadVariables[binding.key] = value;
+          } else {
+            delete payloadVariables[binding.key];
+          }
+          return;
+        }
+      });
+    });
+    payload.variables = payloadVariables;
     if (editingId) {
       await pipelinesApi.update(editingId, payload);
     } else {
@@ -390,8 +683,11 @@ export default function PipelineAdminPage() {
     setForm(emptyPipeline);
     setEditingId(undefined);
     setCurrentStep(0);
-    setModalOpen(false);
-    await Promise.all([loadMeta(), loadPipelines()]);
+    if (mode === 'list') {
+      await Promise.all([loadMeta(), loadPipelines()]);
+    } else {
+      navigate('/admin/pipelines');
+    }
     message.success(editingId ? '流水线已更新' : '流水线已创建');
   };
 
@@ -402,27 +698,25 @@ export default function PipelineAdminPage() {
   };
 
   const selectedTemplate = useMemo(
-    () => templates.find((item) => item.id === form.templateId),
-    [templates, form.templateId],
+    () => templateOptions.find((item) => item.source === 'saved'
+      ? item.templateId === form.templateId
+      : item.pluginId === form.templatePluginId && item.builtinTemplateKey === form.builtinTemplateKey),
+    [form.builtinTemplateKey, form.templateId, form.templatePluginId, templateOptions],
   );
-
-  const selectedTargetHost = useMemo(
-    () => hosts.find((item) => item.id === form.targetHostId),
-    [hosts, form.targetHostId],
+  const selectedPlugin = useMemo(
+    () => plugins.find((item) => item.descriptor.pluginId === selectedTemplate?.pluginId) || null,
+    [plugins, selectedTemplate],
   );
-
+  const serviceMonitorEnabled = selectedTemplate?.monitorProcess === true;
   const localHost = useMemo(
     () => hosts.find((item) => item.builtIn) || hosts.find((item) => item.type === 'LOCAL'),
     [hosts],
   );
 
   const selectedTemplateVariables = useMemo(
-    () => parseVariablesSchema(selectedTemplate?.variablesSchema),
-    [selectedTemplate],
-  );
-  const isSpringBootTemplate = useMemo(
-    () => ['springboot', 'springboot_frontend'].includes(selectedTemplate?.templateType || ''),
-    [selectedTemplate],
+    () => parseVariablesSchema(selectedTemplate?.variablesSchema)
+      .filter((item) => item.pipelineInput !== false || hasPipelineVariableValue(form.variables, item.name)),
+    [form.variables, selectedTemplate],
   );
   const stepItems = useMemo(() => {
     const items = [
@@ -430,32 +724,60 @@ export default function PipelineAdminPage() {
       { key: 'build', title: '构建环境', description: '选择本机构建用环境' },
       { key: 'target', title: '目标主机', description: '选择发布到哪台主机' },
     ];
-    if (isSpringBootTemplate) {
-      items.push({ key: 'runtime', title: '运行配置', description: 'Profile / YAML 覆盖' });
+    if ((selectedPlugin?.pipelineFormSchema.sections || []).length > 0) {
+      items.push({ key: 'runtime', title: '运行配置', description: '按插件要求填写运行时与服务配置' });
     }
     items.push(
       { key: 'variables', title: '变量', description: '按阶段填写变量值' },
       { key: 'notifications', title: '通知配置', description: '绑定要使用的通知配置' },
     );
     return items;
-  }, [isSpringBootTemplate]);
+  }, [selectedPlugin]);
   const currentStepKey = stepItems[currentStep]?.key;
 
   const requiredEnvironmentTypes = useMemo(
-    () => getRequiredEnvironmentTypes(selectedTemplate?.templateType),
-    [selectedTemplate],
+    () => selectedPlugin?.runtimeRequirement.buildRuntimeTypes || [],
+    [selectedPlugin],
   );
   const requiredRuntimeEnvironmentTypes = useMemo(
-    () => getRequiredRuntimeEnvironmentTypes(selectedTemplate?.templateType),
-    [selectedTemplate],
+    () => selectedPlugin?.runtimeRequirement.targetRuntimeTypes || [],
+    [selectedPlugin],
+  );
+  const pipelineServiceFields = useMemo(
+    () => (selectedPlugin?.pipelineFormSchema.sections || []).find((section) => section.key === 'service')?.fields || [],
+    [selectedPlugin],
+  );
+  const pipelineRuntimeFields = useMemo(
+    () => (selectedPlugin?.pipelineFormSchema.sections || []).find((section) => section.key === 'runtime')?.fields || [],
+    [selectedPlugin],
   );
 
   const tableData = useMemo(() => pipelines.map((item) => ({
     ...item,
-    parsedVariablesJson: parseVariablesJson(item.variablesJson),
-    parsedTemplateVariables: parseVariablesSchema(item.template?.variablesSchema),
-    parsedTags: parseTagsJson(item.tagsJson),
-  })), [pipelines]);
+    resolvedTemplateOption: templateOptions.find((option) => matchesPipelineTemplateOption(option, item)),
+    parsedVariables: normalizeVariables(item.variables),
+    parsedTemplateVariables: parseVariablesSchema(
+      templateOptions.find((option) => matchesPipelineTemplateOption(option, item))?.variablesSchema
+        || item.template?.variablesSchema,
+    ),
+    parsedTags: normalizeTags(item.tags),
+  })), [pipelines, templateOptions]);
+
+  useEffect(() => {
+    if (mode !== 'list' || loading) {
+      return;
+    }
+    const scrollLeft = Number(sessionStorage.getItem(PIPELINE_TABLE_SCROLL_LEFT_KEY) || 0);
+    if (!scrollLeft) {
+      return;
+    }
+    window.setTimeout(() => {
+      const scrollBody = tableWrapRef.current?.querySelector('.ant-table-body') as HTMLDivElement | null;
+      if (scrollBody) {
+        scrollBody.scrollLeft = scrollLeft;
+      }
+    }, 0);
+  }, [mode, loading, tableData.length]);
 
   const javaOptions = useMemo(
     () => getLocalBuildEnvironmentOptions(runtimeEnvironments, 'JAVA', localHost?.id),
@@ -476,6 +798,308 @@ export default function PipelineAdminPage() {
       .map((item) => ({ label: `${item.name}${item.version ? ` (${item.version})` : ''}`, value: item.id })),
     [runtimeEnvironments, form.targetHostId],
   );
+  const buildEnvironmentOptionsMap = useMemo(() => ({
+    JAVA: javaOptions,
+    NODE: nodeOptions,
+    MAVEN: mavenOptions,
+  }), [javaOptions, nodeOptions, mavenOptions]);
+
+  const renderPluginPipelineField = (field: PluginFormFieldSummary) => {
+    const value = form.pluginConfig[field.key] ?? '';
+    const updateValue = (nextValue: string) => setForm({
+      ...form,
+      pluginConfig: {
+        ...form.pluginConfig,
+        [field.key]: nextValue,
+      },
+    });
+    if (field.type === 'CODE') {
+      const lowerKey = field.key.toLowerCase();
+      const lowerLabel = field.label.toLowerCase();
+      const lowerHelpText = (field.helpText || '').toLowerCase();
+      const editorLanguage = lowerKey.includes('yaml') || lowerKey.includes('yml') || lowerLabel.includes('yaml') || lowerLabel.includes('yml')
+        ? 'yaml'
+        : lowerKey.includes('script') || lowerKey.includes('command') || lowerHelpText.includes('shell')
+          ? 'shell'
+          : 'text';
+      return (
+        <CodeEditor
+          rows={10}
+          language={editorLanguage}
+          value={value}
+          onChange={updateValue}
+          placeholder={field.placeholder || undefined}
+        />
+      );
+    }
+    if (field.type === 'TEXTAREA') {
+      return (
+        <Input.TextArea
+          rows={3}
+          value={value}
+          onChange={(event) => updateValue(event.target.value)}
+          placeholder={field.placeholder || undefined}
+        />
+      );
+    }
+    if (field.type === 'SELECT') {
+      return (
+        <Select
+          allowClear={!field.required}
+          value={value || undefined}
+          options={(field.options || []).map((item) => ({ label: item.label, value: item.value }))}
+          onChange={(nextValue) => updateValue(nextValue || '')}
+          placeholder={field.placeholder || undefined}
+        />
+      );
+    }
+    if (field.type === 'SWITCH') {
+      return (
+        <Select
+          value={value || 'false'}
+          options={[
+            { label: '开启', value: 'true' },
+            { label: '关闭', value: 'false' },
+          ]}
+          onChange={(nextValue) => updateValue(nextValue)}
+        />
+      );
+    }
+    return (
+      <Input
+        value={value}
+        onChange={(event) => updateValue(event.target.value)}
+        placeholder={field.placeholder || undefined}
+      />
+    );
+  };
+
+  const resolvePluginFieldEditorLanguage = (field: PluginFormFieldSummary) => {
+    const lowerKey = field.key.toLowerCase();
+    const lowerLabel = field.label.toLowerCase();
+    const lowerHelpText = (field.helpText || '').toLowerCase();
+    if (lowerKey.includes('yaml') || lowerKey.includes('yml') || lowerLabel.includes('yaml') || lowerLabel.includes('yml')) {
+      return 'yaml';
+    }
+    if (lowerKey.includes('script') || lowerKey.includes('command') || lowerHelpText.includes('shell')) {
+      return 'shell';
+    }
+    return 'text';
+  };
+
+  const renderReadonlyPluginConfigValue = (field: PluginFormFieldSummary, value: string) => {
+    if (field.type === 'CODE') {
+      return (
+        <CodeEditor
+          rows={Math.max(8, (value || '').split('\n').length)}
+          language={resolvePluginFieldEditorLanguage(field)}
+          value={value || ''}
+          onChange={() => {}}
+          readOnly
+        />
+      );
+    }
+    return <div className="rounded-lg bg-slate-50 px-3 py-2 whitespace-pre-wrap">{value || '-'}</div>;
+  };
+
+  if (mode === 'view') {
+    const pluginConfigItems = selectedPlugin
+      ? selectedPlugin.pipelineFormSchema.sections
+        .flatMap((section) => section.fields.map((field) => ({
+          sectionTitle: section.title,
+          field,
+          value: form.pluginConfig[field.key] || '',
+        })))
+        .filter(Boolean)
+      : [];
+    return (
+      <>
+        <PageHeaderBar
+          title="查看流水线"
+          description={form.name || '-'}
+          extra={<Button onClick={() => navigate('/admin/pipelines')}>返回</Button>}
+        />
+        <div className="app-page-scroll">
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <Card title="基础信息" className="app-card">
+              <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
+                <div><span className="text-slate-500">名称：</span>{form.name || '-'}</div>
+                <div><span className="text-slate-500">默认分支：</span>{form.defaultBranch || '-'}</div>
+                <div><span className="text-slate-500">项目：</span>{projects.find((item) => item.id === form.projectId)?.name || '-'}</div>
+                <div><span className="text-slate-500">模板：</span>{selectedTemplate?.name || '-'}</div>
+                <div className="md:col-span-2"><span className="text-slate-500">描述：</span>{form.description || '-'}</div>
+              </div>
+            </Card>
+            <Card title="目标主机" className="app-card">
+              <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
+                <div><span className="text-slate-500">目标主机：</span>{hosts.find((item) => item.id === form.targetHostId)?.name || '-'}</div>
+                <div><span className="text-slate-500">部署目录：</span>{form.targetDir || '-'}</div>
+                <div><span className="text-slate-500">运行组件：</span>{runtimeEnvironments.find((item) => item.id === form.runtimeJavaEnvironmentId)?.name || '-'}</div>
+                <div><span className="text-slate-500">启动超时：</span>{form.startupTimeoutSeconds || '-'} 秒</div>
+              </div>
+            </Card>
+            </div>
+            <Card title="构建环境" className="app-card">
+              <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-3">
+                {buildRuntimeFieldConfigs.map((item) => (
+                  <div key={item.type}>
+                    <span className="text-slate-500">{item.label}：</span>
+                    {runtimeEnvironments.find((runtime) => runtime.id === form[item.formKey])?.name || '-'}
+                  </div>
+                ))}
+              </div>
+            </Card>
+            <Card title="运行配置" className="app-card">
+              {pluginConfigItems.length ? (
+                <div className="space-y-3 text-sm">
+                  {pluginConfigItems.map((item: any) => (
+                    <div key={item.field.key}>
+                      <div className="mb-1 flex items-center gap-2 text-slate-500">
+                        <span>{item.field.label}</span>
+                        {item.sectionTitle ? <span className="text-xs text-slate-400">/{item.sectionTitle}</span> : null}
+                      </div>
+                      {renderReadonlyPluginConfigValue(item.field, item.value)}
+                    </div>
+                  ))}
+                </div>
+              ) : <div className="text-sm text-slate-500">当前流水线没有额外运行配置。</div>}
+            </Card>
+            <Card title="变量" className="app-card">
+              {selectedTemplateVariables.length ? (
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                  {selectedTemplateVariables.map((item) => (
+                    <div key={item.name} className="rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                      <span className="text-slate-500">{item.label || item.name}：</span>{form.variables[item.name] || '-'}
+                    </div>
+                  ))}
+                </div>
+              ) : <div className="text-sm text-slate-500">当前模板没有需要流水线填写的变量。</div>}
+            </Card>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  if (mode === 'create' || mode === 'edit') {
+    return (
+      <>
+        <PageHeaderBar
+          title={mode === 'edit' ? '编辑流水线' : '新建流水线'}
+          description="配置项目、模板、环境、运行参数和变量。"
+          extra={<Button onClick={() => navigate('/admin/pipelines')}>返回</Button>}
+        />
+        <div className="app-page-scroll">
+          <div className="mx-auto flex min-h-[calc(100vh-170px)] max-w-5xl flex-col">
+            <div className="sticky top-0 z-20 pb-3">
+              <Card className="app-card">
+              <Steps size="small" current={currentStep} onChange={setCurrentStep} items={stepItems} />
+            </Card>
+            </div>
+            <div className="flex-1 pb-20">
+            {currentStepKey === 'basic' ? <Card title="基础信息" className="app-card">
+              <Form layout="vertical">
+                <Form.Item label="流水线名称" required>
+                  <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="例如：fusb-app" />
+                </Form.Item>
+                <Form.Item label="描述">
+                  <Input.TextArea rows={3} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="可选。说明这条流水线的用途。" />
+                </Form.Item>
+                <Form.Item label="标签">
+                  <Select mode="tags" value={form.tags} placeholder="输入后回车，可用于业务线、端别、环境等筛选" onChange={(value) => setForm({ ...form, tags: value })} />
+                </Form.Item>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  <Form.Item label="项目" required>
+                    <Select value={form.projectId} options={projects.map((item) => ({ label: item.name, value: item.id }))} onChange={(value) => setForm({ ...form, projectId: value, defaultBranch: '' })} placeholder="请选择项目" />
+                  </Form.Item>
+                  <Form.Item label="模板" required>
+                    <Select
+                      value={selectedTemplate?.optionId}
+                      options={templateOptions.map((item) => ({ label: item.name, value: item.optionId }))}
+                      placeholder="请选择部署模板"
+                      onChange={(value) => setForm({
+                        ...form,
+                        templateId: templateOptions.find((item) => item.optionId === value)?.templateId,
+                        templatePluginId: templateOptions.find((item) => item.optionId === value)?.pluginId,
+                        builtinTemplateKey: templateOptions.find((item) => item.optionId === value)?.builtinTemplateKey,
+                        variables: {},
+                        javaEnvironmentId: undefined,
+                        nodeEnvironmentId: undefined,
+                        mavenEnvironmentId: undefined,
+                        mavenSettingsId: undefined,
+                        runtimeJavaEnvironmentId: undefined,
+                        pluginConfig: {},
+                        notificationIds: [],
+                      })}
+                    />
+                  </Form.Item>
+                  <Form.Item label="默认分支" required>
+                    <Select showSearch loading={branchesLoading} disabled={!form.projectId} value={form.defaultBranch || undefined} placeholder={form.projectId ? '请选择默认分支' : '请先选择项目'} options={branchOptions.map((branch) => ({ label: branch, value: branch }))} onChange={(value) => setForm({ ...form, defaultBranch: value })} />
+                  </Form.Item>
+                </div>
+              </Form>
+            </Card> : null}
+            {currentStepKey === 'build' ? <Card title="构建环境" className="app-card">
+              <Form layout="vertical">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  {buildRuntimeFieldConfigs.map((item) => requiredEnvironmentTypes.includes(item.type) ? (
+                    <Form.Item key={item.type} label={`本机构建 ${item.label} 环境`} required>
+                      <Select
+                        allowClear
+                        value={form[item.formKey]}
+                        options={buildEnvironmentOptionsMap[item.type]}
+                        onChange={(value) => setForm({ ...form, [item.formKey]: value, ...(item.type === 'MAVEN' ? { mavenSettingsId: undefined } : {}) })}
+                        placeholder={`请选择本机构建用的 ${item.label} 环境`}
+                      />
+                    </Form.Item>
+                  ) : null)}
+                </div>
+                {requiredEnvironmentTypes.includes('MAVEN') ? <Form.Item label="构建 Maven Settings"><Select allowClear value={form.mavenSettingsId} options={mavenSettings.filter((item) => item.enabled).map((item) => ({ label: item.isDefault ? `${item.name}（默认）` : item.name, value: item.id }))} onChange={(value) => setForm({ ...form, mavenSettingsId: value })} placeholder={form.mavenEnvironmentId ? '可选。选择后构建时会自动对 mvn 注入 -s settings.xml' : '请先选择 Maven 环境'} disabled={!form.mavenEnvironmentId} /></Form.Item> : null}
+              </Form>
+            </Card> : null}
+            {currentStepKey === 'target' ? <Card title="目标主机" className="app-card">
+              <Form layout="vertical">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  <Form.Item label="目标主机" required><Select value={form.targetHostId} options={hosts.map((item) => ({ label: item.name, value: item.id }))} placeholder="请选择目标主机" onChange={(value) => setForm({ ...form, targetHostId: value, runtimeJavaEnvironmentId: undefined })} /></Form.Item>
+                  <Form.Item label="部署目录" required extra="脚本中可直接使用 $TARGET_DIR。"><Input value={form.targetDir} onChange={(event) => setForm({ ...form, targetDir: event.target.value })} placeholder="例如：/opt/apps/demo" /></Form.Item>
+                  {requiredRuntimeEnvironmentTypes.includes('JAVA') ? <Form.Item label="目标主机运行组件" required><Select allowClear value={form.runtimeJavaEnvironmentId} options={runtimeJavaOptions} onChange={(value) => setForm({ ...form, runtimeJavaEnvironmentId: value })} placeholder="请选择目标主机运行应用时使用的组件环境" /></Form.Item> : null}
+                </div>
+                {serviceMonitorEnabled ? (
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <Form.Item label="启动关键字" extra="填写后会读取运行日志，命中该内容即判定启动成功。"><Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} value={form.startupKeyword} onChange={(event) => setForm({ ...form, startupKeyword: event.target.value })} placeholder="例如：Started / 服务启动成功" /></Form.Item>
+                    <Form.Item label="启动超时（秒）"><Input type="number" min={5} value={form.startupTimeoutSeconds} onChange={(event) => setForm({ ...form, startupTimeoutSeconds: event.target.value ? Number(event.target.value) : undefined })} placeholder="例如：30" /></Form.Item>
+                  </div>
+                ) : null}
+              </Form>
+            </Card> : null}
+            {currentStepKey === 'runtime' && (pipelineRuntimeFields.length || pipelineServiceFields.length) ? (
+              <Card title="运行配置" className="app-card">
+                <Form layout="vertical">
+                  {[...pipelineServiceFields, ...pipelineRuntimeFields].map((field) => (
+                    <Form.Item key={field.key} label={field.label} extra={field.helpText || undefined}>{renderPluginPipelineField(field)}</Form.Item>
+                  ))}
+                </Form>
+              </Card>
+            ) : null}
+            {currentStepKey === 'variables' ? <Card title="变量" className="app-card">
+              <PipelineVariablesEditor variables={selectedTemplateVariables} values={form.variables} onChange={(value) => setForm({ ...form, variables: value })} />
+            </Card> : null}
+            {currentStepKey === 'notifications' ? <Card title="通知配置" className="app-card">
+              <Select mode="multiple" allowClear value={form.notificationIds} placeholder="选择这条流水线要绑定的通知配置" options={notifications.filter((item) => item.enabled).map((item) => ({ label: item.name, value: item.id }))} onChange={(value) => setForm({ ...form, notificationIds: value })} className="w-full" />
+            </Card> : null}
+            </div>
+            <div className="sticky bottom-0 z-20 flex justify-end gap-2 border-t border-slate-200/70 px-4 py-3 backdrop-blur-sm">
+              <Button onClick={() => navigate('/admin/pipelines')}>取消</Button>
+              {currentStep > 0 ? <Button onClick={() => setCurrentStep((value) => value - 1)}>上一步</Button> : null}
+              {currentStep < stepItems.length - 1 ? <Button onClick={() => setCurrentStep((value) => value + 1)}>下一步</Button> : null}
+              <Button type="primary" onClick={() => savePipeline().catch(() => undefined)}>{mode === 'edit' ? '保存' : '创建'}</Button>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -490,8 +1114,8 @@ export default function PipelineAdminPage() {
         )}
       />
       <div className="app-page-scroll">
-      <Card className="app-card">
-        <div className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-5">
+      <Card className="app-card" ref={tableWrapRef}>
+        <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-5">
           <Input
             value={keyword}
             placeholder="搜索流水线名称 / 描述 / 默认分支"
@@ -607,7 +1231,7 @@ export default function PipelineAdminPage() {
                 render: (_, row) => (
                   <div className="flex items-center gap-0.5">
                     <div className="scale-[0.82] origin-left">
-                      <PipelineIcon type={row.template?.templateType} />
+                      <PipelineIcon type={row.resolvedTemplateOption?.templateType || row.templateTypeSnapshot || row.template?.templateType} />
                     </div>
                     <span>{row.name}</span>
                   </div>
@@ -620,7 +1244,7 @@ export default function PipelineAdminPage() {
                                                  minWidth: 150,
                                                  maxWidth: 300,
                                                },
-                                             }), render: (_, row) => row.template?.name },
+                                             }), render: (_, row) => row.resolvedTemplateOption?.name || row.templateNameSnapshot || row.template?.name },
               {
                 title: '描述',
                 dataIndex: 'description',
@@ -691,7 +1315,7 @@ export default function PipelineAdminPage() {
                           type="button"
                           className="cursor-pointer rounded-sm bg-transparent px-1 py-0 text-slate-700 transition-colors hover:text-slate-900"
                           onClick={async () => {
-                            const value = row.parsedVariablesJson[item.name] || '-';
+                            const value = row.parsedVariables[item.name] || '-';
                             try {
                               await copyText(value);
                               message.success(`已复制：${value}`);
@@ -700,7 +1324,7 @@ export default function PipelineAdminPage() {
                             }
                           }}
                         >
-                          {row.parsedVariablesJson[item.name] || '-'}
+                          {row.parsedVariables[item.name] || '-'}
                         </button>
                       </Tag>
                     ))}
@@ -712,31 +1336,10 @@ export default function PipelineAdminPage() {
                 width: 360,
                 render: (_, row) => {
                   const items = [
-                    row.javaEnvironment ? `构建 Java：${row.javaEnvironment.name}` : null,
-                    row.nodeEnvironment ? `构建 Node：${row.nodeEnvironment.name}` : null,
-                    row.mavenEnvironment ? `构建 Maven：${row.mavenEnvironment.name}` : null,
-                    row.runtimeJavaEnvironment ? `运行 Java：${row.runtimeJavaEnvironment.name}` : null,
-                  ].filter(Boolean);
-                  return items.length > 0 ? (
-                    <div className="space-y-2 py-1 text-sm leading-6 text-slate-600">
-                      {items.map((item) => (
-                        <div key={item} className="truncate" title={item}>
-                          {item}
-                        </div>
-                      ))}
-                    </div>
-                  ) : '-';
-                },
-              },
-              {
-                title: '监控配置',
-                width: 380,
-                render: (_, row) => {
-                  const items = [
-                    row.applicationName ? `应用名：${row.applicationName}` : null,
-                    row.springProfile ? `Profile：${row.springProfile}` : null,
-                    row.startupKeyword ? `关键字：${row.startupKeyword}` : null,
-                    row.startupTimeoutSeconds ? `超时：${row.startupTimeoutSeconds} 秒` : null,
+                    row.javaEnvironment ? `构建组件 ${row.javaEnvironment.type}：${row.javaEnvironment.name}` : null,
+                    row.nodeEnvironment ? `构建组件 ${row.nodeEnvironment.type}：${row.nodeEnvironment.name}` : null,
+                    row.mavenEnvironment ? `构建组件 ${row.mavenEnvironment.type}：${row.mavenEnvironment.name}` : null,
+                    row.runtimeJavaEnvironment ? `运行组件 ${row.runtimeJavaEnvironment.type}：${row.runtimeJavaEnvironment.name}` : null,
                   ].filter(Boolean);
                   return items.length > 0 ? (
                     <div className="space-y-2 py-1 text-sm leading-6 text-slate-600">
@@ -754,6 +1357,10 @@ export default function PipelineAdminPage() {
                 width: 240,
                 render: (_, record) => (
                   <Space>
+                    <Button size="small" onClick={() => {
+                      rememberPipelineTableScrollLeft();
+                      navigate(`/admin/pipelines/${record.id}`);
+                    }}>查看</Button>
                     <Button size="small" onClick={() => openEdit(record)}>编辑</Button>
                     <Button size="small" onClick={() => openDuplicate(record)}>复制</Button>
                     <Popconfirm
@@ -772,343 +1379,6 @@ export default function PipelineAdminPage() {
       </Card>
       </div>
       <Modal
-        title={editingId ? '编辑流水线' : '新建流水线'}
-        open={modalOpen}
-        width={900}
-        footer={(
-          <div className="flex items-center justify-between">
-            <Button
-              onClick={() => {
-                setModalOpen(false);
-                setCurrentStep(0);
-              }}
-            >
-              取消
-            </Button>
-            <Space>
-              {currentStep > 0 ? (
-                <Button onClick={() => setCurrentStep((value) => value - 1)}>上一步</Button>
-              ) : null}
-              {editingId ? (
-                <Button
-                  type="primary"
-                  onClick={() => savePipeline().catch(() => undefined)}
-                >
-                  保存
-                </Button>
-              ) : null}
-              {!editingId && currentStep === stepItems.length - 1 ? (
-                <Button
-                  type="primary"
-                  onClick={() => savePipeline().catch(() => undefined)}
-                >
-                  创建
-                </Button>
-              ) : null}
-              {currentStep < stepItems.length - 1 ? (
-                <Button onClick={() => setCurrentStep((value) => value + 1)}>下一步</Button>
-              ) : null}
-            </Space>
-          </div>
-        )}
-        onCancel={() => {
-          setModalOpen(false);
-          setCurrentStep(0);
-        }}
-        destroyOnClose
-      >
-        <div className="space-y-4">
-          <Card className="border-slate-200 bg-slate-50">
-            <Steps
-              size="small"
-              responsive
-              current={currentStep}
-              onChange={(value) => setCurrentStep(value)}
-              items={stepItems}
-            />
-          </Card>
-          <div>
-            {currentStepKey === 'basic' ? (
-              <Card size="small" title="步骤 1 · 基础信息">
-                <Form layout="vertical">
-                  <Form.Item label="流水线名称">
-                    <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
-                  </Form.Item>
-                  <Form.Item label="描述">
-                    <Input.TextArea rows={3} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
-                  </Form.Item>
-                  <Form.Item label="标签">
-                    <Select
-                      mode="tags"
-                      value={form.tags}
-                      placeholder="输入后回车，可用于业务线、端别、环境等筛选"
-                      onChange={(value) => setForm({ ...form, tags: value })}
-                    />
-                  </Form.Item>
-                  <Form.Item label="项目">
-                    <Select
-                      value={form.projectId}
-                      options={projects.map((item) => ({ label: item.name, value: item.id }))}
-                      onChange={(value) => setForm({ ...form, projectId: value })}
-                    />
-                  </Form.Item>
-                  <Form.Item label="模板">
-                    <Select
-                      value={form.templateId}
-                      options={templates.map((item) => ({ label: item.name, value: item.id }))}
-                      onChange={(value) => setForm({
-                        ...form,
-                        templateId: value,
-                        variablesJson: {},
-                        javaEnvironmentId: undefined,
-                        nodeEnvironmentId: undefined,
-                        mavenEnvironmentId: undefined,
-                        mavenSettingsId: undefined,
-                        runtimeJavaEnvironmentId: undefined,
-                        applicationName: '',
-                        springProfile: '',
-                        runtimeConfigYaml: '',
-                        startupKeyword: '',
-                        startupTimeoutSeconds: 30,
-                        notificationIds: [],
-                      })}
-                    />
-                  </Form.Item>
-                  <Form.Item label="默认分支">
-                    <Input value={form.defaultBranch} onChange={(event) => setForm({ ...form, defaultBranch: event.target.value })} />
-                  </Form.Item>
-                </Form>
-              </Card>
-            ) : null}
-            {currentStepKey === 'build' ? (
-              <Card size="small" title="步骤 2 · 构建环境">
-                {localHost ? (
-                  <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                    构建会固定在本机完成，不会跟随目标主机切换。当前使用的构建主机：{localHost.name}
-                  </div>
-                ) : null}
-                <Form layout="vertical">
-                  {requiredEnvironmentTypes.includes('JAVA') ? (
-                    <Form.Item label="本机构建 Java 环境">
-                      <Select
-                        allowClear
-                        value={form.javaEnvironmentId}
-                        options={javaOptions}
-                        onChange={(value) => setForm({ ...form, javaEnvironmentId: value })}
-                        placeholder="请选择本机构建用的 Java 环境"
-                      />
-                    </Form.Item>
-                  ) : null}
-                  {requiredEnvironmentTypes.includes('NODE') ? (
-                    <Form.Item label="本机构建 Node 环境">
-                      <Select
-                        allowClear
-                        value={form.nodeEnvironmentId}
-                        options={nodeOptions}
-                        onChange={(value) => setForm({ ...form, nodeEnvironmentId: value })}
-                        placeholder="请选择本机构建用的 Node 环境"
-                        notFoundContent="当前没有可用的本机 Node 环境，请先到主机管理 -> 本机 -> 环境管理里配置。"
-                      />
-                    </Form.Item>
-                  ) : null}
-                  {requiredEnvironmentTypes.includes('MAVEN') ? (
-                    <>
-                      <Form.Item label="本机构建 Maven 环境">
-                        <Select
-                          allowClear
-                          value={form.mavenEnvironmentId}
-                          options={mavenOptions}
-                          onChange={(value) => setForm({ ...form, mavenEnvironmentId: value, mavenSettingsId: undefined })}
-                          placeholder="请选择本机构建用的 Maven 环境"
-                        />
-                      </Form.Item>
-                      <Form.Item label="构建 Maven Settings">
-                        <Select
-                          allowClear
-                          value={form.mavenSettingsId}
-                          options={mavenSettings.filter((item) => item.enabled).map((item) => ({
-                            label: item.isDefault ? `${item.name}（默认）` : item.name,
-                            value: item.id,
-                          }))}
-                          onChange={(value) => setForm({ ...form, mavenSettingsId: value })}
-                          placeholder={form.mavenEnvironmentId ? '可选。选择后构建时会自动对 mvn 注入 -s settings.xml' : '请先选择 Maven 环境'}
-                          disabled={!form.mavenEnvironmentId}
-                          notFoundContent={form.mavenEnvironmentId ? '当前 Maven 环境下还没有 settings.xml，请先到环境管理里配置。' : undefined}
-                        />
-                      </Form.Item>
-                    </>
-                  ) : null}
-                </Form>
-              </Card>
-            ) : null}
-            {currentStepKey === 'target' ? (
-              <Card size="small" title="步骤 3 · 目标主机">
-                <Form layout="vertical">
-                  <Form.Item label="目标主机">
-                    <Select
-                      value={form.targetHostId}
-                      options={hosts.map((item) => ({ label: item.name, value: item.id }))}
-                      onChange={(value) => setForm({
-                        ...form,
-                        targetHostId: value,
-                        runtimeJavaEnvironmentId: undefined,
-                      })}
-                    />
-                  </Form.Item>
-                  {requiredRuntimeEnvironmentTypes.includes('JAVA') ? (
-                    <Form.Item label="目标主机运行 Java 环境">
-                      <Select
-                        allowClear
-                        value={form.runtimeJavaEnvironmentId}
-                        options={runtimeJavaOptions}
-                        onChange={(value) => setForm({ ...form, runtimeJavaEnvironmentId: value })}
-                        placeholder="请选择目标主机运行应用时使用的 Java 环境"
-                      />
-                    </Form.Item>
-                  ) : null}
-                  {selectedTemplate?.monitorProcess ? (
-                    <>
-                      <Form.Item label="应用名">
-                        <Input
-                          value={form.applicationName}
-                          onChange={(event) => setForm({ ...form, applicationName: event.target.value })}
-                          placeholder="例如：deploy-bot-backend"
-                        />
-                      </Form.Item>
-                      <Form.Item label="启动关键字">
-                        <Input
-                          value={form.startupKeyword}
-                          onChange={(event) => setForm({ ...form, startupKeyword: event.target.value })}
-                          placeholder="例如：Started DeployBotApplication in"
-                        />
-                      </Form.Item>
-                      <Form.Item label="启动超时（秒）">
-                        <Input
-                          type="number"
-                          min={5}
-                          value={form.startupTimeoutSeconds}
-                          onChange={(event) => setForm({
-                            ...form,
-                            startupTimeoutSeconds: event.target.value ? Number(event.target.value) : undefined,
-                          })}
-                          placeholder="30"
-                        />
-                      </Form.Item>
-                      <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                        开启服务监测的模板会在发布后进入启动观察窗口。应用名会作为系统内置变量注入模板，用于生成唯一产物名；启动关键字只用于判断服务是否真正完成启动。
-                      </div>
-                    </>
-                  ) : null}
-                </Form>
-                {selectedTargetHost ? (
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                    当前部署目标：{selectedTargetHost.name}
-                  </div>
-                ) : null}
-              </Card>
-            ) : null}
-            {currentStepKey === 'runtime' ? (
-              <Card size="small" title="步骤 4 · 运行配置">
-                <Form layout="vertical">
-                  <>
-                    <Form.Item label="Spring Profile">
-                      <Input
-                        value={form.springProfile}
-                        onChange={(event) => setForm({ ...form, springProfile: event.target.value })}
-                        placeholder="例如：prod / test / dev / local"
-                      />
-                    </Form.Item>
-                    <Form.Item label="运行配置 YAML">
-                      <JsonEditor
-                        rows={14}
-                        language="yaml"
-                        value={form.runtimeConfigYaml}
-                        onChange={(value) => setForm({ ...form, runtimeConfigYaml: value })}
-                        placeholder={'例如：\nspring:\n  datasource:\n    url: jdbc:mysql://...'}
-                      />
-                    </Form.Item>
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                      这份 YAML 会在发布阶段写入目标主机，并通过附加配置参数自动生效；如果只填 Profile，系统会自动把它加到启动参数里。
-                    </div>
-                  </>
-                </Form>
-              </Card>
-            ) : null}
-            {currentStepKey === 'variables' ? (
-              <Card size="small" title={`步骤 ${stepItems.findIndex((item) => item.key === 'variables') + 1} · 变量`}>
-                <PipelineVariablesEditor
-                  variables={selectedTemplateVariables}
-                  values={form.variablesJson}
-                  onChange={(value) => setForm({ ...form, variablesJson: value })}
-                />
-              </Card>
-            ) : null}
-            {currentStepKey === 'notifications' ? (
-              <Card size="small" title={`步骤 ${stepItems.findIndex((item) => item.key === 'notifications') + 1} · 通知配置`}>
-                <Form layout="vertical">
-                  <Form.Item label="通知配置">
-                    {notifications.filter((item) => item.enabled).length === 0 ? (
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
-                        还没有可用通知配置，请先到“通知管理”里添加。
-                      </div>
-                    ) : (
-                      <Select
-                        mode="multiple"
-                        allowClear
-                        value={form.notificationIds}
-                        placeholder="选择这条流水线要绑定的通知配置"
-                        options={notifications
-                          .filter((item) => item.enabled)
-                          .map((item) => ({
-                            label: (
-                              <div className="flex items-center gap-2 py-0.5">
-                                <span className="font-medium text-slate-800">{item.name}</span>
-                                <span
-                                  className="rounded-full px-2 py-0.5 text-xs font-medium text-white"
-                                  style={{ backgroundColor: '#0f766e' }}
-                                >
-                                  {item.type === 'FEISHU' ? '飞书' : item.type}
-                                </span>
-                                <span
-                                  className="rounded-full px-2 py-0.5 text-xs font-medium text-white"
-                                  style={{ backgroundColor: item.eventType === 'DEPLOYMENT_STARTED' ? '#c2410c' : '#1d4ed8' }}
-                                >
-                                  {item.eventType === 'DEPLOYMENT_STARTED' ? '开始通知' : '结束通知'}
-                                </span>
-                              </div>
-                            ),
-                            value: item.id,
-                          }))}
-                        onChange={(value) => setForm({ ...form, notificationIds: value })}
-                      />
-                    )}
-                  </Form.Item>
-                  {form.notificationIds.length > 0 ? (
-                    <div className="space-y-3">
-                      {notifications
-                        .filter((item) => form.notificationIds.includes(item.id))
-                        .map((item) => (
-                          <div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                            <div className="mb-2 text-sm font-medium text-slate-800">{item.name}</div>
-                            <div className="mb-2 text-xs text-slate-500">
-                              通知渠道类型：{item.type === 'FEISHU' ? '飞书' : item.type}
-                              {item.eventType ? ` · 通知类型：${item.eventType === 'DEPLOYMENT_STARTED' ? '开始通知' : '结束通知'}` : ''}
-                            </div>
-                            <div className="text-xs text-slate-500">
-                              绑定后会按这条通知配置自己的通知类型自动发送。
-                            </div>
-                            {item.description ? <div className="text-xs text-slate-500">{item.description}</div> : null}
-                          </div>
-                        ))}
-                    </div>
-                  ) : null}
-                </Form>
-              </Card>
-            ) : null}
-          </div>
-        </div>
-      </Modal>
-      <Modal
         title="复制流水线"
         open={duplicateModalOpen}
         okText="确认复制"
@@ -1120,7 +1390,7 @@ export default function PipelineAdminPage() {
           setDuplicateName('');
         }}
         onOk={() => duplicatePipeline().catch(() => message.error('复制流水线失败'))}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form layout="vertical">
           <Form.Item label="新流水线名称">

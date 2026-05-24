@@ -3,12 +3,15 @@ package top.fusb.deploybot.controller;
 import top.fusb.deploybot.dto.DeploymentRequest;
 import top.fusb.deploybot.dto.DeploymentFilterOptions;
 import top.fusb.deploybot.dto.DeploymentListSummary;
+import top.fusb.deploybot.dto.DeploymentPluginPlanSummary;
 import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.model.DeploymentEntity;
 import top.fusb.deploybot.model.DeploymentStatus;
 import top.fusb.deploybot.dto.UserRecentPipelineSummary;
 import top.fusb.deploybot.service.DeploymentService;
+import top.fusb.deploybot.service.DeploymentPluginBridgeService;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -24,13 +27,11 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/deployments")
+@RequiredArgsConstructor
 public class DeploymentController {
 
     private final DeploymentService service;
-
-    public DeploymentController(DeploymentService service) {
-        this.service = service;
-    }
+    private final DeploymentPluginBridgeService deploymentPluginBridgeService;
 
     /**
      * 列出全部部署记录。
@@ -86,6 +87,14 @@ public class DeploymentController {
     @GetMapping("/{id}")
     public DeploymentEntity detail(@PathVariable Long id) {
         return service.findById(id);
+    }
+
+    /**
+     * 查询当前部署命中的插件计划，方便验证插件解耦结果。
+     */
+    @GetMapping("/{id}/plugin-plan")
+    public DeploymentPluginPlanSummary pluginPlan(@PathVariable Long id) {
+        return deploymentPluginBridgeService.summarizePlan(service.findById(id));
     }
 
     /**

@@ -1,4 +1,4 @@
-import { Empty, message } from 'antd';
+import { message } from 'antd';
 import { useEffect, useState } from 'react';
 import { dashboardApi } from '../../api/dashboard';
 import DashboardConsole from '../../components/DashboardConsole';

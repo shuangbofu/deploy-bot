@@ -10,7 +10,7 @@ type LogViewerProps = {
 
 /**
  * 日志查看器。
- * 负责高亮错误行，并把页面滚动限制在日志容器内部。
+ * 负责高亮命令追踪和错误行，并把页面滚动限制在日志容器内部。
  */
 export default function LogViewer({ content, maxHeight }: LogViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -44,11 +44,13 @@ export default function LogViewer({ content, maxHeight }: LogViewerProps) {
         {lines.map((line, index) => {
           const lowerLine = line.toLowerCase();
           const isSystemLine = line.startsWith('[系统]');
+          const isCommandLine = /^\+{1,3}\s/.test(line);
           // 这里优先照顾运维排查体验，对常见错误关键词做红色高亮。
           const isErrorLine = /(error|failed|fatal|exception|denied|refused|timed out|认证失败|失败|报错|错误)/.test(lowerLine);
           const lineClassName = [
             'log-line',
             isSystemLine ? 'log-line-system' : '',
+            isCommandLine ? 'log-line-command' : '',
             isErrorLine ? 'log-line-error' : '',
           ].filter(Boolean).join(' ');
 

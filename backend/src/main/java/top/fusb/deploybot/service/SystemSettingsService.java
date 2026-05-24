@@ -1,6 +1,9 @@
 package top.fusb.deploybot.service;
 
+import lombok.RequiredArgsConstructor;
 import top.fusb.deploybot.dto.SystemSettingsRequest;
+import top.fusb.deploybot.kit.NumberKit;
+import top.fusb.deploybot.kit.SecretKit;
 import top.fusb.deploybot.kit.TextKit;
 import top.fusb.deploybot.model.GitAuthType;
 import top.fusb.deploybot.model.SystemSettingsEntity;
@@ -9,30 +12,20 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 @Service
+@RequiredArgsConstructor
 public class SystemSettingsService {
 
     private final SystemSettingsRepository repository;
-    private final String defaultWorkspaceRoot;
-    private final boolean defaultCleanupEnabled;
-    private final int defaultArtifactRetainSuccessCount;
-    private final boolean defaultCleanRunsOnSuccess;
-    private final int defaultFailedRunRetainDays;
-
-    public SystemSettingsService(
-            SystemSettingsRepository repository,
-            @Value("${deploybot.workspace-root:./runtime}") String defaultWorkspaceRoot,
-            @Value("${deploybot.cleanup.enabled:true}") boolean defaultCleanupEnabled,
-            @Value("${deploybot.cleanup.artifact-retain-success-count:2}") int defaultArtifactRetainSuccessCount,
-            @Value("${deploybot.cleanup.clean-runs-on-success:true}") boolean defaultCleanRunsOnSuccess,
-            @Value("${deploybot.cleanup.failed-run-retain-days:0}") int defaultFailedRunRetainDays
-    ) {
-        this.repository = repository;
-        this.defaultWorkspaceRoot = defaultWorkspaceRoot;
-        this.defaultCleanupEnabled = defaultCleanupEnabled;
-        this.defaultArtifactRetainSuccessCount = defaultArtifactRetainSuccessCount;
-        this.defaultCleanRunsOnSuccess = defaultCleanRunsOnSuccess;
-        this.defaultFailedRunRetainDays = defaultFailedRunRetainDays;
-    }
+    @Value("${deploybot.workspace-root:./runtime}")
+    private String defaultWorkspaceRoot;
+    @Value("${deploybot.cleanup.enabled:true}")
+    private boolean defaultCleanupEnabled;
+    @Value("${deploybot.cleanup.artifact-retain-success-count:2}")
+    private int defaultArtifactRetainSuccessCount;
+    @Value("${deploybot.cleanup.clean-runs-on-success:true}")
+    private boolean defaultCleanRunsOnSuccess;
+    @Value("${deploybot.cleanup.failed-run-retain-days:0}")
+    private int defaultFailedRunRetainDays;
 
     public SystemSettingsEntity get() {
         return repository.findById(1L).orElseGet(() -> {
@@ -56,15 +49,15 @@ public class SystemSettingsService {
         entity.setGitAuthType(request.gitAuthType() == null ? GitAuthType.NONE : request.gitAuthType());
         entity.setGitUsername(TextKit.trimToNull(request.gitUsername()));
         entity.setGitPassword(TextKit.trimToNull(request.gitPassword()));
-        entity.setGitSshPrivateKey(mergeOptionalSecret(entity.getGitSshPrivateKey(), request.gitSshPrivateKey()));
-        entity.setGitSshPublicKey(mergeOptionalSecret(entity.getGitSshPublicKey(), request.gitSshPublicKey()));
-        entity.setGitSshKnownHosts(mergeOptionalSecret(entity.getGitSshKnownHosts(), request.gitSshKnownHosts()));
-        entity.setHostSshPrivateKey(mergeOptionalSecret(entity.getHostSshPrivateKey(), request.hostSshPrivateKey()));
-        entity.setHostSshPublicKey(mergeOptionalSecret(entity.getHostSshPublicKey(), request.hostSshPublicKey()));
+        entity.setGitSshPrivateKey(SecretKit.mergeOptionalSecret(entity.getGitSshPrivateKey(), request.gitSshPrivateKey()));
+        entity.setGitSshPublicKey(SecretKit.mergeOptionalSecret(entity.getGitSshPublicKey(), request.gitSshPublicKey()));
+        entity.setGitSshKnownHosts(SecretKit.mergeOptionalSecret(entity.getGitSshKnownHosts(), request.gitSshKnownHosts()));
+        entity.setHostSshPrivateKey(SecretKit.mergeOptionalSecret(entity.getHostSshPrivateKey(), request.hostSshPrivateKey()));
+        entity.setHostSshPublicKey(SecretKit.mergeOptionalSecret(entity.getHostSshPublicKey(), request.hostSshPublicKey()));
         entity.setCleanupEnabled(request.cleanupEnabled() == null ? defaultCleanupEnabled : request.cleanupEnabled());
-        entity.setArtifactRetainSuccessCount(normalizeCount(request.artifactRetainSuccessCount(), defaultArtifactRetainSuccessCount));
+        entity.setArtifactRetainSuccessCount(NumberKit.nonNegativeOrDefault(request.artifactRetainSuccessCount(), defaultArtifactRetainSuccessCount));
         entity.setCleanRunsOnSuccess(request.cleanRunsOnSuccess() == null ? defaultCleanRunsOnSuccess : request.cleanRunsOnSuccess());
-        entity.setFailedRunRetainDays(normalizeCount(request.failedRunRetainDays(), defaultFailedRunRetainDays));
+        entity.setFailedRunRetainDays(NumberKit.nonNegativeOrDefault(request.failedRunRetainDays(), defaultFailedRunRetainDays));
         return saveEntity(entity);
     }
 
@@ -73,7 +66,7 @@ public class SystemSettingsService {
     }
 
     public int artifactRetainSuccessCount(SystemSettingsEntity settings) {
-        return normalizeCount(settings.getArtifactRetainSuccessCount(), defaultArtifactRetainSuccessCount);
+        return NumberKit.nonNegativeOrDefault(settings.getArtifactRetainSuccessCount(), defaultArtifactRetainSuccessCount);
     }
 
     public boolean cleanRunsOnSuccess(SystemSettingsEntity settings) {
@@ -81,26 +74,11 @@ public class SystemSettingsService {
     }
 
     public int failedRunRetainDays(SystemSettingsEntity settings) {
-        return normalizeCount(settings.getFailedRunRetainDays(), defaultFailedRunRetainDays);
+        return NumberKit.nonNegativeOrDefault(settings.getFailedRunRetainDays(), defaultFailedRunRetainDays);
     }
 
     public SystemSettingsEntity saveEntity(SystemSettingsEntity entity) {
         return repository.save(entity);
     }
 
-    private int normalizeCount(Integer value, int defaultValue) {
-        int normalized = value == null ? defaultValue : value;
-        return Math.max(0, normalized);
-    }
-
-    /**
-     * 系统设置页当前不会把私钥等敏感字段回传回来，空值表示“保持现状”，
-     * 只有显式传入非空内容时才覆盖已有值。
-     */
-    private String mergeOptionalSecret(String currentValue, String requestValue) {
-        if (requestValue == null) {
-            return currentValue;
-        }
-        return TextKit.trimToNull(requestValue);
-    }
 }

@@ -83,7 +83,7 @@ export default function DeploymentRecordsPage() {
       />
       <div className="app-page-scroll">
       <Card className="app-card">
-        <div className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-5">
+        <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-5">
           <Select
             showSearch
             optionFilterProp="label"

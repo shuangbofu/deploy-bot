@@ -1,5 +1,6 @@
 package top.fusb.deploybot.service;
 
+import lombok.RequiredArgsConstructor;
 import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.dto.PipelineHallSummary;
 import top.fusb.deploybot.dto.PipelineRequest;
@@ -9,10 +10,17 @@ import top.fusb.deploybot.kit.CollectionKit;
 import top.fusb.deploybot.kit.TextKit;
 import top.fusb.deploybot.model.HostEntity;
 import top.fusb.deploybot.model.MavenSettingsEntity;
+import top.fusb.deploybot.model.TemplateEntity;
 import top.fusb.deploybot.model.RuntimeEnvironmentEntity;
 import top.fusb.deploybot.model.PipelineEntity;
 import top.fusb.deploybot.model.UserFavoritePipelineEntity;
 import top.fusb.deploybot.notification.dto.NotificationBinding;
+import top.fusb.deploybot.plugin.api.deployment.DeploymentPlugin;
+import top.fusb.deploybot.plugin.api.deployment.form.PluginFormField;
+import top.fusb.deploybot.plugin.api.deployment.form.PluginFormFieldBinding;
+import top.fusb.deploybot.plugin.api.deployment.form.PluginFormFieldBindingScope;
+import top.fusb.deploybot.plugin.api.deployment.form.PluginFormSection;
+import top.fusb.deploybot.plugin.runtime.DeploymentPluginRuntime;
 import top.fusb.deploybot.notification.repo.NotificationChannelRepository;
 import top.fusb.deploybot.repo.HostRepository;
 import top.fusb.deploybot.repo.MavenSettingsRepository;
@@ -33,13 +41,16 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.time.LocalDateTime;
 
 @Service
+@RequiredArgsConstructor
 public class PipelineService {
 
     private final PipelineRepository pipelineRepository;
@@ -52,45 +63,19 @@ public class PipelineService {
     private final MavenSettingsRepository mavenSettingsRepository;
     private final HostService hostService;
     private final NotificationChannelRepository notificationChannelRepository;
-    private final JsonMapper jsonMapper;
     private final UserRepository userRepository;
     private final UserFavoritePipelineRepository userFavoritePipelineRepository;
     private final ServicePidHistoryRepository servicePidHistoryRepository;
-
-    public PipelineService(
-            PipelineRepository pipelineRepository,
-            ProjectRepository projectRepository,
-            TemplateRepository templateRepository,
-            RuntimeEnvironmentRepository runtimeEnvironmentRepository,
-            DeploymentRepository deploymentRepository,
-            ServiceRepository serviceRepository,
-            HostRepository hostRepository,
-            MavenSettingsRepository mavenSettingsRepository,
-            HostService hostService,
-            NotificationChannelRepository notificationChannelRepository,
-            JsonMapper jsonMapper,
-            UserRepository userRepository,
-            UserFavoritePipelineRepository userFavoritePipelineRepository,
-            ServicePidHistoryRepository servicePidHistoryRepository
-    ) {
-        this.pipelineRepository = pipelineRepository;
-        this.projectRepository = projectRepository;
-        this.templateRepository = templateRepository;
-        this.runtimeEnvironmentRepository = runtimeEnvironmentRepository;
-        this.deploymentRepository = deploymentRepository;
-        this.serviceRepository = serviceRepository;
-        this.hostRepository = hostRepository;
-        this.mavenSettingsRepository = mavenSettingsRepository;
-        this.hostService = hostService;
-        this.notificationChannelRepository = notificationChannelRepository;
-        this.jsonMapper = jsonMapper;
-        this.userRepository = userRepository;
-        this.userFavoritePipelineRepository = userFavoritePipelineRepository;
-        this.servicePidHistoryRepository = servicePidHistoryRepository;
-    }
+    private final PipelineTemplateResolverService pipelineTemplateResolverService;
+    private final DeploymentPluginRuntime deploymentPluginRuntime;
 
     public List<PipelineEntity> findAll() {
         return pipelineRepository.findAll();
+    }
+
+    public PipelineEntity findById(Long id) {
+        return pipelineRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.PIPELINE_NOT_FOUND));
     }
 
     public List<PipelineHallSummary> findHallSummaries() {
@@ -130,8 +115,8 @@ public class PipelineService {
                             pipeline.getDescription(),
                             pipeline.getDefaultBranch(),
                             pipeline.getProject() == null ? null : pipeline.getProject().getName(),
-                            pipeline.getTemplate() == null ? null : pipeline.getTemplate().getTemplateType(),
-                            pipeline.getTagsJson(),
+                            pipeline.getTemplateTypeSnapshot(),
+                            pipeline.getTags() == null ? List.of() : pipeline.getTags(),
                             latestDeployment == null ? null : latestDeployment.getId(),
                             latestDeploymentOrder,
                             latestDeployment == null || latestDeployment.getStatus() == null ? null : latestDeployment.getStatus().name(),
@@ -238,7 +223,7 @@ public class PipelineService {
             if (tags != null && !tags.isEmpty()) {
                 for (String tag : tags) {
                     if (TextKit.isNotBlank(tag)) {
-                        predicates.add(cb.like(root.get("tagsJson"), "%" + "\"" + tag + "\"" + "%"));
+                        predicates.add(cb.like(root.get("tags"), "%" + "\"" + tag + "\"" + "%"));
                     }
                 }
             }
@@ -249,7 +234,7 @@ public class PipelineService {
     public List<String> findAllTags() {
         return CollectionKit.sortedDistinctNonBlankStrings(
                 pipelineRepository.findAll().stream()
-                        .flatMap(item -> parseTags(item.getTagsJson()).stream())
+                        .flatMap(item -> (item.getTags() == null ? List.<String>of() : item.getTags()).stream())
                         .toList()
         );
     }
@@ -264,14 +249,18 @@ public class PipelineService {
         entity.setDescription(request.description());
         entity.setProject(projectRepository.findById(request.projectId())
                 .orElseThrow(() -> new BusinessException(ErrorSubCode.PROJECT_NOT_FOUND)));
-        entity.setTemplate(templateRepository.findById(request.templateId())
-                .orElseThrow(() -> new BusinessException(ErrorSubCode.TEMPLATE_NOT_FOUND)));
+        bindTemplate(entity, request);
         HostEntity targetHost = hostRepository.findById(request.targetHostId())
                 .orElseThrow(() -> new BusinessException(ErrorSubCode.HOST_NOT_FOUND));
         entity.setTargetHost(targetHost);
+        entity.setTargetDir(TextKit.trimToNull(request.targetDir()));
         entity.setDefaultBranch(request.defaultBranch());
-        entity.setVariablesJson(request.variablesJson());
-        entity.setTagsJson(request.tagsJson());
+        Map<String, String> variables = new LinkedHashMap<>(request.variables() == null ? Map.of() : request.variables());
+        Map<String, String> pluginConfig = normalizePluginConfig(request.pluginConfig());
+        applyPluginConfig(entity, variables, pluginConfig);
+        entity.setPluginConfig(pluginConfig);
+        entity.setVariables(variables);
+        entity.setTags(normalizeTags(request.tags()));
         entity.setJavaEnvironment(resolveEnvironment(request.javaEnvironmentId()));
         entity.setNodeEnvironment(resolveEnvironment(request.nodeEnvironmentId()));
         RuntimeEnvironmentEntity mavenEnvironment = resolveEnvironment(request.mavenEnvironmentId());
@@ -283,13 +272,108 @@ public class PipelineService {
         }
         entity.setMavenSettings(mavenSettings);
         entity.setRuntimeJavaEnvironment(resolveRuntimeJavaEnvironment(request.runtimeJavaEnvironmentId(), targetHost));
-        entity.setApplicationName(TextKit.trimToNull(request.applicationName()));
-        entity.setSpringProfile(TextKit.trimToNull(request.springProfile()));
-        entity.setRuntimeConfigYaml(TextKit.normalizeMultiline(request.runtimeConfigYaml()));
         entity.setStartupKeyword(TextKit.trimToNull(request.startupKeyword()));
         entity.setStartupTimeoutSeconds(normalizeStartupTimeout(request.startupTimeoutSeconds()));
-        entity.setNotificationBindingsJson(normalizeNotificationBindings(request.notificationBindingsJson()));
+        entity.setNotificationBindings(normalizeNotificationBindings(request.notificationBindings()));
         return pipelineRepository.save(entity);
+    }
+
+    private void applyPluginConfig(PipelineEntity entity, Map<String, String> variables, Map<String, String> pluginConfig) {
+        if (pluginConfig.isEmpty()) {
+            return;
+        }
+        DeploymentPlugin plugin = deploymentPluginRuntime.resolveDeploymentPlugin(
+                TextKit.trimToNull(entity.getTemplatePluginId()) != null
+                        ? entity.getTemplatePluginId()
+                        : pipelineTemplateResolverService.resolvePluginId(entity)
+        );
+        if (plugin == null || plugin.pipelineFormSchema() == null || plugin.pipelineFormSchema().sections() == null) {
+            return;
+        }
+        for (PluginFormSection section : plugin.pipelineFormSchema().sections()) {
+            if (section == null || section.fields() == null) {
+                continue;
+            }
+            for (PluginFormField field : section.fields()) {
+                applyPluginConfigField(entity, variables, pluginConfig, field);
+            }
+        }
+    }
+
+    private Map<String, String> normalizePluginConfig(Map<String, String> pluginConfig) {
+        Map<String, String> normalized = new LinkedHashMap<>();
+        (pluginConfig == null ? Map.<String, String>of() : pluginConfig).forEach((key, value) -> {
+            if (TextKit.isNotBlank(key) && TextKit.isNotBlank(value)) {
+                normalized.put(key, value);
+            }
+        });
+        return normalized;
+    }
+
+    private List<String> normalizeTags(List<String> tags) {
+        if (tags == null || tags.isEmpty()) {
+            return List.of();
+        }
+        return CollectionKit.sortedDistinctNonBlankStrings(tags);
+    }
+
+    private void applyPluginConfigField(
+            PipelineEntity entity,
+            Map<String, String> variables,
+            Map<String, String> pluginConfig,
+            PluginFormField field
+    ) {
+        if (field == null || TextKit.isBlank(field.key())) {
+            return;
+        }
+        PluginFormFieldBinding binding = field.binding();
+        if (binding == null || TextKit.isBlank(binding.key())) {
+            binding = PluginFormFieldBinding.pluginConfig(field.key());
+        }
+        String value = pluginConfig.get(field.key());
+        if (binding.scope() == PluginFormFieldBindingScope.PIPELINE_VARIABLE) {
+            if (TextKit.isNotBlank(value)) {
+                variables.put(binding.key(), value);
+            } else {
+                variables.remove(binding.key());
+            }
+            return;
+        }
+        if (TextKit.isNotBlank(value)) {
+            variables.put(binding.key(), value);
+        } else {
+            variables.remove(binding.key());
+        }
+    }
+
+    private void bindTemplate(PipelineEntity entity, PipelineRequest request) {
+        if (request.templateId() != null) {
+            TemplateEntity template = templateRepository.findById(request.templateId())
+                    .orElseThrow(() -> new BusinessException(ErrorSubCode.TEMPLATE_NOT_FOUND));
+            entity.setTemplate(template);
+            entity.setTemplatePluginId(pipelineTemplateResolverService.resolvePluginId(entity));
+            entity.setBuiltinTemplateKey(null);
+            entity.setTemplateNameSnapshot(template.getName());
+            entity.setTemplateTypeSnapshot(template.getTemplateType());
+            entity.setTemplateMonitorProcess(Boolean.TRUE.equals(template.getMonitorProcess()));
+            return;
+        }
+        String pluginId = TextKit.trimToNull(request.templatePluginId());
+        String builtinTemplateKey = TextKit.trimToNull(request.builtinTemplateKey());
+        if (pluginId == null || builtinTemplateKey == null) {
+            throw new BusinessException(ErrorSubCode.TEMPLATE_NOT_FOUND);
+        }
+        PipelineTemplateResolverService.ResolvedPipelineTemplate builtinTemplate =
+                pipelineTemplateResolverService.resolveBuiltinTemplate(pluginId, builtinTemplateKey);
+        if (builtinTemplate == null) {
+            throw new BusinessException(ErrorSubCode.TEMPLATE_NOT_FOUND);
+        }
+        entity.setTemplate(null);
+        entity.setTemplatePluginId(pluginId);
+        entity.setBuiltinTemplateKey(builtinTemplateKey);
+        entity.setTemplateNameSnapshot(builtinTemplate.name());
+        entity.setTemplateTypeSnapshot(builtinTemplate.templateType());
+        entity.setTemplateMonitorProcess(builtinTemplate.monitorProcess());
     }
 
     private MavenSettingsEntity resolveMavenSettings(Long mavenSettingsId) {
@@ -370,12 +454,10 @@ public class PipelineService {
         return Math.max(5, startupTimeoutSeconds);
     }
 
-    private String normalizeNotificationBindings(String content) {
-        if (TextKit.isBlank(content)) {
-            return null;
+    private List<NotificationBinding> normalizeNotificationBindings(List<NotificationBinding> bindings) {
+        if (bindings == null || bindings.isEmpty()) {
+            return List.of();
         }
-        List<NotificationBinding> bindings = jsonMapper.read(content, new com.fasterxml.jackson.core.type.TypeReference<>() {
-        });
         List<NotificationBinding> normalizedBindings = bindings.stream()
                 .filter(item -> item != null && item.notificationId() != null && item.eventType() != null)
                 .toList();
@@ -391,7 +473,7 @@ public class PipelineService {
         if (!ids.isEmpty() && notificationChannelRepository.findAllById(ids).size() != ids.size()) {
             throw new BusinessException(ErrorSubCode.PIPELINE_NOTIFICATION_BINDING_INVALID);
         }
-        return jsonMapper.write(normalizedBindings);
+        return normalizedBindings;
     }
 
     private boolean matchesKeyword(PipelineEntity item, String keyword) {
@@ -407,15 +489,7 @@ public class PipelineService {
         if (tags == null || tags.isEmpty()) {
             return true;
         }
-        List<String> currentTags = parseTags(item.getTagsJson());
+        List<String> currentTags = item.getTags() == null ? List.of() : item.getTags();
         return tags.stream().allMatch(currentTags::contains);
-    }
-
-    private List<String> parseTags(String content) {
-        if (TextKit.isBlank(content)) {
-            return List.of();
-        }
-        return jsonMapper.read(content, new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {
-        });
     }
 }

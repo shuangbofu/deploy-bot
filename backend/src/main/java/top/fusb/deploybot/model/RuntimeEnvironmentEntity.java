@@ -1,6 +1,7 @@
 package top.fusb.deploybot.model;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -14,6 +15,9 @@ import jakarta.persistence.Table;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.ToString;
+import top.fusb.deploybot.model.converter.ObjectMapJsonConverter;
+
+import java.util.Map;
 
 /**
  * 运行环境描述某台主机上的 Java、Node、Maven 等工具链。
@@ -60,9 +64,10 @@ public class RuntimeEnvironmentEntity {
     @Column(length = 4000)
     private String activationScript;
 
-    /** 环境变量 JSON。 */
-    @Column(length = 4000)
-    private String environmentJson;
+    /** 环境变量。 */
+    @Convert(converter = ObjectMapJsonConverter.class)
+    @Column(name = "environment_json", length = 4000)
+    private Map<String, Object> environment;
 
     /** 是否启用。 */
     @Column(nullable = false)

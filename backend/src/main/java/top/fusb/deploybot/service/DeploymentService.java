@@ -1,16 +1,20 @@
 package top.fusb.deploybot.service;
 
-import com.fasterxml.jackson.core.type.TypeReference;
+import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
 import top.fusb.deploybot.dto.DeploymentRequest;
 import top.fusb.deploybot.dto.DeploymentFilterOptions;
 import top.fusb.deploybot.dto.DeploymentListSummary;
 import top.fusb.deploybot.dto.PageResult;
-import top.fusb.deploybot.dto.TemplateVariable;
+import top.fusb.deploybot.dto.TemplateVariableSchemaItem;
 import top.fusb.deploybot.dto.UserRecentPipelineSummary;
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorSubCode;
+import top.fusb.deploybot.kit.JsonKit;
+import top.fusb.deploybot.kit.ObjectKit;
 import top.fusb.deploybot.kit.ShellHeredocMarker;
 import top.fusb.deploybot.kit.ShellKit;
+import top.fusb.deploybot.kit.TemplateVariableSchemaKit;
 import top.fusb.deploybot.kit.TextKit;
 import top.fusb.deploybot.kit.TimeKit;
 import top.fusb.deploybot.model.DeploymentEntity;
@@ -23,6 +27,8 @@ import top.fusb.deploybot.model.ServiceEntity;
 import top.fusb.deploybot.runner.DeploymentRunner;
 import top.fusb.deploybot.notification.model.NotificationEventType;
 import top.fusb.deploybot.notification.service.DeploymentNotificationAsyncService;
+import top.fusb.deploybot.plugin.api.deployment.variable.PluginVariableAssemblyPhase;
+import top.fusb.deploybot.plugin.api.deployment.variable.PluginVariableAssemblyResult;
 import top.fusb.deploybot.repo.DeploymentRepository;
 import top.fusb.deploybot.repo.PipelineRepository;
 import top.fusb.deploybot.repo.ServiceRepository;
@@ -54,30 +60,79 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Comparator;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.function.Function;
 
 @Service
+@RequiredArgsConstructor
 public class DeploymentService {
     private static final Logger log = LoggerFactory.getLogger(DeploymentService.class);
     private static final String DEFAULT_TRIGGER_USER = "anonymous";
     private static final String BUILD_ARTIFACT_DIR = "artifacts";
     private static final long LOG_READ_TIMEOUT_MILLIS = 1500L;
+    private static final List<RuntimeEnvironmentBinding> BUILD_RUNTIME_BINDINGS = List.of(
+            new RuntimeEnvironmentBinding(
+                    "JAVA",
+                    "JAVA_HOME",
+                    "Java",
+                    "Java bin",
+                    PipelineEntity::getJavaEnvironment,
+                    List.of("echo \"[环境] java=$(command -v java 2>/dev/null || true) version=$(java -version 2>&1 | head -n 1 || true)\"")
+            ),
+            new RuntimeEnvironmentBinding(
+                    "MAVEN",
+                    "MAVEN_HOME",
+                    "Maven",
+                    "Maven bin",
+                    PipelineEntity::getMavenEnvironment,
+                    List.of("echo \"[环境] mvn=$(command -v mvn 2>/dev/null || true) version=$(mvn -v 2>/dev/null | head -n 1 || true)\"")
+            ),
+            new RuntimeEnvironmentBinding(
+                    "NODE",
+                    "NODE_HOME",
+                    "Node",
+                    "Node bin",
+                    PipelineEntity::getNodeEnvironment,
+                    List.of(
+                            "echo \"[环境] node=$(command -v node 2>/dev/null || true) version=$(node -v 2>/dev/null || true)\"",
+                            "echo \"[环境] npm=$(command -v npm 2>/dev/null || true) version=$(npm -v 2>/dev/null || true)\""
+                    )
+            )
+    );
+    private static final List<RuntimeEnvironmentBinding> DEPLOY_RUNTIME_BINDINGS = List.of(
+            new RuntimeEnvironmentBinding(
+                    "JAVA",
+                    "JAVA_HOME",
+                    "Java",
+                    "Java bin",
+                    PipelineEntity::getRuntimeJavaEnvironment,
+                    List.of("echo \"[环境] java=$(command -v java 2>/dev/null || true) version=$(java -version 2>&1 | head -n 1 || true)\"")
+            )
+    );
+    private static final Set<String> RUNTIME_ENVIRONMENT_PREFIXES = java.util.stream.Stream
+            .concat(BUILD_RUNTIME_BINDINGS.stream(), DEPLOY_RUNTIME_BINDINGS.stream())
+            .map(RuntimeEnvironmentBinding::prefix)
+            .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    private static final Set<String> RUNTIME_ENVIRONMENT_INTERNAL_KEYS = java.util.stream.Stream
+            .concat(BUILD_RUNTIME_BINDINGS.stream(), DEPLOY_RUNTIME_BINDINGS.stream())
+            .flatMap(binding -> java.util.stream.Stream.of(
+                    binding.homeKey(),
+                    binding.prefix() + "_BIN_PATH"
+            ))
+            .collect(java.util.stream.Collectors.toUnmodifiableSet());
+
     private static final ExecutorService LOG_READ_EXECUTOR = Executors.newFixedThreadPool(2, task -> {
         Thread thread = new Thread(task, "deployment-log-reader");
         thread.setDaemon(true);
         return thread;
     });
-    private static final Pattern REDIRECTION_PATTERN = Pattern.compile("\\s(?:\\d?>>?|>>?)");
-
     private final DeploymentRepository deploymentRepository;
     private final PipelineRepository pipelineRepository;
-    private final JsonMapper jsonMapper;
     private final ScriptTemplateService scriptTemplateService;
     private final DeploymentRunner deploymentRunner;
     private final ServiceRepository serviceRepository;
@@ -88,37 +143,15 @@ public class DeploymentService {
     private final UserRepository userRepository;
     private final DeploymentNotificationAsyncService deploymentNotificationAsyncService;
     private final DeploymentCleanupService deploymentCleanupService;
-    private final Path defaultWorkspaceRoot;
+    private final DeploymentPluginBridgeService deploymentPluginBridgeService;
+    private final PipelineTemplateResolverService pipelineTemplateResolverService;
+    private final ShellVariableService shellVariableService;
+    @Value("${deploybot.workspace-root:./runtime}")
+    private String workspaceRoot;
+    private Path defaultWorkspaceRoot;
 
-    public DeploymentService(
-            DeploymentRepository deploymentRepository,
-            PipelineRepository pipelineRepository,
-            JsonMapper jsonMapper,
-            ScriptTemplateService scriptTemplateService,
-            DeploymentRunner deploymentRunner,
-            ServiceRepository serviceRepository,
-            SystemSettingsService systemSettingsService,
-            GitCredentialService gitCredentialService,
-            ServiceManager serviceManager,
-            HostService hostService,
-            UserRepository userRepository,
-            DeploymentNotificationAsyncService deploymentNotificationAsyncService,
-            DeploymentCleanupService deploymentCleanupService,
-            @Value("${deploybot.workspace-root:./runtime}") String workspaceRoot
-    ) {
-        this.deploymentRepository = deploymentRepository;
-        this.pipelineRepository = pipelineRepository;
-        this.jsonMapper = jsonMapper;
-        this.scriptTemplateService = scriptTemplateService;
-        this.deploymentRunner = deploymentRunner;
-        this.serviceRepository = serviceRepository;
-        this.systemSettingsService = systemSettingsService;
-        this.gitCredentialService = gitCredentialService;
-        this.serviceManager = serviceManager;
-        this.hostService = hostService;
-        this.userRepository = userRepository;
-        this.deploymentNotificationAsyncService = deploymentNotificationAsyncService;
-        this.deploymentCleanupService = deploymentCleanupService;
+    @PostConstruct
+    public void initDefaultWorkspaceRoot() {
         this.defaultWorkspaceRoot = Path.of(workspaceRoot);
     }
 
@@ -176,7 +209,7 @@ public class DeploymentService {
                         entry.getKey().getName(),
                         entry.getKey().getProject() == null ? null : entry.getKey().getProject().getName(),
                         entry.getKey().getDefaultBranch(),
-                        entry.getKey().getTemplate() == null ? null : entry.getKey().getTemplate().getTemplateType(),
+                        entry.getKey().getTemplateTypeSnapshot(),
                         entry.getValue().size(),
                         entry.getValue().stream()
                                 .map(DeploymentEntity::getCreatedAt)
@@ -296,6 +329,7 @@ public class DeploymentService {
         if (pipeline.getMavenSettings() != null && Boolean.TRUE.equals(pipeline.getMavenSettings().getDeleted())) {
             throw new BusinessException(ErrorSubCode.MAVEN_SETTINGS_NOT_FOUND, "当前流水线绑定的 Maven settings.xml 已被删除，请重新选择。");
         }
+        validatePipelineReadyForDeployment(pipeline);
         AuthenticatedUser currentUser = requireCurrentUser();
         log.info("Creating deployment for pipeline {} with requested branch {}.", pipeline.getName(), request.branchName());
         List<DeploymentEntity> activeDeployments = deploymentRepository.findByPipelineIdAndStatusInOrderByCreatedAtDesc(
@@ -309,7 +343,7 @@ public class DeploymentService {
             activeDeployments.forEach(item -> deploymentRunner.stop(item.getId(), currentUser.username()));
         }
 
-        Map<String, String> variables = new LinkedHashMap<>(jsonMapper.toStringMap(pipeline.getVariablesJson()));
+        Map<String, String> variables = new LinkedHashMap<>(pipeline.getVariables() == null ? Map.of() : pipeline.getVariables());
         if (request.variableOverrides() != null) {
             variables.putAll(request.variableOverrides());
         }
@@ -325,16 +359,16 @@ public class DeploymentService {
         variables.put("branch", branch);
         variables.put("gitUrl", gitCredentialService.resolveGitUrl(pipeline.getProject()));
         variables.put("gitRepositoryUrl", pipeline.getProject().getGitUrl());
+        variables.put("projectId", pipeline.getProject().getId() == null ? "" : pipeline.getProject().getId().toString());
         variables.put("projectName", pipeline.getProject().getName());
+        variables.put("pipelineId", pipeline.getId() == null ? "" : pipeline.getId().toString());
         variables.put("pipelineName", pipeline.getName());
-        variables.put("applicationName", resolveApplicationName(pipeline));
-        variables.put("springProfile", pipeline.getSpringProfile() == null ? "" : pipeline.getSpringProfile());
-        variables.put("runtimeConfigYaml", pipeline.getRuntimeConfigYaml() == null ? "" : pipeline.getRuntimeConfigYaml());
-        variables.put("runtimeConfigYamlBase64", encodeRuntimeConfigYaml(pipeline.getRuntimeConfigYaml()));
+        variables.put("serviceName", resolveServiceName(pipeline));
+        variables.put("targetDir", resolveTargetDir(pipeline));
+        putPluginConfigVariables(variables, pipeline);
         variables.put("workspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
         variables.put("buildWorkspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
         variables.put("deployWorkspaceRoot", deployWorkspaceRoot.toAbsolutePath().normalize().toString());
-        applyBuildRuntimeEnvironmentVariables(variables, pipeline);
         log.info(
                 "Resolved deployment {} context: buildWorkspaceRoot={}, deployWorkspaceRoot={}, targetHost={}, startupKeyword={}, startupTimeoutSeconds={}",
                 pipeline.getName(),
@@ -350,8 +384,8 @@ public class DeploymentService {
         entity.setBranchName(branch);
         entity.setPipelineName(pipeline.getName());
         entity.setProjectName(pipeline.getProject() == null ? null : pipeline.getProject().getName());
-        entity.setVariablesJson(jsonMapper.write(variables));
-        entity.setExecutionSnapshotJson(buildExecutionSnapshotJson(pipeline, branch, variables));
+        entity.setVariables(variables);
+        entity.setExecutionSnapshot(buildExecutionSnapshot(pipeline, branch, variables));
         entity.setTriggeredBy(currentUser.username() == null || currentUser.username().isBlank() ? DEFAULT_TRIGGER_USER : currentUser.username());
         entity.setStatus(DeploymentStatus.PENDING);
         entity.setCreatedAt(LocalDateTime.now());
@@ -365,31 +399,37 @@ public class DeploymentService {
         Map<String, String> buildVariables = new LinkedHashMap<>(variables);
         buildVariables.put("artifactDir", localArtifactDir.toString());
         buildVariables.put("workspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
-        applyResolvedMavenSettingsFilePath(buildVariables, buildWorkspaceRoot, entity.getId());
+        applyBuildRuntimeEnvironmentVariables(buildVariables, pipeline);
+        applyPluginVariableAssembly(
+                pipeline,
+                buildVariables,
+                PluginVariableAssemblyPhase.BUILD,
+                resolveMavenSettingsFilePath(pipeline, buildWorkspaceRoot, entity.getId())
+        );
 
         Map<String, String> deployVariables = new LinkedHashMap<>(variables);
         deployVariables.put("artifactDir", targetArtifactDir.toString());
         deployVariables.put("workspaceRoot", deployWorkspaceRoot.toAbsolutePath().normalize().toString());
-        deployVariables.put("runtimeConfigFilePath", deployWorkspaceRoot.resolve("config").resolve("deploy-" + entity.getId() + ".yml").toAbsolutePath().normalize().toString());
         applyDeployRuntimeEnvironmentVariables(deployVariables, pipeline);
-        augmentStartCommand(deployVariables);
+        applyPluginVariableAssembly(pipeline, deployVariables, PluginVariableAssemblyPhase.DEPLOY, null);
 
         String buildTemplate = resolveBuildScriptTemplate(pipeline);
         String deployTemplate = resolveDeployScriptTemplate(pipeline);
-        String renderedBuildScript = scriptTemplateService.render(buildTemplate, buildVariables);
-        String renderedDeployScript = deployTemplate == null ? null : scriptTemplateService.render(deployTemplate, deployVariables);
+        String renderedBuildScript = renderDeploymentScriptTemplate(buildTemplate, buildVariables);
+        String renderedDeployScript = deployTemplate == null ? null : renderDeploymentScriptTemplate(deployTemplate, deployVariables);
         log.info(
                 "流水线 '{}' 的脚本渲染完成：存在构建脚本={}，存在发布脚本={}，启用服务监测={}",
                 pipeline.getName(),
                 renderedBuildScript != null && !renderedBuildScript.isBlank(),
                 renderedDeployScript != null && !renderedDeployScript.isBlank(),
-                pipeline.getTemplate().getMonitorProcess()
+                pipeline.getTemplateMonitorProcess()
         );
 
         entity.setArtifactPath(localArtifactDir.toString());
         entity.setRenderedBuildScript(buildRuntimeEnvironmentPreamble(buildVariables, pipeline, true) + renderedBuildScript);
-        entity.setRenderedDeployScript(renderedDeployScript == null ? null : buildRuntimeEnvironmentPreamble(deployVariables, pipeline, false) + renderedDeployScript + buildDeployRuntimeDiagnostics(pipeline, deployVariables));
-        entity.setVariablesJson(jsonMapper.write(buildVariables));
+        entity.setRenderedDeployScript(renderedDeployScript == null ? null : buildRuntimeEnvironmentPreamble(deployVariables, pipeline, false) + renderedDeployScript);
+        entity.setVariables(deployVariables);
+        entity.setExecutionSnapshot(buildExecutionSnapshot(pipeline, branch, deployVariables));
         entity = deploymentRepository.save(entity);
         log.info(
                 "Deployment {} created for pipeline '{}' on host '{}'.",
@@ -450,7 +490,7 @@ public class DeploymentService {
     private void appendSystemLog(Path logFile, String message) throws IOException {
         Files.writeString(
                 logFile,
-                "[系统] " + message + System.lineSeparator(),
+                "[系统] " + TimeKit.formatDateTime(LocalDateTime.now()) + " " + message + System.lineSeparator(),
                 StandardCharsets.UTF_8,
                 StandardOpenOption.CREATE,
                 StandardOpenOption.APPEND
@@ -461,14 +501,18 @@ public class DeploymentService {
      * 流水线中选择的运行环境只注入到本机构建阶段，避免误把远端发布机当成构建机。
      */
     private void applyBuildRuntimeEnvironmentVariables(Map<String, String> variables, PipelineEntity pipeline) {
-        putEnvironmentVariables(variables, "JAVA", pipeline.getJavaEnvironment(), "JAVA_HOME");
-        putEnvironmentVariables(variables, "NODE", pipeline.getNodeEnvironment(), "NODE_HOME");
-        putEnvironmentVariables(variables, "MAVEN", pipeline.getMavenEnvironment(), "MAVEN_HOME");
-        augmentMavenBuildCommands(variables, pipeline);
+        applyRuntimeEnvironmentVariables(variables, pipeline, true);
     }
 
     private void applyDeployRuntimeEnvironmentVariables(Map<String, String> variables, PipelineEntity pipeline) {
-        putEnvironmentVariables(variables, "JAVA", pipeline.getRuntimeJavaEnvironment(), "JAVA_HOME");
+        applyRuntimeEnvironmentVariables(variables, pipeline, false);
+    }
+
+    private void applyRuntimeEnvironmentVariables(Map<String, String> variables, PipelineEntity pipeline, boolean buildStage) {
+        Set<String> requiredTypes = requiredRuntimeTypeSet(pipeline, buildStage);
+        runtimeBindings(buildStage).stream()
+                .filter(binding -> requiredTypes.contains(binding.prefix()))
+                .forEach(binding -> putEnvironmentVariables(variables, binding.prefix(), binding.environment(pipeline), binding.homeKey()));
     }
 
     private void putEnvironmentVariables(Map<String, String> variables, String prefix, RuntimeEnvironmentEntity environment, String homeKey) {
@@ -488,7 +532,7 @@ public class DeploymentService {
         if (environment.getActivationScript() != null && !environment.getActivationScript().isBlank()) {
             variables.put(prefix + "_ACTIVATION_SCRIPT", environment.getActivationScript());
         }
-        Map<String, Object> extraEnvironment = jsonMapper.toObjectMap(environment.getEnvironmentJson());
+        Map<String, Object> extraEnvironment = environment.getEnvironment() == null ? Map.of() : environment.getEnvironment();
         extraEnvironment.forEach((key, value) -> {
             if (value instanceof String stringValue) {
                 variables.put(key, stringValue);
@@ -507,41 +551,103 @@ public class DeploymentService {
         });
     }
 
+    private void validatePipelineReadyForDeployment(PipelineEntity pipeline) {
+        List<String> missingItems = new ArrayList<>();
+        if (pipeline == null) {
+            missingItems.add("流水线");
+        } else {
+            if (pipeline.getProject() == null) {
+                missingItems.add("项目");
+            }
+            PipelineTemplateResolverService.ResolvedPipelineTemplate resolvedTemplate = pipelineTemplateResolverService.resolve(pipeline);
+            if (resolvedTemplate == null) {
+                missingItems.add("模板");
+            }
+            if (pipeline.getTargetHost() == null) {
+                missingItems.add("目标主机");
+            }
+            if (TextKit.isBlank(pipeline.getTargetDir())) {
+                missingItems.add("部署目录");
+            }
+            if (TextKit.isBlank(pipeline.getDefaultBranch())) {
+                missingItems.add("默认分支");
+            }
+            validateRequiredRuntimeEnvironments(pipeline, missingItems);
+            if (resolvedTemplate != null) {
+                validateRequiredTemplateVariables(pipeline, resolvedTemplate.variablesSchema(), missingItems);
+            }
+        }
+        if (!missingItems.isEmpty()) {
+            throw new BusinessException(
+                    ErrorSubCode.PIPELINE_CONFIG_INCOMPLETE,
+                    "流水线配置不完整，请先补充：" + String.join("、", missingItems)
+            );
+        }
+    }
+
+    private void validateRequiredRuntimeEnvironments(PipelineEntity pipeline, List<String> missingItems) {
+        Set<String> buildTypes = requiredRuntimeTypeSet(pipeline, true);
+        BUILD_RUNTIME_BINDINGS.stream()
+                .filter(binding -> buildTypes.contains(binding.prefix()))
+                .filter(binding -> binding.environment(pipeline) == null)
+                .forEach(binding -> missingItems.add("本机构建 " + binding.label() + " 环境"));
+        Set<String> targetTypes = requiredRuntimeTypeSet(pipeline, false);
+        DEPLOY_RUNTIME_BINDINGS.stream()
+                .filter(binding -> targetTypes.contains(binding.prefix()))
+                .filter(binding -> binding.environment(pipeline) == null)
+                .forEach(binding -> missingItems.add("目标主机运行 " + binding.label() + " 环境"));
+    }
+
+    private void validateRequiredTemplateVariables(PipelineEntity pipeline, String variablesSchema, List<String> missingItems) {
+        Map<String, String> variables = pipeline.getVariables() == null ? Map.of() : pipeline.getVariables();
+        for (TemplateVariableSchemaItem item : TemplateVariableSchemaKit.read(variablesSchema)) {
+            if (item == null || !Boolean.TRUE.equals(item.required()) || Boolean.FALSE.equals(item.pipelineInput())) {
+                continue;
+            }
+            String name = ObjectKit.stringValue(item.name());
+            if (name == null) {
+                continue;
+            }
+            if (TextKit.isBlank(variables.get(name))) {
+                missingItems.add(TextKit.isNotBlank(item.label()) ? item.label() : name);
+            }
+        }
+    }
+
     private String buildRuntimeEnvironmentPreamble(Map<String, String> variables, PipelineEntity pipeline, boolean buildStage) {
         StringBuilder script = new StringBuilder();
+        Set<String> requiredTypes = requiredRuntimeTypeSet(pipeline, buildStage);
         script.append("# Runtime environment preamble generated by Deploy Bot\n");
+        script.append("set -e\n");
+        putScriptEnvironmentAliases(variables, buildStage);
+        List<RuntimeEnvironmentBinding> runtimeBindings = runtimeBindings(buildStage);
         if (buildStage) {
             script.append("# Build stage runtime exports\n");
-            script.append(ShellKit.exportIfPresent("JAVA_HOME", valueOf(variables, "JAVA_HOME")));
-            script.append(ShellKit.exportIfPresent("MAVEN_HOME", valueOf(variables, "MAVEN_HOME")));
-            script.append(ShellKit.exportIfPresent("NODE_HOME", valueOf(variables, "NODE_HOME")));
-            script.append(buildActivationScriptBlock("JAVA", variables));
-            script.append(buildActivationScriptBlock("NODE", variables));
-            script.append(buildActivationScriptBlock("MAVEN", variables));
+            runtimeBindings.forEach(binding -> script.append(exportRuntimeHomeIfRequired(requiredTypes, binding.prefix(), binding.homeKey(), variables)));
             String settingsXmlBase64 = encodeMavenSettingsXml(pipeline);
-            if (TextKit.isNotBlank(settingsXmlBase64) && TextKit.isNotBlank(valueOf(variables, "MAVEN_SETTINGS_FILE_PATH"))) {
+            if (requiredTypes.contains("MAVEN")
+                    && TextKit.isNotBlank(settingsXmlBase64)
+                    && TextKit.isNotBlank(valueOf(variables, "MAVEN_SETTINGS_FILE_PATH"))) {
                 script.append("# Prepare Maven settings.xml for build stage\n");
                 script.append(ShellKit.writeBase64FileIfPresent(settingsXmlBase64, valueOf(variables, "MAVEN_SETTINGS_FILE_PATH")));
             }
         } else {
             script.append("# Deploy stage runtime exports\n");
-            script.append(ShellKit.exportIfPresent("JAVA_HOME", valueOf(variables, "JAVA_HOME")));
-            script.append(buildActivationScriptBlock("JAVA", variables));
+            runtimeBindings.forEach(binding -> script.append(exportRuntimeHomeIfRequired(requiredTypes, binding.prefix(), binding.homeKey(), variables)));
         }
 
         StringBuilder pathBuilder = new StringBuilder();
-        appendPath(pathBuilder, valueOf(variables, "JAVA_BIN_PATH"));
-        if (buildStage) {
-            appendPath(pathBuilder, valueOf(variables, "MAVEN_BIN_PATH"));
-            appendPath(pathBuilder, valueOf(variables, "NODE_BIN_PATH"));
-        }
+        runtimeBindings.forEach(binding -> appendRuntimePath(pathBuilder, requiredTypes, binding.prefix(), binding.prefix() + "_BIN_PATH", variables));
 
         for (Map.Entry<String, String> entry : variables.entrySet()) {
             String key = entry.getKey();
             if (!key.matches("[A-Z0-9_]+")) {
                 continue;
             }
-            if (List.of("JAVA_HOME", "MAVEN_HOME", "NODE_HOME", "JAVA_BIN_PATH", "MAVEN_BIN_PATH", "NODE_BIN_PATH").contains(key)) {
+            if (isRuntimeScopedEnvironmentKey(key) && !requiredTypes.contains(runtimePrefix(key))) {
+                continue;
+            }
+            if (RUNTIME_ENVIRONMENT_INTERNAL_KEYS.contains(key)) {
                 continue;
             }
             if (key.endsWith("__PREPEND_PATH")) {
@@ -561,50 +667,126 @@ public class DeploymentService {
                     .append("$PATH\"\n");
         }
 
+        if (buildStage) {
+            runtimeBindings.forEach(binding -> script.append(requireRuntimeBinDirectory(requiredTypes, binding.prefix(), binding.displayName(), variables)));
+            runtimeBindings.forEach(binding -> script.append(buildActivationScriptBlock(requiredTypes, binding.prefix(), variables)));
+            script.append(buildRuntimeCommandDiagnostics(requiredTypes, true));
+        } else {
+            runtimeBindings.forEach(binding -> script.append(requireRuntimeBinDirectory(requiredTypes, binding.prefix(), binding.displayName(), variables)));
+            runtimeBindings.forEach(binding -> script.append(buildActivationScriptBlock(requiredTypes, binding.prefix(), variables)));
+            script.append(buildRuntimeCommandDiagnostics(requiredTypes, false));
+        }
+
         script.append(buildGitSshPreamble(pipeline, variables));
         script.append("\n");
         return script.toString();
     }
 
-    private void augmentMavenBuildCommands(Map<String, String> variables, PipelineEntity pipeline) {
-        if (pipeline == null || pipeline.getMavenSettings() == null || pipeline.getMavenSettings().getContentXml() == null
-                || pipeline.getMavenSettings().getContentXml().isBlank()) {
-            return;
-        }
-        String settingsFilePath = "{{workspaceRoot}}/config/maven-settings-{{deploymentId}}.xml";
-        variables.put("mavenSettingsFilePath", settingsFilePath);
-        variables.put("MAVEN_SETTINGS_FILE_PATH", settingsFilePath);
-        rewriteMavenCommandVariable(variables, "buildCommand", settingsFilePath);
-        rewriteMavenCommandVariable(variables, "backendBuildCommand", settingsFilePath);
+    /**
+     * 部署脚本里只有模板变量继续使用 {{name}}。平台上下文、插件配置和派生值统一在脚本执行前注入为 shell 环境变量。
+     */
+    private String renderDeploymentScriptTemplate(String template, Map<String, String> variables) {
+        Map<String, String> templateVariables = new LinkedHashMap<>();
+        variables.forEach((key, value) -> {
+            if (shellVariableService.contextKeys().contains(key)) {
+                return;
+            }
+            if (key != null && key.matches("[A-Z0-9_]+")) {
+                return;
+            }
+            templateVariables.put(key, replaceScriptEnvPlaceholders(value));
+        });
+        String renderedScript = scriptTemplateService.render(replaceScriptEnvPlaceholders(template), templateVariables);
+        return ShellKit.enableCommandTrace(ShellKit.expandLogComments(renderedScript));
     }
 
-    private void rewriteMavenCommandVariable(Map<String, String> variables, String key, String settingsFilePath) {
-        String command = variables.get(key);
-        if (command == null || command.isBlank()) {
-            return;
+    private String replaceScriptEnvPlaceholders(String value) {
+        if (value == null || value.isBlank()) {
+            return value;
         }
-        if (!command.contains("mvn") || command.contains(" -s ") || command.contains("--settings")) {
-            return;
+        String result = value;
+        for (String key : shellVariableService.contextKeys()) {
+            String placeholder = shellVariableService.placeholderForContextKey(key);
+            result = result.replace("{{" + key + "}}", placeholder);
+            result = result.replace("{{ " + key + " }}", placeholder);
         }
-        variables.put(key, command.replaceAll("(^|\\s|&&|\\|\\|)(mvn)(?=\\s|$)", "$1$2 -s \"" + Matcher.quoteReplacement(settingsFilePath) + "\""));
+        return result;
     }
 
-    private void applyResolvedMavenSettingsFilePath(Map<String, String> variables, Path workspaceRoot, Long deploymentId) {
-        if (variables == null || workspaceRoot == null || deploymentId == null) {
+    private void putScriptEnvironmentAliases(Map<String, String> variables, boolean buildStage) {
+        for (String key : shellVariableService.contextKeys()) {
+            putEnvAlias(variables, shellEnvName(key), key);
+        }
+        putWorkspaceAlias(variables, buildStage);
+    }
+
+    private String shellEnvName(String sourceKey) {
+        return TextKit.toUpperSnakeCase(sourceKey);
+    }
+
+    private void putEnvAlias(Map<String, String> variables, String envKey, String sourceKey) {
+        String value = variables.get(sourceKey);
+        if (TextKit.isNotBlank(value)) {
+            variables.put(envKey, value);
+        }
+    }
+
+    private void putWorkspaceAlias(Map<String, String> variables, boolean buildStage) {
+        String root = buildStage ? variables.get("buildWorkspaceRoot") : variables.get("deployWorkspaceRoot");
+        if (TextKit.isBlank(root)) {
+            root = variables.get("workspaceRoot");
+        }
+        String deploymentId = variables.get("deploymentId");
+        if (TextKit.isBlank(root)) {
             return;
         }
-        if (!variables.containsKey("mavenSettingsFilePath") && !variables.containsKey("MAVEN_SETTINGS_FILE_PATH")) {
-            return;
+        variables.put("WORKSPACE", buildStage && TextKit.isNotBlank(deploymentId)
+                ? Path.of(root).resolve("runs").resolve(deploymentId).toString()
+                : root);
+    }
+
+    private String resolveMavenSettingsFilePath(PipelineEntity pipeline, Path workspaceRoot, Long deploymentId) {
+        if (pipeline == null || pipeline.getMavenSettings() == null || workspaceRoot == null || deploymentId == null) {
+            return null;
         }
-        String resolvedPath = workspaceRoot.resolve("config")
+        if (TextKit.isBlank(pipeline.getMavenSettings().getContentXml())) {
+            return null;
+        }
+        return workspaceRoot.resolve("config")
                 .resolve("maven-settings-" + deploymentId + ".xml")
                 .toAbsolutePath()
                 .normalize()
                 .toString();
-        variables.put("mavenSettingsFilePath", resolvedPath);
-        variables.put("MAVEN_SETTINGS_FILE_PATH", resolvedPath);
-        rewriteMavenCommandVariable(variables, "buildCommand", resolvedPath);
-        rewriteMavenCommandVariable(variables, "backendBuildCommand", resolvedPath);
+    }
+
+    /**
+     * 将部署流程中的类型差异变量改写委托给插件桥接层处理，平台主流程只保留统一的执行编排。
+     */
+    private void applyPluginVariableAssembly(
+            PipelineEntity pipeline,
+            Map<String, String> variables,
+            PluginVariableAssemblyPhase phase,
+            String mavenSettingsFilePath
+    ) {
+        if (pipeline == null || variables == null || phase == null) {
+            return;
+        }
+        PluginVariableAssemblyResult result = deploymentPluginBridgeService.assembleVariables(
+                pipeline,
+                variables,
+                phase,
+                mavenSettingsFilePath
+        );
+        if (result == null || result.variables() == null || result.variables().isEmpty()) {
+            return;
+        }
+        variables.clear();
+        variables.putAll(result.variables());
+        if (result.notes() != null) {
+            result.notes().stream()
+                    .filter(TextKit::isNotBlank)
+                    .forEach(note -> log.info("插件变量改写[{}][{}]：{}", pipeline.getName(), phase.name(), note));
+        }
     }
 
     private void appendPath(StringBuilder pathBuilder, String path) {
@@ -614,6 +796,58 @@ public class DeploymentService {
         pathBuilder.append(ShellKit.escapeDoubleQuoted(path)).append(":");
     }
 
+    private Set<String> requiredRuntimeTypeSet(PipelineEntity pipeline, boolean buildStage) {
+        return deploymentPluginBridgeService.requiredRuntimeTypes(pipeline, buildStage).stream()
+                .filter(TextKit::isNotBlank)
+                .map(item -> item.trim().toUpperCase())
+                .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+    }
+
+    private String exportRuntimeHomeIfRequired(Set<String> requiredTypes, String prefix, String envName, Map<String, String> variables) {
+        return requiredTypes.contains(prefix) ? ShellKit.exportIfPresent(envName, valueOf(variables, envName)) : "";
+    }
+
+    private boolean isRuntimeScopedEnvironmentKey(String key) {
+        return key != null && RUNTIME_ENVIRONMENT_PREFIXES.stream().anyMatch(prefix -> key.startsWith(prefix + "_"));
+    }
+
+    private String runtimePrefix(String key) {
+        if (key == null) {
+            return "";
+        }
+        int splitIndex = key.indexOf('_');
+        return splitIndex < 0 ? key : key.substring(0, splitIndex);
+    }
+
+    private void appendRuntimePath(StringBuilder pathBuilder, Set<String> requiredTypes, String prefix, String pathKey, Map<String, String> variables) {
+        if (requiredTypes.contains(prefix)) {
+            appendPath(pathBuilder, valueOf(variables, pathKey));
+        }
+    }
+
+    private String requireRuntimeBinDirectory(Set<String> requiredTypes, String prefix, String displayName, Map<String, String> variables) {
+        if (!requiredTypes.contains(prefix)) {
+            return "";
+        }
+        if (TextKit.isNotBlank(valueOf(variables, prefix + "_ACTIVATION_SCRIPT"))) {
+            return "";
+        }
+        return ShellKit.requireDirectory(displayName, valueOf(variables, prefix + "_BIN_PATH"));
+    }
+
+    private String buildRuntimeCommandDiagnostics(Set<String> requiredTypes, boolean buildStage) {
+        StringBuilder script = new StringBuilder();
+        runtimeBindings(buildStage).stream()
+                .filter(binding -> requiredTypes.contains(binding.prefix()))
+                .flatMap(binding -> binding.diagnosticCommands().stream())
+                .forEach(command -> script.append(command).append("\n"));
+        return script.toString();
+    }
+
+    private List<RuntimeEnvironmentBinding> runtimeBindings(boolean buildStage) {
+        return buildStage ? BUILD_RUNTIME_BINDINGS : DEPLOY_RUNTIME_BINDINGS;
+    }
+
     private String valueOf(Map<String, String> variables, String key) {
         return variables.getOrDefault(key, "");
     }
@@ -621,7 +855,10 @@ public class DeploymentService {
     /**
      * 运行环境提供的激活脚本会原样嵌入到部署脚本中，并在前面补一行注释说明作用。
      */
-    private String buildActivationScriptBlock(String prefix, Map<String, String> variables) {
+    private String buildActivationScriptBlock(Set<String> requiredTypes, String prefix, Map<String, String> variables) {
+        if (!requiredTypes.contains(prefix)) {
+            return "";
+        }
         String activationScript = valueOf(variables, prefix + "_ACTIVATION_SCRIPT");
         if (TextKit.isBlank(activationScript)) {
             return "";
@@ -689,7 +926,7 @@ public class DeploymentService {
     }
 
     private String resolveBuildScriptTemplate(PipelineEntity pipeline) {
-        String buildScript = pipeline.getTemplate().getBuildScriptContent();
+        String buildScript = pipelineTemplateResolverService.resolveRequired(pipeline).buildScriptContent();
         if (buildScript == null || buildScript.isBlank()) {
             throw new BusinessException(ErrorSubCode.TEMPLATE_BUILD_SCRIPT_MISSING);
         }
@@ -697,7 +934,7 @@ public class DeploymentService {
     }
 
     private String resolveDeployScriptTemplate(PipelineEntity pipeline) {
-        String deployScript = pipeline.getTemplate().getDeployScriptContent();
+        String deployScript = pipelineTemplateResolverService.resolveRequired(pipeline).deployScriptContent();
         if (deployScript == null || deployScript.isBlank()) {
             return null;
         }
@@ -735,26 +972,26 @@ public class DeploymentService {
         if (pipeline.getMavenSettings() != null && Boolean.TRUE.equals(pipeline.getMavenSettings().getDeleted())) {
             throw new BusinessException(ErrorSubCode.MAVEN_SETTINGS_NOT_FOUND, "当前流水线绑定的 Maven settings.xml 已被删除，请重新选择。");
         }
-        Map<String, String> variables = new LinkedHashMap<>(jsonMapper.toStringMap(source.getVariablesJson()));
+        Map<String, String> variables = new LinkedHashMap<>(source.getVariables() == null ? Map.of() : source.getVariables());
         Path buildWorkspaceRoot = resolveBuildWorkspaceRoot();
         Path deployWorkspaceRoot = resolveDeployWorkspaceRoot(pipeline.getTargetHost(), buildWorkspaceRoot);
 
         variables.put("branch", source.getBranchName());
         variables.put("gitUrl", gitCredentialService.resolveGitUrl(pipeline.getProject()));
         variables.put("gitRepositoryUrl", pipeline.getProject().getGitUrl());
+        variables.put("projectId", pipeline.getProject().getId() == null ? "" : pipeline.getProject().getId().toString());
         variables.put("projectName", pipeline.getProject().getName());
+        variables.put("pipelineId", pipeline.getId() == null ? "" : pipeline.getId().toString());
         variables.put("pipelineName", pipeline.getName());
-        variables.put("applicationName", resolveApplicationName(pipeline));
-        variables.put("springProfile", pipeline.getSpringProfile() == null ? "" : pipeline.getSpringProfile());
-        variables.put("runtimeConfigYaml", pipeline.getRuntimeConfigYaml() == null ? "" : pipeline.getRuntimeConfigYaml());
-        variables.put("runtimeConfigYamlBase64", encodeRuntimeConfigYaml(pipeline.getRuntimeConfigYaml()));
+        variables.put("serviceName", resolveServiceName(pipeline));
+        variables.put("targetDir", resolveTargetDir(pipeline));
+        putPluginConfigVariables(variables, pipeline);
         variables.put("workspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
         variables.put("buildWorkspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
         variables.put("deployWorkspaceRoot", deployWorkspaceRoot.toAbsolutePath().normalize().toString());
         variables.put("sourceArtifactPath", source.getArtifactPath());
-        applyBuildRuntimeEnvironmentVariables(variables, pipeline);
 
-        if (Boolean.TRUE.equals(pipeline.getTemplate().getMonitorProcess())) {
+        if (Boolean.TRUE.equals(pipeline.getTemplateMonitorProcess())) {
             serviceRepository.findByPipelineId(pipeline.getId())
                     .map(ServiceEntity::getId)
                     .ifPresent(serviceManager::stop);
@@ -769,8 +1006,8 @@ public class DeploymentService {
         entity.setStatus(DeploymentStatus.PENDING);
         entity.setCreatedAt(LocalDateTime.now());
         entity.setRollbackFromDeploymentId(source.getId());
-        entity.setVariablesJson(jsonMapper.write(variables));
-        entity.setExecutionSnapshotJson(buildExecutionSnapshotJson(pipeline, source.getBranchName(), variables));
+        entity.setVariables(variables);
+        entity.setExecutionSnapshot(buildExecutionSnapshot(pipeline, source.getBranchName(), variables));
         deploymentRepository.save(entity);
 
         variables.put("deploymentId", entity.getId().toString());
@@ -779,22 +1016,28 @@ public class DeploymentService {
         Map<String, String> buildVariables = new LinkedHashMap<>(variables);
         buildVariables.put("artifactDir", localArtifactDir.toString());
         buildVariables.put("workspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
-        applyResolvedMavenSettingsFilePath(buildVariables, buildWorkspaceRoot, entity.getId());
+        applyBuildRuntimeEnvironmentVariables(buildVariables, pipeline);
+        applyPluginVariableAssembly(
+                pipeline,
+                buildVariables,
+                PluginVariableAssemblyPhase.BUILD,
+                resolveMavenSettingsFilePath(pipeline, buildWorkspaceRoot, entity.getId())
+        );
 
         Map<String, String> deployVariables = new LinkedHashMap<>(variables);
         deployVariables.put("artifactDir", targetArtifactDir.toString());
         deployVariables.put("workspaceRoot", deployWorkspaceRoot.toAbsolutePath().normalize().toString());
-        deployVariables.put("runtimeConfigFilePath", deployWorkspaceRoot.resolve("config").resolve("deploy-" + entity.getId() + ".yml").toAbsolutePath().normalize().toString());
         applyDeployRuntimeEnvironmentVariables(deployVariables, pipeline);
-        augmentStartCommand(deployVariables);
+        applyPluginVariableAssembly(pipeline, deployVariables, PluginVariableAssemblyPhase.DEPLOY, null);
 
         String deployTemplate = resolveDeployScriptTemplate(pipeline);
-        String renderedDeployScript = deployTemplate == null ? null : scriptTemplateService.render(deployTemplate, deployVariables);
+        String renderedDeployScript = deployTemplate == null ? null : renderDeploymentScriptTemplate(deployTemplate, deployVariables);
 
         entity.setArtifactPath(localArtifactDir.toString());
         entity.setRenderedBuildScript(buildRuntimeEnvironmentPreamble(buildVariables, pipeline, true) + buildReplayScript(buildVariables));
-        entity.setRenderedDeployScript(renderedDeployScript == null ? null : buildRuntimeEnvironmentPreamble(deployVariables, pipeline, false) + renderedDeployScript + buildDeployRuntimeDiagnostics(pipeline, deployVariables));
-        entity.setVariablesJson(jsonMapper.write(buildVariables));
+        entity.setRenderedDeployScript(renderedDeployScript == null ? null : buildRuntimeEnvironmentPreamble(deployVariables, pipeline, false) + renderedDeployScript);
+        entity.setVariables(deployVariables);
+        entity.setExecutionSnapshot(buildExecutionSnapshot(pipeline, source.getBranchName(), deployVariables));
         entity = deploymentRepository.save(entity);
 
         Long deploymentId = entity.getId();
@@ -816,17 +1059,13 @@ public class DeploymentService {
             throw new BusinessException(ErrorSubCode.SERVICE_NO_DEPLOYMENT_TO_START);
         }
 
-        Map<String, String> sourceVariables = new LinkedHashMap<>(jsonMapper.toStringMap(source.getVariablesJson()));
+        Map<String, String> sourceVariables = new LinkedHashMap<>(source.getVariables() == null ? Map.of() : source.getVariables());
         List<String> builtInKeys = List.of(
                 "branch",
                 "gitUrl",
                 "projectName",
                 "pipelineName",
-                "applicationName",
-                "springProfile",
-                "runtimeConfigYaml",
-                "runtimeConfigYamlBase64",
-                "runtimeConfigFilePath",
+                "serviceName",
                 "workspaceRoot",
                 "deploymentId",
                 "gitRepositoryUrl",
@@ -953,7 +1192,7 @@ public class DeploymentService {
         if (entity.getPipeline() != null && entity.getPipeline().getName() != null && !entity.getPipeline().getName().isBlank()) {
             return entity.getPipeline().getName();
         }
-        return readSnapshotText(entity.getExecutionSnapshotJson(), "pipelineName");
+        return readSnapshotText(entity.getExecutionSnapshot(), "pipelineName");
     }
 
     private String resolveDeploymentProjectName(DeploymentEntity entity) {
@@ -969,15 +1208,15 @@ public class DeploymentService {
                 && !entity.getPipeline().getProject().getName().isBlank()) {
             return entity.getPipeline().getProject().getName();
         }
-        return readSnapshotText(entity.getExecutionSnapshotJson(), "projectName");
+        return readSnapshotText(entity.getExecutionSnapshot(), "projectName");
     }
 
-    private String readSnapshotText(String snapshotJson, String key) {
-        if (snapshotJson == null || snapshotJson.isBlank()) {
+    private String readSnapshotText(Map<String, Object> snapshot, String key) {
+        if (snapshot == null || snapshot.isEmpty()) {
             return null;
         }
         try {
-            Object value = jsonMapper.toObjectMap(snapshotJson).get(key);
+            Object value = snapshot.get(key);
             return value == null ? null : String.valueOf(value);
         } catch (Exception ex) {
             log.debug("读取部署快照字段 {} 失败：{}", key, ex.getMessage());
@@ -1070,87 +1309,51 @@ public class DeploymentService {
         String script = """
                 #!/usr/bin/env bash
                 set -e
-                export PS4='+ $(date "+%Y-%m-%d %H:%M:%S") '
-                set -x
 
                 # 校验历史产物目录仍然存在，避免创建一条注定失败的回滚任务。
                 echo "[回滚 1/3] 准备历史产物目录"
-                if [ ! -d "{{sourceArtifactPath}}" ]; then
-                  echo "历史构建产物不存在：{{sourceArtifactPath}}"
+                if [ ! -d "$SOURCE_ARTIFACT_PATH" ]; then
+                  echo "历史构建产物不存在：$SOURCE_ARTIFACT_PATH"
                   exit 1
                 fi
 
                 # 将历史构建产物复制到本次发布产物目录，后续仍然复用标准发布脚本。
                 echo "[回滚 2/3] 复制历史构建产物到本次发布包"
-                mkdir -p "{{artifactDir}}"
-                rsync -a "{{sourceArtifactPath}}/" "{{artifactDir}}/"
+                mkdir -p "$ARTIFACT_DIR"
+                rsync -a "$SOURCE_ARTIFACT_PATH/" "$ARTIFACT_DIR/"
 
                 echo "[回滚 3/3] 历史构建产物已就绪，开始重新发布"
                 """;
-        return scriptTemplateService.render(script, variables);
+        return renderDeploymentScriptTemplate(script, variables);
     }
 
-    /**
-     * 启动命令执行完成后，追加一段系统级诊断输出，方便直接在部署日志里确认：
-     * 1. 启动关键字是否命中
-     * 2. 应用日志是否已经开始写入
-     */
-    private String buildDeployRuntimeDiagnostics(PipelineEntity pipeline, Map<String, String> variables) {
-        if (!Boolean.TRUE.equals(pipeline.getTemplate().getMonitorProcess())) {
-            return "";
-        }
-        StringBuilder script = new StringBuilder("""
-
-                # 输出一段轻量自检信息，方便直接在部署日志里确认启动命令、工作目录和应用日志是否已经落地。
-                echo "[系统] 启动命令已执行，开始进行服务自检。"
-                sleep 1
-                echo "[系统] 当前工作目录：$(pwd)"
-                """);
-        String startupKeyword = pipeline.getStartupKeyword();
-        if (TextKit.isNotBlank(startupKeyword)) {
-            script.append("echo \"[系统] 启动关键字：")
-                    .append(ShellKit.escapeDoubleQuoted(startupKeyword))
-                    .append("\"\n");
-        }
-        String targetDir = variables.get("targetDir");
-        if (TextKit.isNotBlank(targetDir)) {
-            String logPath = targetDir + "/" + variables.getOrDefault("applicationName", "application") + ".log";
-            script.append("""
-                    if [ -f "%s" ]; then
-                      echo "[系统] 应用日志文件状态：$(ls -l "%s")"
-                    else
-                      echo "[系统] 应用日志尚未生成：%s"
-                    fi
-                    """.formatted(
-                    ShellKit.escapeDoubleQuoted(logPath),
-                    ShellKit.escapeDoubleQuoted(logPath),
-                    ShellKit.escapeDoubleQuoted(logPath)
-            ));
-        }
-        script.append("\n");
-        return scriptTemplateService.render(script.toString(), variables);
-    }
-
-    private String resolveApplicationName(PipelineEntity pipeline) {
-        String configured = pipeline.getApplicationName();
-        if (TextKit.isNotBlank(configured)) {
-            return configured.trim();
-        }
+    private String resolveServiceName(PipelineEntity pipeline) {
         String fallback = pipeline.getName();
         if (TextKit.isBlank(fallback)) {
-            return "application";
+            return "service";
         }
-        return fallback.trim()
+        String name = fallback.trim()
                 .replaceAll("[^A-Za-z0-9._-]+", "-")
                 .replaceAll("^-+", "")
                 .replaceAll("-+$", "");
+        if (TextKit.isNotBlank(name)) {
+            return name;
+        }
+        return pipeline.getId() == null ? "service" : "pipeline-" + pipeline.getId();
     }
 
-    private String encodeRuntimeConfigYaml(String runtimeConfigYaml) {
-        if (runtimeConfigYaml == null || runtimeConfigYaml.isBlank()) {
-            return "";
-        }
-        return Base64.getEncoder().encodeToString(runtimeConfigYaml.getBytes(StandardCharsets.UTF_8));
+    private String resolveTargetDir(PipelineEntity pipeline) {
+        String targetDir = TextKit.trimToNull(pipeline == null ? null : pipeline.getTargetDir());
+        return targetDir == null ? "" : targetDir;
+    }
+
+    private void putPluginConfigVariables(Map<String, String> variables, PipelineEntity pipeline) {
+        Map<String, String> pluginConfig = pipeline == null || pipeline.getPluginConfig() == null ? Map.of() : pipeline.getPluginConfig();
+        pluginConfig.forEach((key, value) -> {
+            if (TextKit.isNotBlank(key)) {
+                variables.put(key, value == null ? "" : value);
+            }
+        });
     }
 
     private String encodeMavenSettingsXml(PipelineEntity pipeline) {
@@ -1160,17 +1363,19 @@ public class DeploymentService {
         return Base64.getEncoder().encodeToString(pipeline.getMavenSettings().getContentXml().getBytes(StandardCharsets.UTF_8));
     }
 
-    private String buildExecutionSnapshotJson(PipelineEntity pipeline, String branch, Map<String, String> variables) {
+    private Map<String, Object> buildExecutionSnapshot(PipelineEntity pipeline, String branch, Map<String, String> variables) {
+        PipelineTemplateResolverService.ResolvedPipelineTemplate resolvedTemplate = pipelineTemplateResolverService.resolveRequired(pipeline);
         Map<String, Object> snapshot = new LinkedHashMap<>();
         snapshot.put("pipelineName", pipeline.getName());
         snapshot.put("projectName", pipeline.getProject() == null ? null : pipeline.getProject().getName());
-        snapshot.put("templateName", pipeline.getTemplate() == null ? null : pipeline.getTemplate().getName());
-        snapshot.put("templateType", pipeline.getTemplate() == null ? null : pipeline.getTemplate().getTemplateType());
+        snapshot.put("templateName", resolvedTemplate.name());
+        snapshot.put("templateType", resolvedTemplate.templateType());
         snapshot.put("branch", branch);
         snapshot.put("targetHost", pipeline.getTargetHost() == null ? "本机" : pipeline.getTargetHost().getName());
         snapshot.put("targetHostType", pipeline.getTargetHost() == null ? "LOCAL" : pipeline.getTargetHost().getType());
-        snapshot.put("applicationName", variables.get("applicationName"));
-        snapshot.put("springProfile", variables.get("springProfile"));
+        snapshot.put("targetDir", variables.get("targetDir"));
+        snapshot.put("serviceName", variables.get("serviceName"));
+        snapshot.put("pluginConfig", pipeline.getPluginConfig() == null ? Map.of() : pipeline.getPluginConfig());
         snapshot.put("startupKeyword", pipeline.getStartupKeyword());
         snapshot.put("startupTimeoutSeconds", pipeline.getStartupTimeoutSeconds());
         snapshot.put("javaEnvironment", summarizeRuntimeEnvironment(pipeline.getJavaEnvironment()));
@@ -1178,47 +1383,39 @@ public class DeploymentService {
         snapshot.put("mavenEnvironment", summarizeRuntimeEnvironment(pipeline.getMavenEnvironment()));
         snapshot.put("mavenSettings", summarizeMavenSettings(pipeline));
         snapshot.put("runtimeJavaEnvironment", summarizeRuntimeEnvironment(pipeline.getRuntimeJavaEnvironment()));
+        snapshot.put("buildRuntimeEnvironments", summarizeRuntimeEnvironments(pipeline, true));
+        snapshot.put("targetRuntimeEnvironments", summarizeRuntimeEnvironments(pipeline, false));
 
         snapshot.put("variables", buildExecutionSnapshotVariables(pipeline, variables));
 
-        String runtimeConfigYaml = pipeline.getRuntimeConfigYaml();
-        if (runtimeConfigYaml != null && !runtimeConfigYaml.isBlank()) {
-            snapshot.put("runtimeConfigYaml", runtimeConfigYaml);
-        }
-        return jsonMapper.write(snapshot);
+        return snapshot;
+    }
+
+    private List<Map<String, Object>> summarizeRuntimeEnvironments(PipelineEntity pipeline, boolean buildStage) {
+        Set<String> requiredTypes = requiredRuntimeTypeSet(pipeline, buildStage);
+        return runtimeBindings(buildStage).stream()
+                .filter(binding -> requiredTypes.contains(binding.prefix()))
+                .map(binding -> summarizeRuntimeEnvironment(binding.environment(pipeline)))
+                .filter(Objects::nonNull)
+                .toList();
     }
 
     private List<Map<String, Object>> buildExecutionSnapshotVariables(PipelineEntity pipeline, Map<String, String> variables) {
-        Map<String, String> labels = new LinkedHashMap<>();
-        if (pipeline.getTemplate() != null && pipeline.getTemplate().getVariablesSchema() != null && !pipeline.getTemplate().getVariablesSchema().isBlank()) {
-            List<TemplateVariable> templateVariables = jsonMapper.read(
-                    pipeline.getTemplate().getVariablesSchema(),
-                    new TypeReference<List<TemplateVariable>>() {
-                    }
-            );
-            for (TemplateVariable item : templateVariables) {
-                if (item != null && item.name() != null && !item.name().isBlank()) {
-                    labels.put(item.name(), item.label() == null || item.label().isBlank() ? item.name() : item.label());
-                }
-            }
-        }
-
+        String variablesSchema = pipelineTemplateResolverService.resolveRequired(pipeline).variablesSchema();
         List<Map<String, Object>> result = new ArrayList<>();
-        addExecutionSnapshotVariable(result, labels, variables, "targetDir");
-        addExecutionSnapshotVariable(result, labels, variables, "jarPath");
-        addExecutionSnapshotVariable(result, labels, variables, "startCommand");
-        addExecutionSnapshotVariable(result, labels, variables, "buildCommand");
-        addExecutionSnapshotVariable(result, labels, variables, "frontendBuildCommand");
-        addExecutionSnapshotVariable(result, labels, variables, "backendBuildCommand");
-        addExecutionSnapshotVariable(result, labels, variables, "frontendDir");
-        addExecutionSnapshotVariable(result, labels, variables, "backendDir");
-        addExecutionSnapshotVariable(result, labels, variables, "distDir");
+        for (TemplateVariableSchemaItem item : TemplateVariableSchemaKit.read(variablesSchema)) {
+            String name = item == null ? null : ObjectKit.stringValue(item.name());
+            if (name == null) {
+                continue;
+            }
+            addExecutionSnapshotVariable(result, item, variables, name);
+        }
         return result;
     }
 
     private void addExecutionSnapshotVariable(
             List<Map<String, Object>> result,
-            Map<String, String> labels,
+            TemplateVariableSchemaItem schemaItem,
             Map<String, String> variables,
             String key
     ) {
@@ -1228,7 +1425,7 @@ public class DeploymentService {
         }
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("name", key);
-        item.put("label", labels.getOrDefault(key, key));
+        item.put("label", TextKit.isNotBlank(schemaItem == null ? null : schemaItem.label()) ? schemaItem.label() : key);
         item.put("value", value);
         result.add(item);
     }
@@ -1261,62 +1458,17 @@ public class DeploymentService {
         return summary;
     }
 
-    private void copySnapshotVariable(Map<String, String> target, Map<String, String> source, String key) {
-        String value = source.get(key);
-        if (value != null && !value.isBlank()) {
-            target.put(key, value);
+    private record RuntimeEnvironmentBinding(
+            String prefix,
+            String homeKey,
+            String label,
+            String displayName,
+            Function<PipelineEntity, RuntimeEnvironmentEntity> environmentResolver,
+            List<String> diagnosticCommands
+    ) {
+        private RuntimeEnvironmentEntity environment(PipelineEntity pipeline) {
+            return pipeline == null ? null : environmentResolver.apply(pipeline);
         }
     }
 
-    private void augmentStartCommand(Map<String, String> variables) {
-        String startCommand = variables.get("startCommand");
-        if (startCommand == null || startCommand.isBlank()) {
-            return;
-        }
-        List<String> springArguments = new ArrayList<>();
-        String springProfile = variables.get("springProfile");
-        if (springProfile != null && !springProfile.isBlank()) {
-            springArguments.add("--spring.profiles.active=" + springProfile.trim());
-        }
-        String runtimeConfigYamlBase64 = variables.get("runtimeConfigYamlBase64");
-        String runtimeConfigFilePath = variables.get("runtimeConfigFilePath");
-        if (runtimeConfigYamlBase64 != null && !runtimeConfigYamlBase64.isBlank()
-                && runtimeConfigFilePath != null && !runtimeConfigFilePath.isBlank()) {
-            springArguments.add("--spring.config.additional-location=file:" + runtimeConfigFilePath.trim());
-        }
-        if (springArguments.isEmpty()) {
-            variables.put("springBootArgs", "");
-            return;
-        }
-        String joinedArguments = String.join(" ", springArguments);
-        variables.put("springBootArgs", joinedArguments);
-        String trimmedCommand = startCommand.trim();
-        if (trimmedCommand.contains("{{springBootArgs}}")) {
-            return;
-        }
-        variables.put("startCommand", injectSpringArguments(trimmedCommand, joinedArguments));
-    }
-
-    private String injectSpringArguments(String startCommand, String joinedArguments) {
-        if (joinedArguments == null || joinedArguments.isBlank()) {
-            return startCommand;
-        }
-
-        String trimmedCommand = startCommand.trim();
-        String backgroundSuffix = "";
-        if (trimmedCommand.endsWith("&")) {
-            trimmedCommand = trimmedCommand.substring(0, trimmedCommand.length() - 1).trim();
-            backgroundSuffix = " &";
-        }
-
-        Matcher redirectionMatcher = REDIRECTION_PATTERN.matcher(trimmedCommand);
-        if (redirectionMatcher.find()) {
-            int splitIndex = redirectionMatcher.start();
-            String commandPart = trimmedCommand.substring(0, splitIndex).trim();
-            String redirectPart = trimmedCommand.substring(splitIndex);
-            return commandPart + " " + joinedArguments + redirectPart + backgroundSuffix;
-        }
-
-        return trimmedCommand + " " + joinedArguments + backgroundSuffix;
-    }
 }

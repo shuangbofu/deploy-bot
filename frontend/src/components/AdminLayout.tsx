@@ -1,4 +1,4 @@
-import { DashboardOutlined, DeploymentUnitOutlined, FileTextOutlined, FolderOpenOutlined, ProfileOutlined, RadarChartOutlined, SettingOutlined, CloudServerOutlined, TeamOutlined, LogoutOutlined, LockOutlined, GithubOutlined, RobotOutlined, NotificationOutlined } from '@ant-design/icons';
+import { DashboardOutlined, DeploymentUnitOutlined, FolderOpenOutlined, ProfileOutlined, RadarChartOutlined, SettingOutlined, CloudServerOutlined, TeamOutlined, LogoutOutlined, LockOutlined, GithubOutlined, RobotOutlined, NotificationOutlined, AppstoreOutlined } from '@ant-design/icons';
 import { Avatar, Button, Dropdown, Layout, Menu, Space, Typography } from 'antd';
 import { useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -18,7 +18,7 @@ const menuItems = [
   { key: '/admin/dashboard', icon: <DashboardOutlined />, label: '仪表盘' },
   { key: '/admin/projects', icon: <FolderOpenOutlined />, label: '项目' },
   { key: '/admin/hosts', icon: <CloudServerOutlined />, label: '主机' },
-  { key: '/admin/templates', icon: <FileTextOutlined />, label: '模板' },
+  { key: '/admin/plugins', icon: <AppstoreOutlined />, label: '插件' },
   { key: '/admin/pipelines', icon: <DeploymentUnitOutlined />, label: '流水线' },
   { key: '/admin/deployments', icon: <ProfileOutlined />, label: '部署记录' },
   { key: '/admin/services', icon: <RadarChartOutlined />, label: '服务' },

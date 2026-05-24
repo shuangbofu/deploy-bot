@@ -1,5 +1,6 @@
 package top.fusb.deploybot.service;
 
+import lombok.RequiredArgsConstructor;
 import top.fusb.deploybot.model.DeploymentEntity;
 import top.fusb.deploybot.model.DeploymentStatus;
 import top.fusb.deploybot.model.HostEntity;
@@ -22,6 +23,7 @@ import java.util.List;
  * 清理部署产生的临时工作区和过期构建产物。
  */
 @Service
+@RequiredArgsConstructor
 public class DeploymentCleanupService {
     private static final Logger log = LoggerFactory.getLogger(DeploymentCleanupService.class);
     private static final String RUNS_DIR = "runs";
@@ -29,16 +31,6 @@ public class DeploymentCleanupService {
     private final DeploymentRepository deploymentRepository;
     private final SystemSettingsService systemSettingsService;
     private final HostService hostService;
-
-    public DeploymentCleanupService(
-            DeploymentRepository deploymentRepository,
-            SystemSettingsService systemSettingsService,
-            HostService hostService
-    ) {
-        this.deploymentRepository = deploymentRepository;
-        this.systemSettingsService = systemSettingsService;
-        this.hostService = hostService;
-    }
 
     @Transactional
     public void cleanupAfterDeployment(DeploymentEntity deployment, Path buildWorkspaceRoot) {

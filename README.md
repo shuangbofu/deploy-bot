@@ -259,7 +259,7 @@ deploybot:
 - Spring Boot 前后端一体部署
 
 项目、主机、运行环境、流水线等业务数据仍然保持空库启动。  
-默认模板来自后端资源文件 [default-templates.json](./backend/src/main/resources/default-templates.json)，不依赖 `runtime/` 目录中的任何运行时数据。
+默认模板来自各个插件 jar 包内的 resources，由插件运行时统一聚合；不依赖 `runtime/` 目录中的任何运行时数据。
 其中默认的 Spring Boot / React / Vue 模板已经按“保留产物、可重复发布”的思路整理。
 
 ### 创建项目
@@ -342,7 +342,7 @@ curl -X POST http://<backend-host>:<backend-port>/api/projects/test-connection \
 
 对于 Spring Boot 场景，流水线还支持这些运行时配置：
 
-- `applicationName`：生成唯一的 jar / log 名称，避免所有项目都落成 `app.jar`
+- `$SERVICE_NAME`：平台由流水线名称派生的服务名，用于生成 jar / log 名称
 - `springProfile`：自动追加 `--spring.profiles.active=...`
 - `runtimeConfigYaml`：发布时写入额外 YAML，并通过 `--spring.config.additional-location=...` 注入
 

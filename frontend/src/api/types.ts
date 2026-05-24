@@ -19,6 +19,7 @@ import type {
   PipelineSummary,
   ProjectConnectionTestResult,
   ProjectSummary,
+  RuntimeEnvironmentType,
   RuntimeEnvironmentSummary,
   ServiceSummary,
   ServicePidHistorySummary,
@@ -70,6 +71,7 @@ export interface TemplatePayload {
   name: string;
   description: string;
   templateType?: string;
+  pluginId?: string;
   buildScriptContent?: string;
   deployScriptContent?: string;
   variablesSchema: string;
@@ -84,21 +86,22 @@ export interface PipelinePayload {
   description: string;
   projectId?: number;
   templateId?: number;
+  templatePluginId?: string;
+  builtinTemplateKey?: string;
   targetHostId?: number;
+  targetDir: string;
   defaultBranch: string;
-  variablesJson: string;
-  tagsJson: string;
+  variables: Record<string, string>;
+  tags: string[];
   javaEnvironmentId?: number;
   nodeEnvironmentId?: number;
   mavenEnvironmentId?: number;
   mavenSettingsId?: number;
   runtimeJavaEnvironmentId?: number;
-  applicationName?: string;
-  springProfile?: string;
-  runtimeConfigYaml?: string;
+  pluginConfig?: Record<string, string>;
   startupKeyword?: string;
   startupTimeoutSeconds?: number;
-  notificationBindingsJson?: string;
+  notificationBindings?: Array<{ notificationId: number; eventType: string }>;
 }
 
 export interface NotificationPayload {
@@ -188,13 +191,13 @@ export interface HostPayload {
  */
 export interface RuntimeEnvironmentPayload {
   name: string;
-  type: 'JAVA' | 'NODE' | 'MAVEN';
+  type: RuntimeEnvironmentType;
   hostId?: number;
   version: string;
   homePath: string;
   binPath: string;
   activationScript: string;
-  environmentJson: string;
+  environment: Record<string, unknown>;
   enabled: boolean;
 }
 
@@ -228,7 +231,7 @@ export interface LogResponse {
 
 export interface DetectionItem {
   name: string;
-  type: 'JAVA' | 'NODE' | 'MAVEN';
+  type: RuntimeEnvironmentType;
   version: string;
   homePath?: string;
   binPath?: string;
@@ -237,7 +240,7 @@ export interface DetectionItem {
 export interface PresetItem {
   id: string;
   name: string;
-  type: 'JAVA' | 'NODE' | 'MAVEN';
+  type: RuntimeEnvironmentType;
   version: string;
   description: string;
   downloadUrl: string;

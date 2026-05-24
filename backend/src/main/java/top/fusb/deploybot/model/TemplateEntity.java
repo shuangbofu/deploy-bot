@@ -36,6 +36,10 @@ public class TemplateEntity {
     @Column(name = "icon_type", length = 100)
     private String templateType;
 
+    /** 对应的部署类型插件标识。 */
+    @Column(length = 100)
+    private String pluginId;
+
     /** 本机构建脚本。 */
     @Lob
     @Column(nullable = false)

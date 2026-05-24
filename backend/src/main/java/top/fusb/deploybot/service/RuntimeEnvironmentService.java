@@ -1,5 +1,6 @@
 package top.fusb.deploybot.service;
 
+import lombok.RequiredArgsConstructor;
 import top.fusb.deploybot.dto.RuntimeEnvironmentRequest;
 import top.fusb.deploybot.dto.RuntimeEnvironmentDetection;
 import top.fusb.deploybot.dto.RuntimeEnvironmentInstallRequest;
@@ -9,6 +10,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorSubCode;
+import top.fusb.deploybot.kit.JsonKit;
+import top.fusb.deploybot.kit.ProcessKit;
 import top.fusb.deploybot.model.HostEntity;
 import top.fusb.deploybot.model.HostType;
 import top.fusb.deploybot.model.RuntimeEnvironmentEntity;
@@ -17,7 +20,7 @@ import top.fusb.deploybot.repo.HostRepository;
 import top.fusb.deploybot.repo.RuntimeEnvironmentRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.annotation.Lazy;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.beans.factory.annotation.Value;
@@ -25,7 +28,6 @@ import org.springframework.stereotype.Service;
 
 import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -44,6 +46,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 
 @Service
+@RequiredArgsConstructor
 public class RuntimeEnvironmentService {
     /**
      * 运行环境服务负责三件事：
@@ -56,34 +59,14 @@ public class RuntimeEnvironmentService {
 
     private final RuntimeEnvironmentRepository repository;
     private final HostRepository hostRepository;
-    private final JsonMapper jsonMapper;
     private final SystemSettingsService systemSettingsService;
     private final HostService hostService;
     private final ResourceLoader resourceLoader;
-    private final String presetsResourceLocation;
     private final Map<String, InstallTaskState> installTasks = new ConcurrentHashMap<>();
-    private final RuntimeEnvironmentInstallAsyncService installAsyncService;
+    private final ObjectProvider<RuntimeEnvironmentInstallAsyncService> installAsyncServiceProvider;
     private final HttpClient httpClient = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.ALWAYS).build();
-
-    public RuntimeEnvironmentService(
-            RuntimeEnvironmentRepository repository,
-            HostRepository hostRepository,
-            JsonMapper jsonMapper,
-            SystemSettingsService systemSettingsService,
-            HostService hostService,
-            ResourceLoader resourceLoader,
-            @Lazy RuntimeEnvironmentInstallAsyncService installAsyncService,
-            @Value("${deploybot.runtime-environment-presets:classpath:runtime-environment-presets.json}") String presetsResourceLocation
-    ) {
-        this.repository = repository;
-        this.hostRepository = hostRepository;
-        this.jsonMapper = jsonMapper;
-        this.systemSettingsService = systemSettingsService;
-        this.hostService = hostService;
-        this.resourceLoader = resourceLoader;
-        this.installAsyncService = installAsyncService;
-        this.presetsResourceLocation = presetsResourceLocation;
-    }
+    @Value("${deploybot.runtime-environment-presets:classpath:runtime-environment-presets.json}")
+    private String presetsResourceLocation;
 
     /**
      * 查询指定主机下的运行环境；未指定主机时返回全量。
@@ -125,7 +108,7 @@ public class RuntimeEnvironmentService {
         entity.setHomePath(normalizeRuntimePath(request.homePath(), host));
         entity.setBinPath(normalizeRuntimePath(request.binPath(), host));
         entity.setActivationScript(request.activationScript());
-        entity.setEnvironmentJson(request.environmentJson());
+        entity.setEnvironment(request.environment() == null ? Map.of() : request.environment());
         entity.setEnabled(request.enabled() == null || request.enabled());
         return repository.save(entity);
     }
@@ -219,17 +202,16 @@ public class RuntimeEnvironmentService {
         log.info("Preset {} archive validated: {}", preset.name(), archiveFile);
 
         Path extractDir = Files.createTempDirectory(installRoot(host), "extract-");
-        Process process = new ProcessBuilder("tar", "-xf", archiveFile.toAbsolutePath().toString(), "-C", extractDir.toAbsolutePath().toString())
-                .redirectErrorStream(true)
-                .start();
-        String output;
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-            output = reader.lines().reduce("", (left, right) -> left + right + "\n");
-        }
-        int exitCode = process.waitFor();
-        if (exitCode != 0) {
-            log.warn("Preset extract failed for {}: {}", preset.name(), output);
-            throw new BusinessException(ErrorSubCode.PRESET_EXTRACT_FAILED, output);
+        ProcessKit.ProcessResult extractResult = ProcessKit.runAndCapture(ProcessKit.mergedBuilder(
+                "tar",
+                "-xf",
+                archiveFile.toAbsolutePath().toString(),
+                "-C",
+                extractDir.toAbsolutePath().toString()
+        ));
+        if (extractResult.exitCode() != 0) {
+            log.warn("Preset extract failed for {}: {}", preset.name(), extractResult.output());
+            throw new BusinessException(ErrorSubCode.PRESET_EXTRACT_FAILED, extractResult.output());
         }
 
         Path extractedRoot = Files.list(extractDir)
@@ -249,7 +231,7 @@ public class RuntimeEnvironmentService {
                 finalHome.toString(),
                 preset.binPath(),
                 null,
-                jsonMapper.write(Map.of()),
+                Map.of(),
                 true
         );
         RuntimeEnvironmentEntity entity = save(saveRequest, null);
@@ -273,7 +255,7 @@ public class RuntimeEnvironmentService {
                 host.getId(),
                 host.getName()
         ));
-        installAsyncService.installPresetAsync(taskId, request);
+        installAsyncServiceProvider.getObject().installPresetAsync(taskId, request);
         return taskId;
     }
 
@@ -388,7 +370,7 @@ public class RuntimeEnvironmentService {
                 preset.homePath(),
                 preset.binPath(),
                 null,
-                jsonMapper.write(Map.of()),
+                Map.of(),
                 true
         );
         RuntimeEnvironmentEntity entity = save(saveRequest, null);
@@ -434,15 +416,11 @@ public class RuntimeEnvironmentService {
             java.util.function.Function<String, String> binPathResolver
     ) {
         try {
-            Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
-            String output;
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                output = reader.lines().findFirst().orElse("");
-            }
-            int exitCode = process.waitFor();
-            if (exitCode != 0) {
+            ProcessKit.ProcessResult result = ProcessKit.runAndCapture(ProcessKit.mergedBuilder(command));
+            if (result.exitCode() != 0) {
                 return null;
             }
+            String output = result.output().lines().findFirst().orElse("");
             if (!isValidDetectedVersion(output)) {
                 return null;
             }
@@ -565,12 +543,8 @@ public class RuntimeEnvironmentService {
 
     private void validateArchive(Path archiveFile) {
         try {
-            Process process = new ProcessBuilder("tar", "-tf", archiveFile.toAbsolutePath().toString())
-                    .redirectErrorStream(true)
-                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-                    .start();
-            int exitCode = process.waitFor();
-            if (exitCode != 0) {
+            ProcessKit.ProcessResult result = ProcessKit.runAndCapture(ProcessKit.mergedBuilder("tar", "-tf", archiveFile.toAbsolutePath().toString()));
+            if (result.exitCode() != 0) {
                 throw new BusinessException(
                         ErrorSubCode.PRESET_ARCHIVE_INVALID,
                         "返回内容预览：\n" + previewDownloadedFile(archiveFile)
@@ -651,7 +625,7 @@ public class RuntimeEnvironmentService {
         try {
             Resource resource = resourceLoader.getResource(presetsResourceLocation);
             String content = new String(resource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            return jsonMapper.read(content, new TypeReference<List<PresetDefinition>>() {
+            return JsonKit.read(content, new TypeReference<List<PresetDefinition>>() {
             });
         } catch (IOException ex) {
             throw new BusinessException(ErrorSubCode.PRESET_CONFIG_READ_FAILED, ex.getMessage(), ex);
@@ -717,8 +691,7 @@ public class RuntimeEnvironmentService {
             if (response.statusCode() >= 400) {
                 throw new BusinessException(ErrorSubCode.PRESET_CONFIG_READ_FAILED, "读取 Azul Zulu 元数据失败，HTTP 状态码：" + response.statusCode());
             }
-            JsonNode root = jsonMapper.read(response.body(), new TypeReference<JsonNode>() {
-            });
+            JsonNode root = JsonKit.readTree(response.body());
             if (!root.isArray() || root.isEmpty()) {
                 throw new BusinessException(ErrorSubCode.PRESET_CONFIG_READ_FAILED, "未找到匹配的 Azul Zulu 预置下载地址。");
             }

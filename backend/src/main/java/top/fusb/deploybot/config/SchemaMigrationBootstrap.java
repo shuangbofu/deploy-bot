@@ -1,5 +1,6 @@
 package top.fusb.deploybot.config;
 
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -13,14 +14,11 @@ import java.util.List;
  * 启动后对历史 H2 表结构做兜底修正，避免 Hibernate 对旧列约束迁移不彻底。
  */
 @Component
+@RequiredArgsConstructor
 public class SchemaMigrationBootstrap {
     private static final Logger log = LoggerFactory.getLogger(SchemaMigrationBootstrap.class);
 
     private final JdbcTemplate jdbcTemplate;
-
-    public SchemaMigrationBootstrap(JdbcTemplate jdbcTemplate) {
-        this.jdbcTemplate = jdbcTemplate;
-    }
 
     @EventListener(ApplicationReadyEvent.class)
     public void migrate() {
@@ -32,9 +30,14 @@ public class SchemaMigrationBootstrap {
                 "ALTER TABLE IF EXISTS deployments ADD COLUMN IF NOT EXISTS pipeline_name VARCHAR(255)",
                 "ALTER TABLE IF EXISTS deployments ADD COLUMN IF NOT EXISTS project_name VARCHAR(255)",
                 "ALTER TABLE IF EXISTS deployments ADD COLUMN IF NOT EXISTS stopped_by VARCHAR(1000)",
-                "ALTER TABLE IF EXISTS pipelines ADD COLUMN IF NOT EXISTS application_name VARCHAR(255)",
-                "ALTER TABLE IF EXISTS pipelines ADD COLUMN IF NOT EXISTS spring_profile VARCHAR(255)",
-                "ALTER TABLE IF EXISTS pipelines ADD COLUMN IF NOT EXISTS runtime_config_yaml CLOB",
+                "ALTER TABLE IF EXISTS templates ADD COLUMN IF NOT EXISTS plugin_id VARCHAR(100)",
+                "ALTER TABLE IF EXISTS pipelines ALTER COLUMN template_id BIGINT NULL",
+                "ALTER TABLE IF EXISTS pipelines ADD COLUMN IF NOT EXISTS template_plugin_id VARCHAR(100)",
+                "ALTER TABLE IF EXISTS pipelines ADD COLUMN IF NOT EXISTS builtin_template_key VARCHAR(100)",
+                "ALTER TABLE IF EXISTS pipelines ADD COLUMN IF NOT EXISTS template_name_snapshot VARCHAR(255)",
+                "ALTER TABLE IF EXISTS pipelines ADD COLUMN IF NOT EXISTS template_type_snapshot VARCHAR(100)",
+                "ALTER TABLE IF EXISTS pipelines ADD COLUMN IF NOT EXISTS template_monitor_process BOOLEAN DEFAULT FALSE",
+                "ALTER TABLE IF EXISTS pipelines ADD COLUMN IF NOT EXISTS target_dir VARCHAR(1000)",
                 "ALTER TABLE IF EXISTS pipelines ADD COLUMN IF NOT EXISTS notification_bindings_json CLOB",
                 "ALTER TABLE IF EXISTS pipelines ADD COLUMN IF NOT EXISTS maven_settings_id BIGINT",
                 "ALTER TABLE IF EXISTS maven_settings ADD COLUMN IF NOT EXISTS runtime_environment_id BIGINT",

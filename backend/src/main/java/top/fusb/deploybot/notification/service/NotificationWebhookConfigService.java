@@ -1,6 +1,8 @@
 package top.fusb.deploybot.notification.service;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import top.fusb.deploybot.kit.SecretKit;
 import top.fusb.deploybot.kit.TextKit;
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorSubCode;
@@ -11,13 +13,10 @@ import top.fusb.deploybot.notification.repo.NotificationWebhookConfigRepository;
 import java.util.List;
 
 @Service
+@RequiredArgsConstructor
 public class NotificationWebhookConfigService {
 
     private final NotificationWebhookConfigRepository repository;
-
-    public NotificationWebhookConfigService(NotificationWebhookConfigRepository repository) {
-        this.repository = repository;
-    }
 
     public List<NotificationWebhookConfigEntity> findAll() {
         return repository.findAll();
@@ -30,7 +29,7 @@ public class NotificationWebhookConfigService {
         entity.setDescription(TextKit.trimToNull(request.description()));
         entity.setType(request.type());
         entity.setWebhookUrl(TextKit.trimToNull(request.webhookUrl()));
-        entity.setSecret(mergeOptionalSecret(entity.getSecret(), request.secret()));
+        entity.setSecret(SecretKit.mergeOptionalSecret(entity.getSecret(), request.secret()));
         entity.setEnabled(request.enabled() == null ? Boolean.TRUE : request.enabled());
         return repository.save(entity);
     }
@@ -40,12 +39,5 @@ public class NotificationWebhookConfigService {
             throw new BusinessException(ErrorSubCode.NOTIFICATION_WEBHOOK_CONFIG_NOT_FOUND);
         }
         repository.deleteById(id);
-    }
-
-    private String mergeOptionalSecret(String currentValue, String requestValue) {
-        if (requestValue == null) {
-            return currentValue;
-        }
-        return TextKit.trimToNull(requestValue);
     }
 }

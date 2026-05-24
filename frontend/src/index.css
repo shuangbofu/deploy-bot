@@ -87,6 +87,10 @@ body {
   background: transparent !important;
 }
 
+.admin-nav.ant-menu-horizontal {
+  line-height: 48px;
+}
+
 .admin-nav .ant-menu-item,
 .admin-nav .ant-menu-submenu-title,
 .admin-nav .ant-menu-title-content {
@@ -95,6 +99,18 @@ body {
 
 .admin-nav .ant-menu-item * {
   cursor: pointer !important;
+}
+
+.admin-nav.ant-menu-horizontal > .ant-menu-item {
+  height: 34px !important;
+  line-height: 34px !important;
+  margin-inline: 3px !important;
+  padding-inline: 12px !important;
+  border-radius: 10px !important;
+}
+
+.admin-nav.ant-menu-horizontal > .ant-menu-item::after {
+  display: none !important;
 }
 
 .user-menu-trigger {
@@ -733,8 +749,10 @@ body {
 }
 
 .status-dot--running {
-  background: #f59e0b;
-  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.16);
+  background: linear-gradient(135deg, #fde047 0%, #84cc16 52%, #16a34a 100%);
+  background-size: 220% 220%;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.14);
+  animation: running-status-shift 2.4s ease-in-out infinite alternate;
 }
 
 .status-dot--stopped {
@@ -750,6 +768,15 @@ body {
 .status-dot--failed {
   background: #dc2626;
   box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.14);
+}
+
+@keyframes running-status-shift {
+  from {
+    background-position: 0% 50%;
+  }
+  to {
+    background-position: 100% 50%;
+  }
 }
 
 .log-viewer-shell {
@@ -876,12 +903,103 @@ body {
   padding: 0;
 }
 
+@media (max-width: 767px) {
+  .deployment-detail-content {
+    overflow: visible;
+  }
+
+  .deployment-detail-grid {
+    row-gap: 12px;
+  }
+
+  .deployment-detail-main-col {
+    padding-top: 12px;
+  }
+
+  .deployment-detail-sidebar {
+    gap: 12px;
+    overflow: visible;
+  }
+
+  .deployment-detail-snapshot-card {
+    flex: initial;
+  }
+
+  .deployment-detail-snapshot-card.ant-card,
+  .deployment-detail-log-card.ant-card {
+    overflow: visible;
+  }
+
+  .deployment-detail-sidebar .ant-card-body {
+    padding: 12px !important;
+  }
+
+  .deployment-detail-sidebar .ant-descriptions-view,
+  .deployment-detail-sidebar .ant-descriptions-view table,
+  .deployment-detail-sidebar .ant-descriptions-view tbody,
+  .deployment-detail-sidebar .ant-descriptions-row,
+  .deployment-detail-sidebar .ant-descriptions-item {
+    display: block;
+  }
+
+  .deployment-detail-sidebar .ant-descriptions-item {
+    padding-bottom: 10px !important;
+  }
+
+  .deployment-detail-sidebar .ant-descriptions-item-label,
+  .deployment-detail-sidebar .ant-descriptions-item-content {
+    display: block;
+    width: 100%;
+    padding: 0 !important;
+  }
+
+  .deployment-detail-sidebar .ant-descriptions-item-label {
+    margin-bottom: 2px;
+    color: #64748b;
+    font-size: 11px;
+  }
+
+  .deployment-detail-sidebar .ant-descriptions-item-content {
+    word-break: break-word;
+    color: #0f172a;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .deployment-detail-snapshot-card .ant-card-body {
+    overflow: visible;
+  }
+
+  .deployment-detail-snapshot-card code {
+    font-size: 12px;
+  }
+
+  .deployment-detail-log-card .ant-card-head {
+    min-height: 48px;
+    padding: 0 12px;
+  }
+
+  .deployment-detail-log-card .ant-card-body {
+    height: 58vh;
+    min-height: 360px;
+  }
+
+  .log-viewer {
+    white-space: pre;
+    word-break: normal;
+  }
+}
+
 .log-line {
   min-height: 1.6em;
 }
 
 .log-line-system {
   color: #93c5fd;
+}
+
+.log-line-command {
+  color: #047857;
 }
 
 .log-line-error {
@@ -917,70 +1035,55 @@ body {
 
 .code-editor {
   position: relative;
-  overflow: hidden;
   border: 1px solid #d9e2f1;
   border-radius: 14px;
-  background: #0f172a;
+  background: #ffffff;
+  overflow: hidden;
 }
 
-.code-editor-preview,
-.code-editor-input {
-  margin: 0;
-  padding: 14px 16px;
+.code-editor-monaco {
+  height: 100%;
+  width: 100%;
+}
+
+.code-editor--readonly {
+  border-color: #cbd5e1;
+}
+
+.code-editor-placeholder {
+  position: absolute;
+  left: 58px;
+  top: 12px;
+  z-index: 2;
+  color: #94a3b8;
   font-family: "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
   font-size: 13px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.code-editor-preview {
-  position: absolute;
-  inset: 0;
+  line-height: 21px;
   pointer-events: none;
-  overflow: hidden;
-  color: #e2e8f0;
 }
 
-.code-editor-input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  overflow: auto;
-  resize: none;
-  border: 0;
-  background: transparent;
-  color: transparent;
-  caret-color: #f8fafc;
-  outline: none;
+.code-editor-template-variable {
+  border-radius: 4px;
+  font-weight: 700;
+  outline-offset: -1px;
 }
 
-.code-editor-input::placeholder {
-  color: #94a3b8;
+.code-editor-template-variable--build {
+  background: rgba(37, 99, 235, 0.13);
+  color: #1d4ed8 !important;
+  outline: 1px solid rgba(37, 99, 235, 0.36);
 }
 
-.code-token-comment {
-  color: #64748b;
+.code-editor-template-variable--deploy {
+  background: rgba(225, 29, 72, 0.13);
+  color: #be123c !important;
+  outline: 1px solid rgba(225, 29, 72, 0.36);
 }
 
-.code-token-string {
-  color: #fbbf24;
-}
-
-.code-token-number {
-  color: #f97316;
-}
-
-.code-token-keyword {
-  color: #60a5fa;
-}
-
-.code-token-variable {
-  color: #34d399;
-}
-
-.code-token-template {
-  color: #f472b6;
+.code-editor-template-variable--shared {
+  background: rgba(100, 116, 139, 0.14);
+  color: #475569 !important;
+  outline: 1px solid rgba(100, 116, 139, 0.36);
 }
 
 .variable-editor .ant-form-item {

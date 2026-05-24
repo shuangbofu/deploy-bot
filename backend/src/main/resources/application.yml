@@ -31,7 +31,6 @@ deploybot:
   base-url: http://localhost:8080
   workspace-root: ./runtime
   runtime-environment-presets: classpath:runtime-environment-presets.json
-  default-templates: classpath:default-templates.json
   # 部署目录清理策略：
   # - runs 是临时构建工作区，包含源码、node_modules、target、dist 等大目录，默认部署结束后清理。
   # - artifacts 是可重新发布的构建产物，按流水线保留最近成功版本。

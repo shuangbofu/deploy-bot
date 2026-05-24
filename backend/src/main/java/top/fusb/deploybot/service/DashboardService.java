@@ -1,5 +1,6 @@
 package top.fusb.deploybot.service;
 
+import lombok.RequiredArgsConstructor;
 import top.fusb.deploybot.dto.DashboardDeploymentSummary;
 import top.fusb.deploybot.dto.DashboardServiceSummary;
 import top.fusb.deploybot.dto.DashboardStatsSummary;
@@ -30,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 
 @Service
+@RequiredArgsConstructor
 public class DashboardService {
     private static final List<DeploymentStatus> ACTIVE_STATUSES = List.of(DeploymentStatus.PENDING, DeploymentStatus.RUNNING);
     private static final List<DeploymentStatus> FINISHED_STATUSES = List.of(DeploymentStatus.SUCCESS, DeploymentStatus.FAILED, DeploymentStatus.STOPPED);
@@ -43,26 +45,6 @@ public class DashboardService {
     private final HostRepository hostRepository;
     private final ServiceRepository serviceRepository;
     private final UserRepository userRepository;
-
-    public DashboardService(
-            ProjectRepository projectRepository,
-            TemplateRepository templateRepository,
-            PipelineRepository pipelineRepository,
-            DeploymentRepository deploymentRepository,
-            HostService hostService,
-            HostRepository hostRepository,
-            ServiceRepository serviceRepository,
-            UserRepository userRepository
-    ) {
-        this.projectRepository = projectRepository;
-        this.templateRepository = templateRepository;
-        this.pipelineRepository = pipelineRepository;
-        this.deploymentRepository = deploymentRepository;
-        this.hostService = hostService;
-        this.hostRepository = hostRepository;
-        this.serviceRepository = serviceRepository;
-        this.userRepository = userRepository;
-    }
 
     public DashboardSummary buildSummary() {
         AuthenticatedUser currentUser = requireCurrentUser();

@@ -7,28 +7,16 @@ import type { DetectionItem, MavenSettingsPayload, PresetItem, RuntimeEnvironmen
 import BooleanBadge from '../../components/BooleanBadge';
 import EnvironmentVariablesEditor from '../../components/EnvironmentVariablesEditor';
 import EmptyPane from '../../components/EmptyPane';
-import JsonEditor from '../../components/JsonEditor';
+import CodeEditor from '../../components/CodeEditor';
 import PageHeaderBar from '../../components/PageHeaderBar';
 import type { HostSummary, MavenSettingsSummary, RuntimeEnvironmentSummary, RuntimeEnvironmentType } from '../../types/domain';
 import { formatDateTime } from '../../utils/datetime';
-
-const typeOptions: { label: string; value: RuntimeEnvironmentType }[] = [
-  { label: 'Java', value: 'JAVA' },
-  { label: 'Node', value: 'NODE' },
-  { label: 'Maven', value: 'MAVEN' },
-];
+import { buildRuntimeEnvironmentTypeOptions, defaultRuntimeEnvironmentTypes, getRuntimeEnvironmentTypeLabel } from '../../utils/runtimeEnvironment';
 
 const usageOptions = [
   { label: '全部用途', value: 'all' },
   { label: '构建', value: 'build' },
   { label: '部署', value: 'deploy' },
-];
-
-const presetTypeOptions = [
-  { label: '全部组件', value: 'all' },
-  { label: 'Java', value: 'JAVA' },
-  { label: 'Node', value: 'NODE' },
-  { label: 'Maven', value: 'MAVEN' },
 ];
 
 interface EnvironmentVariableItem {
@@ -59,7 +47,7 @@ interface MavenSettingsFormState {
 
 const emptyEnvironment: RuntimeEnvironmentFormState = {
   name: '',
-  type: 'JAVA',
+  type: defaultRuntimeEnvironmentTypes[0],
   hostId: undefined,
   version: '',
   homePath: '',
@@ -82,7 +70,20 @@ const parseEnvironmentVariables = (content: unknown): EnvironmentVariableItem[] 
     return [];
   }
   if (Array.isArray(content)) {
-    return content;
+    return content as EnvironmentVariableItem[];
+  }
+  if (typeof content === 'object') {
+    return Object.entries(content as Record<string, unknown>).map(([key, value]) => {
+      if (typeof value === 'string') {
+        return { key, value, prependPath: false };
+      }
+      const typedValue = value as { value?: string; prependPath?: boolean };
+      return {
+        key,
+        value: typedValue?.value || '',
+        prependPath: Boolean(typedValue?.prependPath),
+      };
+    });
   }
   try {
     const parsed = JSON.parse(content);
@@ -105,18 +106,16 @@ const parseEnvironmentVariables = (content: unknown): EnvironmentVariableItem[] 
   }
 };
 
-const stringifyEnvironmentVariables = (items: EnvironmentVariableItem[]) => JSON.stringify(
+const buildEnvironmentVariables = (items: EnvironmentVariableItem[]) => (
   items
     .filter((item) => item.key && item.value)
-    .reduce((result, item) => {
+    .reduce<Record<string, { value: string; prependPath: boolean }>>((result, item) => {
       result[item.key.trim()] = {
         value: item.value,
         prependPath: Boolean(item.prependPath),
       };
       return result;
-    }, {}),
-  null,
-  2,
+    }, {})
 );
 
 const getRequestErrorMessage = (error: unknown, fallback: string) => {
@@ -139,6 +138,11 @@ const isValidDetection = (item: DetectionItem) => {
     && !version.includes('cannot find');
 };
 
+const deriveBinPath = (homePath: string) => {
+  const trimmedHomePath = homePath.trim().replace(/\/+$/, '');
+  return trimmedHomePath ? `${trimmedHomePath}/bin` : '';
+};
+
 export default function RuntimeEnvironmentsPage() {
   const navigate = useNavigate();
   const { hostId } = useParams();
@@ -157,7 +161,6 @@ export default function RuntimeEnvironmentsPage() {
   const [presetUsageFilter, setPresetUsageFilter] = useState('all');
   const [presetTypeFilter, setPresetTypeFilter] = useState('all');
   const [mavenSettingsModalOpen, setMavenSettingsModalOpen] = useState(false);
-  const [mavenSettingsLoading, setMavenSettingsLoading] = useState(false);
   const [mavenSettingsEnvironment, setMavenSettingsEnvironment] = useState<RuntimeEnvironmentSummary | null>(null);
   const [mavenSettingsList, setMavenSettingsList] = useState<MavenSettingsSummary[]>([]);
   const [editingMavenSettingsId, setEditingMavenSettingsId] = useState<number>();
@@ -198,10 +201,18 @@ export default function RuntimeEnvironmentsPage() {
     () => hosts.find((item) => String(item.id) === String(hostId)),
     [hosts, hostId],
   );
+  const typeOptions = useMemo(
+    () => buildRuntimeEnvironmentTypeOptions([...environments, ...detections, ...presets] as RuntimeEnvironmentSummary[]),
+    [detections, environments, presets],
+  );
+  const presetTypeOptions = useMemo(
+    () => [{ label: '全部组件', value: 'all' }, ...buildRuntimeEnvironmentTypeOptions(presets as RuntimeEnvironmentSummary[])],
+    [presets],
+  );
 
   const groupedData = useMemo(() => environments.map((item) => ({
     ...item,
-    typeLabel: typeOptions.find((option) => option.value === item.type)?.label || item.type,
+    typeLabel: getRuntimeEnvironmentTypeLabel(item.type),
   })), [environments]);
 
   const openCreate = () => {
@@ -215,13 +226,13 @@ export default function RuntimeEnvironmentsPage() {
     setEditingId(record.id);
     setForm({
       name: record.name || '',
-      type: record.type || 'JAVA',
+      type: record.type || defaultRuntimeEnvironmentTypes[0],
       hostId: record.host?.id || currentHost?.id,
       version: record.version || '',
       homePath: record.homePath || '',
       binPath: record.binPath || '',
       activationScript: record.activationScript || '',
-      environmentVariables: parseEnvironmentVariables(record.environmentJson),
+      environmentVariables: parseEnvironmentVariables(record.environment),
       enabled: record.enabled !== false,
     });
     setModalOpen(true);
@@ -230,7 +241,7 @@ export default function RuntimeEnvironmentsPage() {
   const saveEnvironment = async () => {
     const payload: RuntimeEnvironmentPayload = {
       ...form,
-      environmentJson: stringifyEnvironmentVariables(form.environmentVariables),
+      environment: buildEnvironmentVariables(form.environmentVariables),
     };
     if (editingId) {
       await runtimeEnvironmentsApi.update(editingId, payload);
@@ -251,12 +262,7 @@ export default function RuntimeEnvironmentsPage() {
   };
 
   const loadMavenSettings = async (runtimeEnvironmentId: number) => {
-    setMavenSettingsLoading(true);
-    try {
-      setMavenSettingsList(await runtimeEnvironmentsApi.listMavenSettings(runtimeEnvironmentId));
-    } finally {
-      setMavenSettingsLoading(false);
-    }
+    setMavenSettingsList(await runtimeEnvironmentsApi.listMavenSettings(runtimeEnvironmentId));
   };
 
   const openMavenSettingsModal = async (record: RuntimeEnvironmentSummary) => {
@@ -343,7 +349,7 @@ export default function RuntimeEnvironmentsPage() {
       homePath: item.homePath,
       binPath: item.binPath,
       activationScript: '',
-      environmentJson: '{}',
+      environment: {},
       enabled: true,
     });
     await loadEnvironments();
@@ -412,8 +418,8 @@ export default function RuntimeEnvironmentsPage() {
       <PageHeaderBar
         title={currentHost ? `${currentHost.name} 的运行环境` : '运行环境'}
         description={currentHost
-          ? '这里维护当前主机下的 Java、Node、Maven 环境。流水线选中目标主机后，只能选择这台主机下的环境。'
-          : '统一维护 Java、Node、Maven 的版本和路径。'}
+          ? '这里维护当前主机下的组件环境。流水线选中目标主机后，只能选择这台主机下的环境。'
+          : '统一维护构建和发布会用到的组件版本与路径。'}
         extra={[
           currentHost ? <Button key="back" onClick={() => navigate('/admin/hosts')}>返回主机管理</Button> : null,
           <Button key="refresh" onClick={() => loadEnvironments().catch(() => message.error('刷新运行环境失败'))}>刷新</Button>,
@@ -459,7 +465,7 @@ export default function RuntimeEnvironmentsPage() {
         </Card>
         <Card className="app-card">
           {groupedData.length === 0 ? (
-            <EmptyPane description="还没有运行环境，先录入 Java / Node / Maven 的可用版本。" />
+            <EmptyPane description="还没有运行环境，先录入可用组件版本。" />
           ) : (
             <Table
             rowKey="id"
@@ -478,7 +484,7 @@ export default function RuntimeEnvironmentsPage() {
               },
               {
                 title: '附加环境变量',
-                render: (_, record) => record.environmentJson && record.environmentJson !== '{}' ? <pre className="table-code-preview">{record.environmentJson}</pre> : <span className="text-slate-400">无</span>,
+                render: (_, record) => record.environment && Object.keys(record.environment).length > 0 ? <pre className="table-code-preview">{JSON.stringify(record.environment, null, 2)}</pre> : <span className="text-slate-400">无</span>,
               },
               {
                 title: '启用',
@@ -520,7 +526,7 @@ export default function RuntimeEnvironmentsPage() {
         cancelText="取消"
         onCancel={() => setModalOpen(false)}
         onOk={() => saveEnvironment().catch(() => message.error(editingId ? '更新运行环境失败' : '创建运行环境失败'))}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form layout="vertical">
           <Form.Item label="环境名称">
@@ -535,22 +541,41 @@ export default function RuntimeEnvironmentsPage() {
             />
           </Form.Item>
           <Form.Item label="环境类型">
-            <Select value={form.type} options={typeOptions} onChange={(value) => setForm({ ...form, type: value })} />
+            <Select
+              value={form.type}
+              options={typeOptions}
+              onChange={(value) => setForm({ ...form, type: value })}
+              placeholder="请选择环境类型"
+            />
           </Form.Item>
           <Form.Item label="版本">
             <Input value={form.version} onChange={(event) => setForm({ ...form, version: event.target.value })} placeholder="例如：17.0.10 / 18.19.1 / 3.9.8" />
           </Form.Item>
           <Form.Item label="Home 路径">
-            <Input value={form.homePath} onChange={(event) => setForm({ ...form, homePath: event.target.value })} placeholder="/opt/java/jdk-17" />
+            <Input
+              value={form.homePath}
+              onChange={(event) => {
+                const nextHomePath = event.target.value;
+                setForm((previous) => ({
+                  ...previous,
+                  homePath: nextHomePath,
+                  binPath: !previous.binPath || previous.binPath === deriveBinPath(previous.homePath)
+                    ? deriveBinPath(nextHomePath)
+                    : previous.binPath,
+                }));
+              }}
+              placeholder="/opt/java/jdk-17"
+            />
           </Form.Item>
           <Form.Item label="Bin 路径">
             <Input value={form.binPath} onChange={(event) => setForm({ ...form, binPath: event.target.value })} placeholder="/opt/java/jdk-17/bin" />
           </Form.Item>
           <Form.Item label="激活命令">
-            <Input.TextArea
+            <CodeEditor
               rows={4}
+              language="shell"
               value={form.activationScript}
-              onChange={(event) => setForm({ ...form, activationScript: event.target.value })}
+              onChange={(value) => setForm({ ...form, activationScript: value })}
               placeholder={form.type === 'NODE'
                 ? '适用于 nvm，例如：\nexport NVM_DIR=\"$HOME/.nvm\"\n[ -s \"$NVM_DIR/nvm.sh\" ] && . \"$NVM_DIR/nvm.sh\"\nnvm use 16'
                 : '可选。适用于需要先执行初始化命令的环境。'}
@@ -579,7 +604,7 @@ export default function RuntimeEnvironmentsPage() {
           setMavenSettingsForm(emptyMavenSettings);
           setMavenSettingsList([]);
         }}
-        destroyOnClose
+        destroyOnHidden
       >
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.9fr)]">
           <Card
@@ -621,7 +646,7 @@ export default function RuntimeEnvironmentsPage() {
                 </Form.Item>
               </div>
               <Form.Item label="settings.xml">
-                <JsonEditor
+                <CodeEditor
                   value={mavenSettingsForm.contentXml}
                   onChange={(value) => setMavenSettingsForm({ ...mavenSettingsForm, contentXml: value })}
                   rows={18}
@@ -727,7 +752,7 @@ export default function RuntimeEnvironmentsPage() {
                 <div>
                   <div className="flex items-center gap-2">
                     <div className="font-medium text-slate-800">{item.name}</div>
-                    <Tag>{typeOptions.find((option) => option.value === item.type)?.label || item.type}</Tag>
+                    <Tag>{getRuntimeEnvironmentTypeLabel(item.type)}</Tag>
                     {getPresetUsages(item).map((usage) => (
                       <Tag key={usage} color={usage === 'deploy' ? 'blue' : 'green'}>
                         {usage === 'deploy' ? '部署' : '构建'}

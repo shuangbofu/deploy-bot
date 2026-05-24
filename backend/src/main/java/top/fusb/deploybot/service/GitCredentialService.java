@@ -2,6 +2,7 @@ package top.fusb.deploybot.service;
 
 import top.fusb.deploybot.model.GitAuthType;
 import top.fusb.deploybot.model.ProjectEntity;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -19,6 +20,7 @@ import java.util.Map;
 import java.util.Set;
 
 @Service
+@RequiredArgsConstructor
 public class GitCredentialService {
 
     private static final Logger log = LoggerFactory.getLogger(GitCredentialService.class);
@@ -29,10 +31,6 @@ public class GitCredentialService {
     private static final String GIT_SSH_WRAPPER_NAME = "git-ssh-wrapper.sh";
 
     private final SystemSettingsService systemSettingsService;
-
-    public GitCredentialService(SystemSettingsService systemSettingsService) {
-        this.systemSettingsService = systemSettingsService;
-    }
 
     public GitProcessConfig buildProcessConfig(ProjectEntity project, Path tempDir) throws IOException {
         String gitUrl = project.getGitUrl();

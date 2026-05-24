@@ -1,11 +1,13 @@
 package top.fusb.deploybot.service;
 
+import lombok.RequiredArgsConstructor;
 import top.fusb.deploybot.dto.HostRequest;
 import top.fusb.deploybot.dto.HostConnectionTestResult;
 import top.fusb.deploybot.dto.HostResourceSnapshot;
 import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorSubCode;
+import top.fusb.deploybot.kit.ProcessKit;
 import top.fusb.deploybot.model.HostEntity;
 import top.fusb.deploybot.model.HostSshAuthType;
 import top.fusb.deploybot.model.HostType;
@@ -19,19 +21,15 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
 public class HostService {
     private static final Logger log = LoggerFactory.getLogger(HostService.class);
 
@@ -39,21 +37,8 @@ public class HostService {
     private final PipelineRepository pipelineRepository;
     private final RuntimeEnvironmentRepository runtimeEnvironmentRepository;
     private final SystemSettingsService systemSettingsService;
-    private final String defaultWorkspaceRoot;
-
-    public HostService(
-            HostRepository hostRepository,
-            PipelineRepository pipelineRepository,
-            RuntimeEnvironmentRepository runtimeEnvironmentRepository,
-            SystemSettingsService systemSettingsService,
-            @Value("${deploybot.workspace-root:./runtime}") String defaultWorkspaceRoot
-    ) {
-        this.hostRepository = hostRepository;
-        this.pipelineRepository = pipelineRepository;
-        this.runtimeEnvironmentRepository = runtimeEnvironmentRepository;
-        this.systemSettingsService = systemSettingsService;
-        this.defaultWorkspaceRoot = defaultWorkspaceRoot;
-    }
+    @Value("${deploybot.workspace-root:./runtime}")
+    private String defaultWorkspaceRoot;
 
     public List<HostEntity> findAll() {
         ensureLocalHost();
@@ -174,23 +159,19 @@ public class HostService {
         Path tempDir = Files.createTempDirectory("deploybot-host-test-");
         List<String> command = buildSshCommand(host, tempDir, 8);
         log.info("Executing host connectivity check for {} with command {}.", host.getName(), command);
-        Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
         String workspace = host.getWorkspaceRoot() == null || host.getWorkspaceRoot().isBlank() ? "/tmp/deploy-bot/workspace" : host.getWorkspaceRoot().trim();
-        try (var writer = process.outputWriter(StandardCharsets.UTF_8)) {
-            writer.write("set -e\n");
-            writer.write("printf '__DEPLOYBOT_BEGIN__1\\n'\n");
-            writer.write("if ! mkdir -p \"" + workspace.replace("\"", "\\\"") + "\"; then printf '__DEPLOYBOT_ERROR__WORKSPACE_CREATE_FAILED\\n'; exit 11; fi\n");
-            writer.write("if ! test -w \"" + workspace.replace("\"", "\\\"") + "\"; then printf '__DEPLOYBOT_ERROR__WORKSPACE_NOT_WRITABLE\\n'; exit 12; fi\n");
-            writer.write("printf '__DEPLOYBOT_USER__%s\\n' \"$(whoami)\"\n");
-            writer.write("printf '__DEPLOYBOT_HOST__%s\\n' \"$(hostname)\"\n");
-            writer.flush();
-        }
-
-        String output;
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-            output = reader.lines().reduce("", (left, right) -> left + right + "\n");
-        }
-        int exitCode = process.waitFor();
+        String script = """
+                set -e
+                printf '__DEPLOYBOT_BEGIN__1\\n'
+                if ! mkdir -p "%s"; then printf '__DEPLOYBOT_ERROR__WORKSPACE_CREATE_FAILED\\n'; exit 11; fi
+                if ! test -w "%s"; then printf '__DEPLOYBOT_ERROR__WORKSPACE_NOT_WRITABLE\\n'; exit 12; fi
+                printf '__DEPLOYBOT_USER__%%s\\n' "$(whoami)"
+                printf '__DEPLOYBOT_HOST__%%s\\n' "$(hostname)"
+                """.formatted(workspace.replace("\"", "\\\""), workspace.replace("\"", "\\\""));
+        ProcessBuilder processBuilder = ProcessKit.mergedBuilder(command);
+        ProcessKit.ProcessResult connectionResult = ProcessKit.runAndCaptureWithStdin(processBuilder, script, java.time.Duration.ofSeconds(8));
+        String output = connectionResult.output();
+        int exitCode = connectionResult.exitCode();
         String remoteUser = extractValue(output, "__DEPLOYBOT_USER__");
         String remoteHost = extractValue(output, "__DEPLOYBOT_HOST__");
         if (exitCode != 0 || remoteUser == null || remoteHost == null) {
@@ -220,37 +201,25 @@ public class HostService {
         Path tempDir = Files.createTempDirectory("deploybot-host-exec-");
         List<String> command = buildSshCommand(host, tempDir, timeoutSeconds);
         log.info("Executing remote script on host {} with timeout {}s.", host.getName(), timeoutSeconds);
-        Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
-        CompletableFuture<String> outputFuture = CompletableFuture.supplyAsync(() -> readProcessOutput(process));
-        try (var writer = process.outputWriter(StandardCharsets.UTF_8)) {
-            writer.write(script);
-            writer.flush();
-        }
-        if (!process.waitFor(Math.max(1, timeoutSeconds), TimeUnit.SECONDS)) {
-            process.destroyForcibly();
+        ProcessKit.ProcessResult result = ProcessKit.runAndCaptureWithStdin(
+                ProcessKit.mergedBuilder(command),
+                script,
+                java.time.Duration.ofSeconds(Math.max(1, timeoutSeconds))
+        );
+        if (result.timedOut()) {
             log.warn("主机 {} 的远程脚本执行超时，timeout={}s。", host.getName(), timeoutSeconds);
             throw new BusinessException(ErrorSubCode.REMOTE_EXECUTION_FAILED, "远程命令执行超时。");
         }
-        String output = outputFuture.join();
-        int exitCode = process.exitValue();
-        if (exitCode != 0) {
-            log.warn("主机 {} 的远程脚本执行失败，退出码={}。", host.getName(), exitCode);
-            throw new BusinessException(ErrorSubCode.REMOTE_EXECUTION_FAILED, output.isBlank() ? null : output.trim());
+        if (result.exitCode() != 0) {
+            log.warn("主机 {} 的远程脚本执行失败，退出码={}。", host.getName(), result.exitCode());
+            throw new BusinessException(ErrorSubCode.REMOTE_EXECUTION_FAILED, result.output().isBlank() ? null : result.output().trim());
         }
         log.info(
                 "主机 {} 的远程脚本执行成功，输出预览={}",
                 host.getName(),
-                previewOutput(output)
+                previewOutput(result.output())
         );
-        return output;
-    }
-
-    private String readProcessOutput(Process process) {
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-            return reader.lines().reduce("", (left, right) -> left + right + "\n");
-        } catch (Exception ex) {
-            return "";
-        }
+        return result.output();
     }
 
     /**
@@ -265,15 +234,10 @@ public class HostService {
         String output;
         if (host.getType() == HostType.LOCAL) {
             Path tempDir = Files.createTempDirectory("deploybot-host-resource-");
-            Process process = new ProcessBuilder("bash", "-lc", script)
-                    .directory(tempDir.toFile())
-                    .redirectErrorStream(true)
-                    .start();
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                output = reader.lines().collect(Collectors.joining("\n"));
-            }
-            int exitCode = process.waitFor();
-            if (exitCode != 0) {
+            ProcessBuilder processBuilder = ProcessKit.bash(script).directory(tempDir.toFile());
+            ProcessKit.ProcessResult result = ProcessKit.runAndCapture(processBuilder);
+            output = result.output();
+            if (result.exitCode() != 0) {
                 throw new BusinessException(ErrorSubCode.LOCAL_RESOURCE_PREVIEW_FAILED, output.isBlank() ? null : output);
             }
         } else {

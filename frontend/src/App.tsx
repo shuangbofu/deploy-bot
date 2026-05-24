@@ -8,6 +8,7 @@ import AdminDeploymentDetailPage from './pages/admin/AdminDeploymentDetailPage';
 import DeploymentRecordsPage from './pages/admin/DeploymentRecordsPage';
 import HostManagementPage from './pages/admin/HostManagementPage';
 import PipelineAdminPage from './pages/admin/PipelineAdminPage';
+import PluginAdminPage from './pages/admin/PluginAdminPage';
 import NotificationAdminPage from './pages/admin/NotificationAdminPage';
 import ProjectAdminPage from './pages/admin/ProjectAdminPage';
 import RuntimeEnvironmentsPage from './pages/admin/RuntimeEnvironmentsPage';
@@ -93,8 +94,13 @@ export default function App() {
           <Route path="projects" element={<ProjectAdminPage />} />
           <Route path="hosts" element={<HostManagementPage />} />
           <Route path="hosts/:hostId/environments" element={<RuntimeEnvironmentsPage />} />
-          <Route path="templates" element={<TemplateAdminPage />} />
+          <Route path="plugins" element={<PluginAdminPage />} />
+          <Route path="plugins/:pluginId/templates" element={<TemplateAdminPage />} />
+          <Route path="templates" element={<Navigate to="/admin/plugins" replace />} />
           <Route path="pipelines" element={<PipelineAdminPage />} />
+          <Route path="pipelines/new" element={<PipelineAdminPage mode="create" />} />
+          <Route path="pipelines/:pipelineId" element={<PipelineAdminPage mode="view" />} />
+          <Route path="pipelines/:pipelineId/edit" element={<PipelineAdminPage mode="edit" />} />
           <Route path="notifications" element={<NotificationAdminPage />} />
           <Route path="users" element={<UserAdminPage />} />
           <Route path="system-settings" element={<SystemSettingsPage />} />

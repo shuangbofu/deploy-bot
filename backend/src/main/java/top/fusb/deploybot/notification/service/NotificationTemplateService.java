@@ -1,7 +1,8 @@
 package top.fusb.deploybot.notification.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import top.fusb.deploybot.kit.JsonKit;
 import top.fusb.deploybot.kit.TextKit;
 import top.fusb.deploybot.notification.dto.NotificationTemplateRequest;
 import top.fusb.deploybot.exception.BusinessException;
@@ -14,16 +15,11 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 @Service
+@RequiredArgsConstructor
 public class NotificationTemplateService {
     private static final Pattern TEMPLATE_VARIABLE_PATTERN = Pattern.compile("\\{\\{[^}]+}}");
 
     private final NotificationTemplateRepository repository;
-    private final ObjectMapper objectMapper;
-
-    public NotificationTemplateService(NotificationTemplateRepository repository, ObjectMapper objectMapper) {
-        this.repository = repository;
-        this.objectMapper = objectMapper;
-    }
 
     public List<NotificationTemplateEntity> findAll() {
         return repository.findAll();
@@ -56,7 +52,7 @@ public class NotificationTemplateService {
     private void validateFeishuCardTemplate(String content) {
         String sanitized = TEMPLATE_VARIABLE_PATTERN.matcher(content).replaceAll("DEPLOY_BOT");
         try {
-            objectMapper.readTree(sanitized);
+            JsonKit.readTree(sanitized);
         } catch (Exception ex) {
             throw new BusinessException(ErrorSubCode.NOTIFICATION_TEMPLATE_CARD_INVALID, ex);
         }

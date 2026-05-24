@@ -5,8 +5,10 @@ import top.fusb.deploybot.dto.ProjectConnectionTestResult;
 import top.fusb.deploybot.dto.ProjectRequest;
 import top.fusb.deploybot.model.ProjectEntity;
 import top.fusb.deploybot.security.AdminOnly;
+import top.fusb.deploybot.service.GitBranchService;
 import top.fusb.deploybot.service.ProjectService;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -22,13 +24,11 @@ import java.util.List;
 @AdminOnly
 @RestController
 @RequestMapping("/api/projects")
+@RequiredArgsConstructor
 public class ProjectController {
 
     private final ProjectService service;
-
-    public ProjectController(ProjectService service) {
-        this.service = service;
-    }
+    private final GitBranchService gitBranchService;
 
     /**
      * 列出全部项目。
@@ -70,6 +70,14 @@ public class ProjectController {
     @PostMapping("/test-connection")
     public ProjectConnectionTestResult testConnection(@Valid @RequestBody ProjectRequest request) {
         return service.testConnection(request);
+    }
+
+    /**
+     * 按项目读取远端分支，供流水线默认分支下拉使用。
+     */
+    @GetMapping("/{id}/branches")
+    public List<String> branches(@PathVariable Long id, @RequestParam(required = false) String preferredBranch) {
+        return gitBranchService.listProjectBranches(id, preferredBranch);
     }
 
     /**

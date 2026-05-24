@@ -1,5 +1,6 @@
 package top.fusb.deploybot.service;
 
+import lombok.RequiredArgsConstructor;
 import top.fusb.deploybot.dto.PipelineHallRunningServiceSummary;
 import top.fusb.deploybot.dto.ServicePidHistorySummary;
 import top.fusb.deploybot.dto.ServiceProcessSummary;
@@ -33,6 +34,7 @@ import java.util.Locale;
 import java.util.Map;
 
 @Service
+@RequiredArgsConstructor
 public class ServiceManager {
     private static final Logger log = LoggerFactory.getLogger(ServiceManager.class);
     private static final int HEARTBEAT_MISS_THRESHOLD = 3;
@@ -51,22 +53,7 @@ public class ServiceManager {
     private final ServiceRepository serviceRepository;
     private final ServicePidHistoryRepository servicePidHistoryRepository;
     private final DeploymentRepository deploymentRepository;
-    private final JsonMapper jsonMapper;
     private final HostService hostService;
-
-    public ServiceManager(
-            ServiceRepository serviceRepository,
-            ServicePidHistoryRepository servicePidHistoryRepository,
-            DeploymentRepository deploymentRepository,
-            JsonMapper jsonMapper,
-            HostService hostService
-    ) {
-        this.serviceRepository = serviceRepository;
-        this.servicePidHistoryRepository = servicePidHistoryRepository;
-        this.deploymentRepository = deploymentRepository;
-        this.jsonMapper = jsonMapper;
-        this.hostService = hostService;
-    }
 
     public List<ServiceEntity> findAll() {
         return serviceRepository.findAllByOrderByIdDesc();
@@ -82,7 +69,7 @@ public class ServiceManager {
                         service.getPipeline() == null ? null : service.getPipeline().getId(),
                         service.getPipeline() == null ? null : service.getPipeline().getName(),
                         service.getServiceName(),
-                        service.getPipeline() != null && service.getPipeline().getTemplate() != null ? service.getPipeline().getTemplate().getTemplateType() : null,
+                        service.getPipeline() == null ? null : service.getPipeline().getTemplateTypeSnapshot(),
                         service.getPipeline() != null && service.getPipeline().getTargetHost() != null ? service.getPipeline().getTargetHost().getName() : "本机",
                         service.getCurrentPid(),
                         service.getStatus(),
@@ -206,7 +193,7 @@ public class ServiceManager {
         ServiceEntity service = serviceRepository.findByPipelineId(deployment.getPipeline().getId())
                 .orElseGet(ServiceEntity::new);
 
-        Map<String, String> variables = jsonMapper.toStringMap(deployment.getVariablesJson());
+        Map<String, String> variables = deployment.getVariables() == null ? Map.of() : deployment.getVariables();
         Long previousPid = service.getCurrentPid();
         ServiceStatus previousStatus = service.getStatus();
         service.setPipeline(deployment.getPipeline());

@@ -1,5 +1,5 @@
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
-import { Button, Form, Input, Space, Switch, Typography } from 'antd';
+import { Button, Form, Input, Select, Space, Switch, Typography } from 'antd';
 import { PHASE_LABEL_MAP, PHASE_TAG_COLOR_MAP } from '../utils/tagColors';
 
 /**
@@ -10,6 +10,7 @@ const emptyVariable = {
   label: '',
   placeholder: '',
   required: false,
+  mutationRuleIds: [],
 };
 
 /**
@@ -19,8 +20,23 @@ const emptyVariable = {
  * 模板变量编辑器。
  * 用于定义模板暴露给流水线和用户端的变量元信息。
  */
-export default function TemplateVariablesEditor({ value, onChange, title, description, phase }) {
+export default function TemplateVariablesEditor({
+  value,
+  onChange,
+  title,
+  description,
+  phase,
+  availableMutationRules = [],
+  mutationRuleHelpMap = {},
+}) {
   const variables = value?.length ? value : [];
+
+  const resolveRulePhase = (rule) => {
+    if (!rule?.value) {
+      return '';
+    }
+    return String(rule.value).includes('.build.') ? 'build' : (String(rule.value).includes('.deploy.') ? 'deploy' : '');
+  };
 
   /** 更新指定索引的变量定义。 */
   const updateVariable = (index, patch) => {
@@ -37,6 +53,10 @@ export default function TemplateVariablesEditor({ value, onChange, title, descri
   const removeVariable = (index) => {
     onChange(variables.filter((_, currentIndex) => currentIndex !== index));
   };
+
+  const mutationRuleLabelMap = Object.fromEntries(
+    availableMutationRules.map((item) => [item.value, item.label]),
+  );
 
   return (
     <div className="variable-editor">
@@ -104,6 +124,51 @@ export default function TemplateVariablesEditor({ value, onChange, title, descri
                     onChange={(checked) => updateVariable(index, { required: checked })}
                   />
                 </Form.Item>
+              </div>
+              <div className="grid grid-cols-1 gap-3">
+                <Form.Item label="处理逻辑">
+                  {(() => {
+                    const currentPhase = item.phase || phase || 'shared';
+                    const filteredMutationRules = phase
+                      ? availableMutationRules.filter((rule) => {
+                        const rulePhase = resolveRulePhase(rule);
+                        if (!rulePhase) {
+                          return true;
+                        }
+                        if (currentPhase === 'shared') {
+                          return true;
+                        }
+                        return rulePhase === currentPhase;
+                      })
+                      : availableMutationRules;
+                    return (
+                  <Select
+                    mode="multiple"
+                    allowClear
+                    maxTagCount="responsive"
+                    placeholder="选择这个变量要挂的处理逻辑"
+                    value={item.mutationRuleIds || []}
+                    options={filteredMutationRules}
+                    onChange={(nextValue) => updateVariable(index, { mutationRuleIds: nextValue })}
+                  />
+                    );
+                  })()}
+                </Form.Item>
+                {item.mutationRuleIds?.length ? (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+                    <div className="mb-2 text-xs font-semibold text-slate-700">已挂处理逻辑</div>
+                    {item.mutationRuleIds.map((ruleId) => (
+                      <div key={ruleId} className="rounded-xl bg-white px-3 py-2 text-xs text-slate-600 not-last:mb-2">
+                        <div className="font-medium text-slate-800">
+                          {mutationRuleLabelMap[ruleId] || ruleId}
+                        </div>
+                        <div className="mt-1 leading-6">
+                          {mutationRuleHelpMap[ruleId] || ruleId}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             </Form>
           </div>

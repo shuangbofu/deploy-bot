@@ -91,7 +91,7 @@ export default function UserPipelineHistoryPage() {
       <div className="app-page-scroll">
       <Card className="app-card">
         <Row gutter={[12, 12]} className="mb-4">
-          <Col xs={24} md={12} xl={6}>
+          <Col xs={24} md={12} lg={6}>
             <Input
               value={filters.branchName}
               placeholder="筛选分支"
@@ -101,7 +101,7 @@ export default function UserPipelineHistoryPage() {
               }}
             />
           </Col>
-          <Col xs={24} md={12} xl={6}>
+          <Col xs={24} md={12} lg={6}>
             <Input
               value={filters.triggeredBy}
               placeholder="筛选触发人"
@@ -111,7 +111,7 @@ export default function UserPipelineHistoryPage() {
               }}
             />
           </Col>
-          <Col xs={24} md={12} xl={4}>
+          <Col xs={24} md={12} lg={4}>
             <Select
               className="w-full"
               showSearch
@@ -126,7 +126,7 @@ export default function UserPipelineHistoryPage() {
               }}
             />
           </Col>
-          <Col xs={24} md={12} xl={8}>
+          <Col xs={24} md={12} lg={8}>
             <DatePicker.RangePicker
               className="w-full"
               value={filters.timeRange}

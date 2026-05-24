@@ -1,6 +1,7 @@
 package top.fusb.deploybot.notification.controller;
 
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,13 +21,10 @@ import java.util.List;
 @AdminOnly
 @RestController
 @RequestMapping("/api/notification-templates")
+@RequiredArgsConstructor
 public class NotificationTemplateController {
 
     private final NotificationTemplateService service;
-
-    public NotificationTemplateController(NotificationTemplateService service) {
-        this.service = service;
-    }
 
     @GetMapping
     public Result<List<NotificationTemplateEntity>> list() {

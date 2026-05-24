@@ -8,6 +8,7 @@ import top.fusb.deploybot.model.ServiceEntity;
 import top.fusb.deploybot.security.AdminOnly;
 import top.fusb.deploybot.service.DeploymentService;
 import top.fusb.deploybot.service.ServiceManager;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -20,15 +21,11 @@ import java.util.List;
 @AdminOnly
 @RestController
 @RequestMapping("/api/services")
+@RequiredArgsConstructor
 public class ServiceController {
 
     private final ServiceManager serviceManager;
     private final DeploymentService deploymentService;
-
-    public ServiceController(ServiceManager serviceManager, DeploymentService deploymentService) {
-        this.serviceManager = serviceManager;
-        this.deploymentService = deploymentService;
-    }
 
     /**
      * 列出当前受管服务。

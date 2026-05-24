@@ -2,6 +2,7 @@ package top.fusb.deploybot.config;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.HandlerInterceptor;
@@ -16,12 +17,9 @@ import top.fusb.deploybot.service.AuthService;
  * 统一接口鉴权拦截器。
  */
 @Component
+@RequiredArgsConstructor
 public class AuthInterceptor implements HandlerInterceptor {
     private final AuthService authService;
-
-    public AuthInterceptor(AuthService authService) {
-        this.authService = authService;
-    }
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {

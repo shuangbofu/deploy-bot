@@ -1,5 +1,6 @@
 package top.fusb.deploybot.controller;
 
+import lombok.RequiredArgsConstructor;
 import top.fusb.deploybot.dto.DashboardSummary;
 import top.fusb.deploybot.service.DashboardService;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -8,13 +9,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/dashboard")
+@RequiredArgsConstructor
 public class DashboardController {
 
     private final DashboardService dashboardService;
-
-    public DashboardController(DashboardService dashboardService) {
-        this.dashboardService = dashboardService;
-    }
 
     @GetMapping("/summary")
     public DashboardSummary summary() {

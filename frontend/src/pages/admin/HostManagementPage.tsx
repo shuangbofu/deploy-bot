@@ -7,7 +7,6 @@ import type { HostPayload } from '../../api/types';
 import EmptyPane from '../../components/EmptyPane';
 import PageHeaderBar from '../../components/PageHeaderBar';
 import type {
-  HostConnectionTestResult,
   HostResourceSnapshot,
   HostSshAuthType,
   HostSummary,
@@ -15,6 +14,7 @@ import type {
   RuntimeEnvironmentSummary,
 } from '../../types/domain';
 import { formatDateTime } from '../../utils/datetime';
+import { getRuntimeEnvironmentTypeLabel, sortRuntimeEnvironmentTypes } from '../../utils/runtimeEnvironment';
 
 const hostTypeOptions: { label: string; value: HostType }[] = [
   { label: 'SSH 远程主机', value: 'SSH' },
@@ -64,6 +64,57 @@ function renderEnabledStatus(enabled: boolean) {
       <span className={`status-dot ${enabled ? 'status-dot--success' : 'status-dot--pending'}`} />
       <span>{enabled ? '启用' : '停用'}</span>
     </span>
+  );
+}
+
+function renderCompactText(value?: string) {
+  const text = value?.trim() || '-';
+  return (
+    <span className="inline-block max-w-full truncate align-bottom" title={text}>
+      {text}
+    </span>
+  );
+}
+
+function renderNoWrapText(value?: string) {
+  const text = value?.trim() || '-';
+  return (
+    <span className="whitespace-nowrap" title={text}>
+      {text}
+    </span>
+  );
+}
+
+function renderRuntimeEnvironments(items: RuntimeEnvironmentSummary[]) {
+  if (items.length === 0) {
+    return '-';
+  }
+  const groupedItems = items.reduce<Record<string, RuntimeEnvironmentSummary[]>>((groups, item) => {
+    const key = item.type || 'OTHER';
+    groups[key] = [...(groups[key] || []), item];
+    return groups;
+  }, {});
+  const orderedTypes = sortRuntimeEnvironmentTypes(Object.keys(groupedItems));
+  return (
+    <div className="space-y-1">
+      {orderedTypes
+        .filter((type) => groupedItems[type]?.length)
+        .map((type) => (
+          <div key={type}>
+            <div className="mb-0.5 text-[11px] font-semibold text-slate-500">
+              {getRuntimeEnvironmentTypeLabel(type)} · {groupedItems[type].length} 个版本
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {groupedItems[type].map((item) => (
+                <span key={item.id} className="text-xs text-slate-700">
+                  <span className="font-medium text-slate-900">{item.name}</span>
+                  {item.version ? <span className="ml-1 text-slate-500">{item.version}</span> : null}
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
+    </div>
   );
 }
 
@@ -215,7 +266,7 @@ export default function HostManagementPage() {
       />
       <div className="app-page-scroll">
       <Card className="app-card">
-        <div className="mb-4 grid grid-cols-1 gap-3 xl:grid-cols-4">
+        <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
           <Input
             value={keyword}
             placeholder="搜索主机名称 / 地址 / 工作空间"
@@ -267,7 +318,7 @@ export default function HostManagementPage() {
         <Table
           rowKey="id"
           loading={loading}
-          scroll={{ x: 1080 }}
+          scroll={{ x: 1980 }}
           dataSource={hosts}
           locale={{ emptyText: <EmptyPane description="还没有主机，系统会自动内置一条本机记录。" /> }}
           pagination={{
@@ -280,22 +331,20 @@ export default function HostManagementPage() {
           }}
           columns={[
               { title: '名称', dataIndex: 'name', width: 180 },
-              { title: '类型', render: (_, row) => row.type === 'LOCAL' ? '本机' : 'SSH 远程主机', width: 140 },
-              { title: '说明', dataIndex: 'description' },
+              { title: '类型', render: (_, row) => renderNoWrapText(row.type === 'LOCAL' ? '本机' : 'SSH 远程主机'), width: 180 },
+              { title: '说明', dataIndex: 'description', width: 240, render: (value) => renderCompactText(value) },
               { title: '主机地址', render: (_, row) => row.type === 'LOCAL' ? '-' : row.hostname || '-', width: 180 },
               { title: '端口', render: (_, row) => row.type === 'LOCAL' ? '-' : (row.port || 22), width: 100 },
               { title: '用户名', render: (_, row) => row.type === 'LOCAL' ? '-' : row.username || '-', width: 120 },
-              { title: '认证方式', render: (_, row) => row.type === 'LOCAL' ? '-' : (row.sshAuthType === 'PASSWORD' ? '密码' : row.sshAuthType === 'PRIVATE_KEY' ? '私钥' : '系统密钥对'), width: 120 },
-              { title: '工作空间', dataIndex: 'workspaceRoot' },
-              { title: '主机指纹', render: (_, row) => row.type === 'LOCAL' ? '-' : (row.sshKnownHosts ? '已配置' : '未配置'), width: 100 },
+              { title: '认证方式', render: (_, row) => renderNoWrapText(row.type === 'LOCAL' ? '-' : (row.sshAuthType === 'PASSWORD' ? '密码' : row.sshAuthType === 'PRIVATE_KEY' ? '私钥' : '系统密钥对')), width: 180 },
+              { title: '工作空间', dataIndex: 'workspaceRoot', width: 260, render: (value) => renderCompactText(value) },
+              { title: '主机指纹', render: (_, row) => renderNoWrapText(row.type === 'LOCAL' ? '-' : (row.sshKnownHosts ? '已配置' : '未配置')), width: 160 },
               {
                 title: '运行环境',
+                width: 320,
                 render: (_, row) => {
                   const items = environments.filter((item) => item.host?.id === row.id);
-                  if (items.length === 0) {
-                    return '-';
-                  }
-                  return items.map((item) => item.name).join(' / ');
+                  return renderRuntimeEnvironments(items);
                 },
               },
               { title: '状态', render: (_, row) => renderEnabledStatus(row.enabled !== false), width: 100 },

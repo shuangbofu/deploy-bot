@@ -1,15 +1,18 @@
 package top.fusb.deploybot.controller;
 
 import top.fusb.deploybot.dto.PageResult;
+import top.fusb.deploybot.dto.DeploymentPluginPlanSummary;
 import top.fusb.deploybot.dto.PipelineHallRunningServiceSummary;
 import top.fusb.deploybot.dto.PipelineHallSummary;
 import top.fusb.deploybot.dto.PipelineRequest;
 import top.fusb.deploybot.model.PipelineEntity;
 import top.fusb.deploybot.security.AdminOnly;
 import top.fusb.deploybot.service.GitBranchService;
+import top.fusb.deploybot.service.DeploymentPluginBridgeService;
 import top.fusb.deploybot.service.PipelineService;
 import top.fusb.deploybot.service.ServiceManager;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -24,17 +27,13 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/pipelines")
+@RequiredArgsConstructor
 public class PipelineController {
 
     private final PipelineService service;
     private final GitBranchService gitBranchService;
     private final ServiceManager serviceManager;
-
-    public PipelineController(PipelineService service, GitBranchService gitBranchService, ServiceManager serviceManager) {
-        this.service = service;
-        this.gitBranchService = gitBranchService;
-        this.serviceManager = serviceManager;
-    }
+    private final DeploymentPluginBridgeService deploymentPluginBridgeService;
 
     /**
      * 返回所有流水线，供管理端列表与用户端流水线大厅复用。
@@ -82,12 +81,25 @@ public class PipelineController {
         return service.findFavoritePipelineIds();
     }
 
+    @GetMapping("/{id}")
+    public PipelineEntity detail(@PathVariable Long id) {
+        return service.findById(id);
+    }
+
     /**
      * 分支下拉直接读取项目对应仓库的远端分支列表。
      */
     @GetMapping("/{id}/branches")
     public List<String> branches(@PathVariable Long id) {
         return gitBranchService.listBranches(id);
+    }
+
+    /**
+     * 预览当前流水线会命中的插件计划。
+     */
+    @GetMapping("/{id}/plugin-plan")
+    public DeploymentPluginPlanSummary pluginPlan(@PathVariable Long id) {
+        return deploymentPluginBridgeService.summarizePlan(service.findById(id));
     }
 
     @PostMapping("/{id}/favorite")

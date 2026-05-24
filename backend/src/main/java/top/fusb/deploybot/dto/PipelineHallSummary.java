@@ -1,6 +1,7 @@
 package top.fusb.deploybot.dto;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public record PipelineHallSummary(
         Long pipelineId,
@@ -9,7 +10,7 @@ public record PipelineHallSummary(
         String defaultBranch,
         String projectName,
         String templateType,
-        String tagsJson,
+        List<String> tags,
         Long latestDeploymentId,
         Long latestDeploymentOrder,
         String latestStatus,

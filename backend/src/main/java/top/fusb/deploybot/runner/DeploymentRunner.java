@@ -1,9 +1,13 @@
 package top.fusb.deploybot.runner;
 
+import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorSubCode;
+import top.fusb.deploybot.kit.ProcessKit;
 import top.fusb.deploybot.kit.ShellKit;
 import top.fusb.deploybot.kit.TextKit;
+import top.fusb.deploybot.kit.TimeKit;
 import top.fusb.deploybot.model.DeploymentEntity;
 import top.fusb.deploybot.model.DeploymentStatus;
 import top.fusb.deploybot.model.HostEntity;
@@ -12,63 +16,64 @@ import top.fusb.deploybot.model.HostType;
 import top.fusb.deploybot.model.ServiceEntity;
 import top.fusb.deploybot.notification.model.NotificationEventType;
 import top.fusb.deploybot.repo.DeploymentRepository;
-import top.fusb.deploybot.service.DeploymentBackupService;
 import top.fusb.deploybot.notification.service.DeploymentNotificationAsyncService;
 import top.fusb.deploybot.service.GitCredentialService;
 import top.fusb.deploybot.service.HostService;
-import top.fusb.deploybot.service.JsonMapper;
 import top.fusb.deploybot.service.DeploymentCleanupService;
+import top.fusb.deploybot.service.DeploymentPluginBridgeService;
 import top.fusb.deploybot.service.ServiceManager;
 import top.fusb.deploybot.service.SystemSettingsService;
+import top.fusb.deploybot.plugin.api.process.ProcessLocatorResult;
+import top.fusb.deploybot.plugin.api.deployment.DeploymentPluginPlan;
+import top.fusb.deploybot.plugin.api.startup.StartupJudgeResult;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.BufferedWriter;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
-import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 @Component
+@RequiredArgsConstructor
 public class DeploymentRunner {
     private static final Logger log = LoggerFactory.getLogger(DeploymentRunner.class);
     private static final String LOG_DIR = "logs";
     private static final String SCRIPT_DIR = "scripts";
     private static final String SSH_DIR = "ssh";
     private static final String ARTIFACT_DIR = "artifacts";
-    private static final String PID_DIR = "pids";
     private static final long PID_DISCOVERY_TIMEOUT_MILLIS = 30_000L;
     private static final long DEFAULT_STARTUP_TIMEOUT_MILLIS = 30_000L;
     private static final long MONITOR_INTERVAL_MILLIS = 2_000L;
+    private static final long PROCESS_STABLE_OBSERVE_MILLIS = 3_000L;
     private static final int STARTUP_LOG_BUFFER_LIMIT = 256 * 1024;
-    private static final Pattern REDIRECTION_PATTERN = Pattern.compile("\\s(?:\\d?>>?|>>?)");
 
     private final DeploymentRepository deploymentRepository;
     private final ServiceManager serviceManager;
     private final SystemSettingsService systemSettingsService;
     private final GitCredentialService gitCredentialService;
-    private final DeploymentBackupService deploymentBackupService;
-    private final JsonMapper jsonMapper;
     private final HostService hostService;
     private final DeploymentCleanupService deploymentCleanupService;
     private final DeploymentNotificationAsyncService deploymentNotificationAsyncService;
-    private final Path defaultWorkspaceRoot;
+    private final DeploymentPluginBridgeService deploymentPluginBridgeService;
     private final Map<Long, Process> runningProcesses = new ConcurrentHashMap<>();
     private final Map<Long, String> stopRequests = new ConcurrentHashMap<>();
+    @Value("${deploybot.workspace-root:./runtime}")
+    private String workspaceRoot;
+    private Path defaultWorkspaceRoot;
 
     private record StartupLogCursor(String runtimeLogPath, long nextOffset) {
     }
@@ -76,27 +81,8 @@ public class DeploymentRunner {
     private record StartupLogReadResult(StartupLogCursor cursor, String content) {
     }
 
-    public DeploymentRunner(
-            DeploymentRepository deploymentRepository,
-            ServiceManager serviceManager,
-            SystemSettingsService systemSettingsService,
-            GitCredentialService gitCredentialService,
-            DeploymentBackupService deploymentBackupService,
-            JsonMapper jsonMapper,
-            HostService hostService,
-            DeploymentCleanupService deploymentCleanupService,
-            DeploymentNotificationAsyncService deploymentNotificationAsyncService,
-            @Value("${deploybot.workspace-root:./runtime}") String workspaceRoot
-    ) {
-        this.deploymentRepository = deploymentRepository;
-        this.serviceManager = serviceManager;
-        this.systemSettingsService = systemSettingsService;
-        this.gitCredentialService = gitCredentialService;
-        this.deploymentBackupService = deploymentBackupService;
-        this.jsonMapper = jsonMapper;
-        this.hostService = hostService;
-        this.deploymentCleanupService = deploymentCleanupService;
-        this.deploymentNotificationAsyncService = deploymentNotificationAsyncService;
+    @PostConstruct
+    public void initDefaultWorkspaceRoot() {
         this.defaultWorkspaceRoot = Path.of(workspaceRoot);
     }
 
@@ -118,7 +104,7 @@ public class DeploymentRunner {
                     deploymentId,
                     deployment.getPipeline().getName(),
                     deployment.getPipeline().getProject() == null ? "-" : deployment.getPipeline().getProject().getName(),
-                    deployment.getPipeline().getTemplate() == null ? "-" : deployment.getPipeline().getTemplate().getName(),
+                    deployment.getPipeline().getTemplateNameSnapshot() == null ? "-" : deployment.getPipeline().getTemplateNameSnapshot(),
                     targetHost == null ? "本机" : targetHost.getName()
             );
             Path buildWorkspaceRoot = resolveLocalWorkspaceRoot();
@@ -151,6 +137,7 @@ public class DeploymentRunner {
             deploymentRepository.save(deployment);
             deploymentNotificationAsyncService.notifyAsync(deployment.getId(), NotificationEventType.DEPLOYMENT_STARTED);
             appendSystemLog(logFile, "部署任务已开始，日志文件：" + logFile.toAbsolutePath().normalize());
+            appendDeploymentPluginLog(logFile, deployment);
             log.info("Deployment {} log file initialized at {}.", deploymentId, logFile.toAbsolutePath().normalize());
 
             // 2. 每次部署都会保留构建产物，后续重新发布历史版本时直接复用该产物。
@@ -178,7 +165,7 @@ public class DeploymentRunner {
                 return;
             }
             if (exitCode == 0 && deployment.getRenderedDeployScript() != null && !deployment.getRenderedDeployScript().isBlank()) {
-                if (Boolean.TRUE.equals(deployment.getPipeline().getTemplate().getMonitorProcess())) {
+                if (Boolean.TRUE.equals(deployment.getPipeline().getTemplateMonitorProcess())) {
                     ServiceEntity stoppedService = serviceManager.stopManagedServiceBeforeDeploy(deployment);
                     if (stoppedService != null) {
                         appendSystemLog(logFile, "本次发布前已停止旧服务，serviceId=" + stoppedService.getId() + "，pid=" + (stoppedService.getCurrentPid() == null ? "-" : stoppedService.getCurrentPid()) + "。");
@@ -195,8 +182,7 @@ public class DeploymentRunner {
                 deployStageExecuted = true;
                 if (targetHost != null && targetHost.getType() == HostType.SSH) {
                     Path remoteArtifactDir = deployWorkspaceRoot.resolve(ARTIFACT_DIR).resolve("deploy-" + deploymentId).toAbsolutePath().normalize();
-                    prepareRemoteExecutionDirectories(targetHost, deployment, remoteArtifactDir, sshDir, logFile, deploymentId);
-                    clearRuntimePidFileIfPresent(deployment, targetHost, deployWorkspaceRoot);
+                    prepareRemoteExecutionDirectories(targetHost, remoteArtifactDir, sshDir, logFile, deploymentId);
                     syncArtifactsToRemote(targetHost, artifactsDir, remoteArtifactDir, sshDir, logFile, deploymentId);
                     log.info("部署 {} 构建产物同步完成。目标主机='{}'，远端产物目录='{}'。", deploymentId, targetHost.getHostname(), remoteArtifactDir);
                     exitCode = runProcess(
@@ -206,9 +192,6 @@ public class DeploymentRunner {
                             deploymentId
                     );
                 } else {
-                    Path pidsDir = deployWorkspaceRoot.resolve(PID_DIR);
-                    Files.createDirectories(pidsDir);
-                    clearRuntimePidFileIfPresent(deployment, null, deployWorkspaceRoot);
                     exitCode = runProcess(
                         buildLocalDeployProcessBuilder(buildWorkspaceRoot, deployScriptFile),
                         null,
@@ -241,15 +224,14 @@ public class DeploymentRunner {
                 return;
             }
             if (exitCode == 0) {
-                if (Boolean.TRUE.equals(deployment.getPipeline().getTemplate().getMonitorProcess())) {
-                    Path pidsDir = deployWorkspaceRoot.resolve(PID_DIR);
+                if (Boolean.TRUE.equals(deployment.getPipeline().getTemplateMonitorProcess())) {
+                    appendSystemLog(logFile, "启动命令已执行，开始进行服务自检。");
                     log.info(
-                            "Deployment {} service monitoring started. startupKeyword='{}', startupTimeoutSeconds={}.",
+                            "Deployment {} service monitoring started. startupTimeoutSeconds={}.",
                             deploymentId,
-                            deployment.getPipeline().getStartupKeyword(),
                             deployment.getPipeline().getStartupTimeoutSeconds()
                     );
-                    Long monitoredPid = verifyMonitoredProcess(deployment, targetHost, pidsDir, deploymentId, logFile);
+                    ServiceVerificationResult verificationResult = verifyMonitoredProcess(deployment, targetHost, deploymentId, logFile);
                     deployment = refreshDeploymentState(deployment);
                     deployment.setFinishedAt(finishedAt);
                     if (isStopRequested(deploymentId) || deployment.getStatus() == DeploymentStatus.STOPPED) {
@@ -259,7 +241,7 @@ public class DeploymentRunner {
                         deploymentCleanupService.cleanupAfterDeployment(deployment, buildWorkspaceRoot);
                         return;
                     }
-                    if (monitoredPid == null) {
+                    if (verificationResult == null || !verificationResult.success()) {
                         deployment.setStatus(DeploymentStatus.FAILED);
                         deployment.setErrorMessage(ErrorSubCode.DEPLOYMENT_MONITORED_PROCESS_NOT_RUNNING.getMessage());
                         appendSystemLog(logFile, "部署失败：服务启动后未检测到可用进程。");
@@ -268,18 +250,36 @@ public class DeploymentRunner {
                         }
                         log.warn("部署 {} 在服务监测阶段失败，未确认到稳定可接管的进程。", deploymentId);
                     } else {
-                        deployment.setMonitoredPid(monitoredPid);
-                        serviceManager.updateFromDeployment(deployment, monitoredPid);
+                        if (verificationResult.managedService() && verificationResult.monitoredPid() != null) {
+                            deployment.setMonitoredPid(verificationResult.monitoredPid());
+                            serviceManager.updateFromDeployment(deployment, verificationResult.monitoredPid());
+                        }
                         deployment.setStatus(DeploymentStatus.SUCCESS);
                         appendSystemLog(logFile, "发布阶段执行完成。");
                         appendSystemLog(logFile, "部署完成。");
-                        log.info("部署 {} 成功完成，受管进程 PID={}。", deploymentId, monitoredPid);
+                        log.info(
+                                "部署 {} 成功完成，服务接管={}，受管进程 PID={}。",
+                                deploymentId,
+                                verificationResult.managedService(),
+                                verificationResult.monitoredPid()
+                        );
                     }
                 } else {
+                    DeploymentPluginPlan plan = deploymentPluginBridgeService.resolveEffectiveServicePlan(deployment);
                     deployment.setStatus(DeploymentStatus.SUCCESS);
                     appendSystemLog(logFile, "发布阶段执行完成。");
+                    if (plan != null && !plan.processLocatorEnabled() && !plan.startupJudgeEnabled()) {
+                        appendSystemLog(logFile, "当前插件未声明 PID 检测与启动判定能力，已跳过服务检测步骤。");
+                    } else {
+                        appendSystemLog(logFile, "当前模板未启用服务监测，已跳过 PID 检测与启动判定。");
+                    }
                     appendSystemLog(logFile, "部署完成。");
-                    log.info("部署 {} 成功完成，本次未启用服务监测。", deploymentId);
+                    log.info(
+                            "部署 {} 成功完成，本次未启用服务监测。processLocatorEnabled={}，startupJudgeEnabled={}",
+                            deploymentId,
+                            plan != null && plan.processLocatorEnabled(),
+                            plan != null && plan.startupJudgeEnabled()
+                    );
                 }
             } else {
                 if (isStopRequested(deploymentId)) {
@@ -347,11 +347,10 @@ public class DeploymentRunner {
     }
 
     /**
-     * 远程主机只负责接收产物与执行发布脚本，因此先准备远端产物目录和 PID 目录。
+     * 远程主机只负责接收产物与执行发布脚本，因此先准备远端产物目录。
      */
     private void prepareRemoteExecutionDirectories(
             HostEntity targetHost,
-            DeploymentEntity deployment,
             Path remoteArtifactDir,
             Path sshDir,
             Path logFile,
@@ -364,19 +363,9 @@ public class DeploymentRunner {
         script.append("rm -rf \"").append(escapedArtifactDir).append("\"\n");
         script.append("mkdir -p \"").append(escapedArtifactDir).append("\"\n");
 
-        String pidFilePath = jsonMapper.toStringMap(deployment.getVariablesJson()).get("pidFilePath");
-        if (pidFilePath != null && !pidFilePath.isBlank()) {
-            Path pidDir = Path.of(pidFilePath).getParent();
-            if (pidDir != null) {
-                script.append("mkdir -p \"")
-                        .append(pidDir.toString().replace("\"", "\\\""))
-                        .append("\"\n");
-            }
-        }
-
         appendSystemLog(logFile, "准备远程目录：" + remoteArtifactDir);
         int prepareExitCode = runProcess(
-                new ProcessBuilder(buildSshCommand(targetHost, sshDir)).redirectErrorStream(true),
+                ProcessKit.mergedBuilder(buildSshCommand(targetHost, sshDir)),
                 script.toString(),
                 logFile,
                 deploymentId
@@ -470,9 +459,8 @@ public class DeploymentRunner {
     }
 
     private ProcessBuilder buildLocalBuildProcessBuilder(DeploymentEntity deployment, Path workspaceRoot, Path scriptFile, Path sshDir) throws Exception {
-        ProcessBuilder processBuilder = new ProcessBuilder("bash", scriptFile.toAbsolutePath().toString())
-                .directory(workspaceRoot.toFile())
-                .redirectErrorStream(true);
+        ProcessBuilder processBuilder = ProcessKit.mergedBuilder("bash", scriptFile.toAbsolutePath().toString())
+                .directory(workspaceRoot.toFile());
         GitCredentialService.GitProcessConfig processConfig = gitCredentialService.buildProcessConfig(
                 deployment.getPipeline().getProject(),
                 sshDir
@@ -486,9 +474,8 @@ public class DeploymentRunner {
     }
 
     private ProcessBuilder buildLocalDeployProcessBuilder(Path workspaceRoot, Path scriptFile) {
-        ProcessBuilder processBuilder = new ProcessBuilder("bash", scriptFile.toAbsolutePath().toString())
-                .directory(workspaceRoot.toFile())
-                .redirectErrorStream(true);
+        ProcessBuilder processBuilder = ProcessKit.mergedBuilder("bash", scriptFile.toAbsolutePath().toString())
+                .directory(workspaceRoot.toFile());
         processBuilder.environment().put("GIT_TERMINAL_PROMPT", "0");
         processBuilder.environment().put("GIT_ASKPASS", "echo");
         processBuilder.environment().put("DEPLOYBOT_GIT_EXECUTABLE", gitCredentialService.getGitExecutable());
@@ -497,8 +484,7 @@ public class DeploymentRunner {
     }
 
     private ProcessBuilder buildRemoteDeployProcessBuilder(HostEntity targetHost, Path sshDir) throws Exception {
-        ProcessBuilder processBuilder = new ProcessBuilder(buildSshCommand(targetHost, sshDir))
-                .redirectErrorStream(true);
+        ProcessBuilder processBuilder = ProcessKit.mergedBuilder(buildSshCommand(targetHost, sshDir));
         processBuilder.environment().put("GIT_TERMINAL_PROMPT", "0");
         processBuilder.environment().put("GIT_ASKPASS", "echo");
         processBuilder.environment().put("DEPLOYBOT_GIT_EXECUTABLE", gitCredentialService.getGitExecutable());
@@ -620,11 +606,73 @@ public class DeploymentRunner {
     private void appendSystemLog(Path logFile, String message) throws Exception {
         Files.writeString(
                 logFile,
-                "[系统] " + message + System.lineSeparator(),
+                "[系统] " + TimeKit.formatDateTime(LocalDateTime.now()) + " " + message + System.lineSeparator(),
                 StandardCharsets.UTF_8,
                 StandardOpenOption.CREATE,
                 StandardOpenOption.APPEND
         );
+    }
+
+    private void appendDeploymentPluginLog(Path logFile, DeploymentEntity deployment) {
+        try {
+            DeploymentPluginPlan plan = deploymentPluginBridgeService.resolvePlan(deployment);
+            if (plan == null) {
+                appendSystemLog(logFile, "未命中部署插件，将按基础部署流程执行。");
+                return;
+            }
+            appendDeploymentPluginBanners(logFile, plan);
+            appendSystemLog(logFile, "使用部署插件：" + plan.displayName() + "（" + plan.pluginId() + "）。");
+            if (plan.children() != null && !plan.children().isEmpty()) {
+                String children = plan.children().stream()
+                        .map(item -> item.displayName() + "（" + item.pluginId() + "）")
+                        .collect(java.util.stream.Collectors.joining(" / "));
+                appendSystemLog(logFile, "组合插件子计划：" + children + "。");
+            }
+            if (plan.processLocatorPluginId() != null && !plan.processLocatorPluginId().isBlank()) {
+                appendSystemLog(logFile, "PID 检测插件：" + plan.processLocatorPluginId() + "。");
+            }
+            if (plan.startupJudgePluginId() != null && !plan.startupJudgePluginId().isBlank()) {
+                appendSystemLog(logFile, "启动判定插件：" + plan.startupJudgePluginId() + "。");
+            }
+        } catch (Exception ex) {
+            log.warn("部署 {} 写入插件使用日志失败：{}", deployment == null ? null : deployment.getId(), ex.getMessage(), ex);
+        }
+    }
+
+    private void appendDeploymentPluginBanners(Path logFile, DeploymentPluginPlan plan) {
+        Set<String> pluginIds = new LinkedHashSet<>();
+        collectPlanPluginIds(plan, pluginIds);
+        for (String pluginId : pluginIds) {
+            String bannerText = deploymentPluginBridgeService.resolveBannerText(pluginId);
+            if (bannerText == null || bannerText.isBlank()) {
+                continue;
+            }
+            appendRawLog(logFile, bannerText.stripTrailing() + System.lineSeparator());
+        }
+    }
+
+    private void collectPlanPluginIds(DeploymentPluginPlan plan, Set<String> pluginIds) {
+        if (plan == null || plan.pluginId() == null || plan.pluginId().isBlank()) {
+            return;
+        }
+        pluginIds.add(plan.pluginId());
+        if (plan.children() == null) {
+            return;
+        }
+        plan.children().forEach(child -> collectPlanPluginIds(child, pluginIds));
+    }
+
+    private void appendRawLog(Path logFile, String content) {
+        try {
+            Files.writeString(
+                    logFile,
+                    content,
+                    StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.APPEND
+            );
+        } catch (Exception ignored) {
+        }
     }
 
     private void appendSystemErrorLog(Path logFile, Exception ex) throws Exception {
@@ -646,42 +694,30 @@ public class DeploymentRunner {
         }
     }
 
-    private Long readMonitoredPid(DeploymentEntity deployment, HostEntity targetHost, Path pidsDir, Long deploymentId) {
+    private Long readMonitoredPid(DeploymentEntity deployment, HostEntity targetHost, Long deploymentId) {
         try {
-            if (targetHost != null && targetHost.getType() == HostType.SSH) {
-                String pidFilePath = jsonMapper.toStringMap(deployment.getVariablesJson()).get("pidFilePath");
-                if (pidFilePath != null && !pidFilePath.isBlank()) {
-                    String output = hostService.executeRemoteScript(
-                            targetHost.getId(),
-                            "if [ -f \"" + pidFilePath.replace("\"", "\\\"") + "\" ]; then printf '__DEPLOYBOT_PID__%s\\n' \"$(cat \\\"" + pidFilePath.replace("\"", "\\\"") + "\\\")\"; fi\n",
-                            8
+            ProcessLocatorResult pluginResult = deploymentPluginBridgeService.locateProcess(deployment, targetHost);
+            if (pluginResult != null) {
+                if (pluginResult.pid() != null) {
+                    log.info(
+                            "部署 {} 通过插件运行时定位到受管 PID={}，来源={}。",
+                            deploymentId,
+                            pluginResult.pid(),
+                            pluginResult.sourceDescription()
                     );
-                    Long remotePid = extractPidFromOutput(output);
-                    if (remotePid != null) {
-                        log.info("Deployment {} read monitored pid {} from remote pid file {}.", deploymentId, remotePid, pidFilePath);
-                        return remotePid;
-                    }
-                    log.info("Deployment {} remote pid file {} exists but returned blank content.", deploymentId, pidFilePath);
+                    return pluginResult.pid();
                 }
-            } else {
-                Path pidFile = pidsDir.resolve("service-" + deploymentId + ".pid");
-                if (Files.exists(pidFile)) {
-                    String pidText = Files.readString(pidFile, StandardCharsets.UTF_8).trim();
-                    if (!pidText.isBlank()) {
-                        log.info("Deployment {} read monitored pid {} from local pid file {}.", deploymentId, pidText, pidFile.toAbsolutePath().normalize());
-                        return Long.parseLong(pidText);
-                    }
-                    log.info("Deployment {} local pid file {} exists but returned blank content.", deploymentId, pidFile.toAbsolutePath().normalize());
+                if (TextKit.isNotBlank(pluginResult.diagnostics())) {
+                    log.info(
+                            "部署 {} 插件运行时未命中 PID。来源={}，诊断={}",
+                            deploymentId,
+                            pluginResult.sourceDescription(),
+                            pluginResult.diagnostics()
+                    );
                 }
+                return null;
             }
-            String discoveryKeyword = resolvePidDiscoveryKeyword(deployment);
-            if (discoveryKeyword != null && !discoveryKeyword.isBlank()) {
-                log.info("部署 {} 正在使用推导关键字 '{}' 尝试发现 PID。", deploymentId, discoveryKeyword);
-                Long discoveredPid = readMonitoredPidByKeyword(targetHost, discoveryKeyword);
-                log.info("部署 {} 通过关键字推导得到 PID={}。", deploymentId, discoveredPid);
-                return discoveredPid;
-            }
-            log.info("部署 {} 当前没有可用的 PID 文件或推导关键字。", deploymentId);
+            log.info("部署 {} 当前没有可用的 PID 检测插件。", deploymentId);
             return null;
         } catch (Exception ex) {
             log.warn("部署 {} 读取受管 PID 失败：{}", deploymentId, ex.getMessage());
@@ -689,47 +725,51 @@ public class DeploymentRunner {
         }
     }
 
-    private Long readMonitoredPidByKeyword(HostEntity targetHost, String keyword) {
-        String escapedKeyword = keyword.replace("\"", "\\\"");
-        try {
-            if (targetHost != null && targetHost.getType() == HostType.SSH) {
-                String output = hostService.executeRemoteScript(
-                        targetHost.getId(),
-                        buildKeywordLookupScript(escapedKeyword, keyword),
-                        8
-                );
-                Long resolvedPid = extractPidFromOutput(output);
-                log.info("关键字推导(远程) keyword='{}' 解析到 PID={}。", keyword, resolvedPid);
-                return resolvedPid;
+    private ServiceVerificationResult verifyMonitoredProcess(DeploymentEntity deployment, HostEntity targetHost, Long deploymentId, Path logFile) {
+        DeploymentPluginPlan servicePlan = deploymentPluginBridgeService.resolveEffectiveServicePlan(deployment);
+        if (servicePlan != null && !servicePlan.processLocatorEnabled() && !servicePlan.startupJudgeEnabled()) {
+            try {
+                appendSystemLog(logFile, "当前插件未声明 PID 检测与启动判定能力，跳过服务检测。");
+            } catch (Exception ignored) {
             }
-            Process process = new ProcessBuilder("bash", "-lc", buildKeywordLookupScript(escapedKeyword, keyword)).redirectErrorStream(true).start();
-            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
-            process.waitFor();
-            Long resolvedPid = extractPidFromOutput(output);
-            log.info("关键字推导(本地) keyword='{}' 解析到 PID={}。", keyword, resolvedPid);
-            return resolvedPid;
-        } catch (Exception ex) {
-            log.warn("关键字推导失败 keyword='{}'：{}", keyword, ex.getMessage());
-            return null;
+            log.info("部署 {} 当前插件计划 '{}' 未声明服务检测步骤，直接跳过 PID 检测与启动判定。", deploymentId, servicePlan.pluginId());
+            return ServiceVerificationResult.skipped();
         }
-    }
-
-    private Long verifyMonitoredProcess(DeploymentEntity deployment, HostEntity targetHost, Path pidsDir, Long deploymentId, Path logFile) {
-        Long monitoredPid = waitForMonitoredPid(deployment, targetHost, pidsDir, deploymentId, logFile);
+        if (servicePlan != null && !servicePlan.processLocatorEnabled()) {
+            try {
+                appendSystemLog(logFile, "当前插件未声明 PID 检测能力，跳过服务检测。");
+            } catch (Exception ignored) {
+            }
+            log.info("部署 {} 当前插件计划 '{}' 未声明 PID 检测能力，跳过服务检测。", deploymentId, servicePlan.pluginId());
+            return ServiceVerificationResult.skipped();
+        }
+        Long monitoredPid = waitForMonitoredPid(deployment, targetHost, deploymentId, logFile);
         if (monitoredPid == null) {
             try {
                 appendSystemLog(logFile, "服务检测超时，未能获取到可接管的进程 PID。");
             } catch (Exception ignored) {
             }
-            return null;
+            return ServiceVerificationResult.failed();
         }
         deployment.setMonitoredPid(monitoredPid);
         deploymentRepository.save(deployment);
         log.info("部署 {} 已提前记录候选受管进程 PID={}，后续即使启动观察失败也可用于清理。", deploymentId, monitoredPid);
-        return observeStartupWindow(deployment, targetHost, monitoredPid, logFile);
+        if (servicePlan != null && !servicePlan.startupJudgeEnabled()) {
+            try {
+                appendSystemLog(logFile, "当前插件未声明启动判定能力，已确认 PID 后跳过启动观察。");
+            } catch (Exception ignored) {
+            }
+            log.info("部署 {} 当前插件计划 '{}' 未声明启动判定能力，确认 PID={} 后跳过启动观察。", deploymentId, servicePlan.pluginId(), monitoredPid);
+            return ServiceVerificationResult.managed(monitoredPid);
+        }
+        Long verifiedPid = observeStartupWindow(deployment, targetHost, monitoredPid, logFile);
+        if (verifiedPid == null) {
+            return ServiceVerificationResult.failed();
+        }
+        return ServiceVerificationResult.managed(verifiedPid);
     }
 
-    private Long waitForMonitoredPid(DeploymentEntity deployment, HostEntity targetHost, Path pidsDir, Long deploymentId, Path logFile) {
+    private Long waitForMonitoredPid(DeploymentEntity deployment, HostEntity targetHost, Long deploymentId, Path logFile) {
         long startedAt = System.currentTimeMillis();
         long deadline = startedAt + PID_DISCOVERY_TIMEOUT_MILLIS;
         int attempt = 0;
@@ -747,7 +787,7 @@ public class DeploymentRunner {
                 return null;
             }
             attempt++;
-            Long monitoredPid = readMonitoredPid(deployment, targetHost, pidsDir, deploymentId);
+            Long monitoredPid = readMonitoredPid(deployment, targetHost, deploymentId);
             if (monitoredPid != null) {
                 try {
                     appendSystemLog(logFile, "检测到候选进程 PID " + monitoredPid + "，开始进入启动观察窗口。");
@@ -762,12 +802,11 @@ public class DeploymentRunner {
             } catch (Exception ignored) {
             }
             log.info(
-                    "部署 {} 第 {} 次 PID 检测未命中，已等待 {} 秒。来源={}，诊断={}",
+                    "部署 {} 第 {} 次 PID 检测未命中，已等待 {} 秒。来源={}",
                     deploymentId,
                     attempt,
                     (System.currentTimeMillis() - startedAt) / 1000,
-                    describePidDiscoverySource(deployment),
-                    loadRemotePidDiagnostics(deployment, targetHost)
+                    describePidDiscoverySource(deployment)
             );
             if (System.currentTimeMillis() >= deadline) {
                 break;
@@ -787,67 +826,42 @@ public class DeploymentRunner {
         StringBuilder builder = new StringBuilder("开始检测服务 PID。");
         builder.append(" 目标主机类型=").append(targetHost != null ? targetHost.getType() : HostType.LOCAL);
         builder.append("，检测来源=").append(describePidDiscoverySource(deployment));
-        String startupKeyword = deployment.getPipeline().getStartupKeyword();
-        if (startupKeyword != null && !startupKeyword.isBlank()) {
-            builder.append("，启动关键字=").append(startupKeyword);
-        }
         return builder.toString();
     }
 
     private String describePidDiscoverySource(DeploymentEntity deployment) {
-        String pidFilePath = jsonMapper.toStringMap(deployment.getVariablesJson()).get("pidFilePath");
-        if (pidFilePath != null && !pidFilePath.isBlank()) {
-            return "PID 文件优先，其次命令推导";
+        DeploymentPluginPlan plan = deploymentPluginBridgeService.resolveEffectiveServicePlan(deployment);
+        if (plan == null || !plan.processLocatorEnabled()) {
+            return "未声明 PID 检测插件";
         }
-        return "命令推导";
-    }
-
-    private String loadRemotePidDiagnostics(DeploymentEntity deployment, HostEntity targetHost) {
-        try {
-            String keyword = resolvePidDiscoveryKeyword(deployment);
-            String pidFilePath = jsonMapper.toStringMap(deployment.getVariablesJson()).get("pidFilePath");
-            List<String> lines = new java.util.ArrayList<>();
-            if (pidFilePath != null && !pidFilePath.isBlank()) {
-                lines.add("if [ -f \"" + pidFilePath.replace("\"", "\\\"") + "\" ]; then echo \"[系统] 远程 PID 文件：$(cat \\\"" + pidFilePath.replace("\"", "\\\"") + "\\\")\"; else echo \"[系统] 远程 PID 文件不存在\"; fi");
-            }
-            if (keyword != null && !keyword.isBlank()) {
-                String escapedKeyword = keyword.replace("\"", "\\\"");
-                lines.add("echo \"[系统] 远程 PID 推导关键字：" + escapedKeyword + "\"");
-                lines.add("ps -efww | awk -v kw='" + escapedKeyword.replace("'", "'\"'\"'") + "' 'index($0, kw) && $0 !~ /awk -v kw/ {print}' || true");
-                lines.add("pgrep -af \"" + escapedKeyword + "\" || true");
-                lines.add("if command -v jps >/dev/null 2>&1; then echo \"[系统] 远程 jps 结果：\"; jps -lv | grep \"" + escapedKeyword + "\" || true; fi");
-            }
-            if (lines.isEmpty()) {
-                return "[系统] 当前没有可用于 PID 推导的远程诊断信息。";
-            }
-            String script = String.join("\n", lines) + "\n";
-            if (targetHost != null && targetHost.getType() == HostType.SSH) {
-                String output = hostService.executeRemoteScript(targetHost.getId(), script, 8).trim();
-                return output.isBlank() ? "[系统] 远程 PID 诊断无输出。" : output;
-            }
-            Process process = new ProcessBuilder("bash", "-lc", script).redirectErrorStream(true).start();
-            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
-            process.waitFor();
-            return output.isBlank() ? "[系统] 本地 PID 诊断无输出。" : output;
-        } catch (Exception ex) {
-            return "[系统] PID 诊断执行失败：" + ex.getMessage();
-        }
+        return plan.processLocatorPluginId();
     }
 
     private Long observeStartupWindow(DeploymentEntity deployment, HostEntity targetHost, Long monitoredPid, Path logFile) {
         long startedAt = System.currentTimeMillis();
-        long deadline = startedAt + resolveStartupTimeoutMillis(deployment);
+        long configuredTimeoutMillis = resolveStartupTimeoutMillis(deployment);
         int attempt = 0;
-        String startupKeyword = deployment.getPipeline().getStartupKeyword();
-        boolean keywordRequired = startupKeyword != null && !startupKeyword.isBlank();
         StringBuilder startupOutputBuffer = new StringBuilder();
-        StartupLogCursor logCursor = initializeStartupLogCursor(deployment, targetHost);
+        StartupLogCursor logCursor = initializeStartupLogCursor(deployment);
+        StartupJudgeResult startupJudge = deploymentPluginBridgeService.resolveStartupJudge(
+                deployment,
+                monitoredPid,
+                logCursor == null ? null : logCursor.runtimeLogPath()
+        );
+        String startupKeyword = startupJudge == null ? null : startupJudge.keyword();
+        boolean keywordRequired = startupJudge != null && startupJudge.keywordRequired();
+        long observeWindowMillis = keywordRequired
+                ? configuredTimeoutMillis
+                : Math.min(configuredTimeoutMillis, PROCESS_STABLE_OBSERVE_MILLIS);
+        long deadline = startedAt + observeWindowMillis;
         log.info(
-                "部署 {} 开始启动观察，PID={}，超时时间={}毫秒，启动关键字='{}'，运行日志路径='{}'，初始偏移={}。",
+                "部署 {} 开始启动观察，PID={}，观察窗口={}毫秒，配置超时={}毫秒，启动判定条件='{}'，策略='{}'，运行日志路径='{}'，初始偏移={}。",
                 deployment.getId(),
                 monitoredPid,
-                resolveStartupTimeoutMillis(deployment),
+                observeWindowMillis,
+                configuredTimeoutMillis,
                 startupKeyword,
+                startupJudge == null ? "默认观察逻辑" : startupJudge.strategyDescription(),
                 logCursor == null ? null : logCursor.runtimeLogPath(),
                 logCursor == null ? null : logCursor.nextOffset()
         );
@@ -881,18 +895,27 @@ public class DeploymentRunner {
                 log.warn("部署 {} 启动观察失败：PID {} 在第 {} 次检测时已退出。", deployment.getId(), monitoredPid, attempt);
                 return null;
             }
-            if (keywordRequired && startupOutputBuffer.toString().contains(startupKeyword)) {
+            if (keywordRequired && matchesStartupJudge(startupOutputBuffer.toString(), startupJudge)) {
                 try {
-                    appendSystemLog(logFile, "启动关键字已命中，服务启动成功。");
+                    appendSystemLog(logFile, "启动判定条件已命中，服务启动成功。");
                 } catch (Exception ignored) {
                 }
-                log.info("部署 {} 启动观察成功，关键字 '{}' 已命中。", deployment.getId(), startupKeyword);
+                log.info("部署 {} 启动观察成功，启动判定表达式 '{}' 已命中。", deployment.getId(), startupKeyword);
+                return monitoredPid;
+            }
+            long elapsedMillis = System.currentTimeMillis() - startedAt;
+            if (!keywordRequired && elapsedMillis >= PROCESS_STABLE_OBSERVE_MILLIS) {
+                try {
+                    appendSystemLog(logFile, "服务监测通过，PID " + monitoredPid + " 已稳定运行 " + (elapsedMillis / 1000) + " 秒。");
+                } catch (Exception ignored) {
+                }
+                log.info("部署 {} 进程存活观察通过，PID={}，稳定运行={}毫秒。", deployment.getId(), monitoredPid, elapsedMillis);
                 return monitoredPid;
             }
             try {
-                long elapsedSeconds = (System.currentTimeMillis() - startedAt) / 1000;
+                long elapsedSeconds = elapsedMillis / 1000;
                 if (keywordRequired) {
-                    appendSystemLog(logFile, "第 " + attempt + " 次启动观察：PID " + monitoredPid + " 已运行 " + elapsedSeconds + " 秒，仍在等待启动关键字。");
+                    appendSystemLog(logFile, "第 " + attempt + " 次启动观察：PID " + monitoredPid + " 已运行 " + elapsedSeconds + " 秒，仍在等待启动判定条件。");
                 } else {
                     appendSystemLog(logFile, "第 " + attempt + " 次启动观察通过，PID " + monitoredPid + " 已稳定运行 " + elapsedSeconds + " 秒。");
                 }
@@ -912,12 +935,20 @@ public class DeploymentRunner {
         StartupLogReadResult finalLogReadResult = readRuntimeLogDelta(logCursor, targetHost);
         appendRuntimeLogDelta(logFile, finalLogReadResult.content());
         appendStartupOutput(startupOutputBuffer, finalLogReadResult.content());
-        if (keywordRequired) {
+        if (keywordRequired && matchesStartupJudge(startupOutputBuffer.toString(), startupJudge)) {
             try {
-                appendSystemLog(logFile, "启动观察失败：在超时时间内未检测到启动关键字。");
+                appendSystemLog(logFile, "启动判定条件已命中，服务启动成功。");
             } catch (Exception ignored) {
             }
-            log.warn("部署 {} 启动观察失败：关键字 '{}' 在超时时间内未命中。", deployment.getId(), startupKeyword);
+            log.info("部署 {} 启动观察成功，启动判定表达式 '{}' 在最终日志读取时命中。", deployment.getId(), startupKeyword);
+            return monitoredPid;
+        }
+        if (keywordRequired) {
+            try {
+                appendSystemLog(logFile, "启动观察失败：在超时时间内未检测到启动判定条件。");
+            } catch (Exception ignored) {
+            }
+            log.warn("部署 {} 启动观察失败：启动判定条件 '{}' 在超时时间内未命中。", deployment.getId(), startupKeyword);
             return null;
         }
         try {
@@ -928,81 +959,33 @@ public class DeploymentRunner {
         return monitoredPid;
     }
 
-    private String buildKeywordLookupScript(String escapedKeyword, String rawKeyword) {
-        StringBuilder script = new StringBuilder();
-        String quotedKeyword = ShellKit.singleQuote(rawKeyword);
-        script.append("""
-                # 优先按完整命令特征查找 PID，避免误接管到其他同名进程。
-                PID=$(ps -efww | awk -v kw=%s '($8 ~ /(^|\\/)java$/) && index($0, kw) {print $2; exit}' || true)
-                """.formatted(quotedKeyword));
-        String jarName = resolveJarName(rawKeyword);
-        if (TextKit.isNotBlank(jarName)) {
-            script.append("""
-                    # 完整命令没命中时，再按 jar 名做一次兜底查找。
-                    if [ -z "$PID" ]; then
-                      PID=$(ps -efww | awk -v jar=%s '($8 ~ /(^|\\/)java$/) && index($0, jar) {print $2; exit}' || true)
-                    fi
-                    """.formatted(ShellKit.singleQuote(jarName)));
+    private boolean matchesStartupJudge(String output, StartupJudgeResult startupJudge) {
+        if (startupJudge == null || !startupJudge.keywordRequired() || TextKit.isBlank(startupJudge.keyword())) {
+            return false;
         }
-        if (rawKeyword.endsWith(".jar")) {
-            script.append("""
-                    if [ -z "$PID" ]; then
-                      PID=$(pgrep -f "%s" | head -n 1 || true)
-                    fi
-                    """.formatted(escapedKeyword));
-        }
-        script.append("if [ -z \"$PID\" ]");
-        if (rawKeyword.endsWith(".jar")) {
-            script.append(" && command -v jps >/dev/null 2>&1");
-        }
-        script.append("; then\n");
-        if (rawKeyword.endsWith(".jar")) {
-            script.append("  PID=$(jps -lv 2>/dev/null | grep \"").append(escapedKeyword).append("\" | awk '{print $1}' | head -n 1 || true)\n");
-        }
-        script.append("fi\n");
-        script.append("if [ -n \"$PID\" ]; then printf '__DEPLOYBOT_PID__%s\\n' \"$PID\"; fi\n");
-        return script.toString();
-    }
-
-    private Long extractPidFromOutput(String output) {
-        if (output == null || output.isBlank()) {
-            return null;
-        }
-        for (String line : output.lines().toList()) {
-            String normalized = line.trim();
-            if (normalized.startsWith("__DEPLOYBOT_PID__")) {
-                return parseNullableLong(normalized.substring("__DEPLOYBOT_PID__".length()));
+        if (startupJudge.matchMode() == top.fusb.deploybot.plugin.api.startup.StartupJudgeMatchMode.REGEX) {
+            try {
+                return Pattern.compile(startupJudge.keyword(), Pattern.MULTILINE).matcher(output == null ? "" : output).find();
+            } catch (PatternSyntaxException ex) {
+                log.warn("启动判定正则不合法，将按普通关键字匹配。pattern={}", startupJudge.keyword());
             }
         }
-        for (String line : output.lines().toList()) {
-            String normalized = line.trim();
-            if (normalized.matches("\\d+")) {
-                return parseNullableLong(normalized);
-            }
-        }
-        return null;
+        return output != null && output.contains(startupJudge.keyword());
     }
 
-    private Long parseNullableLong(String value) {
-        try {
-            return Long.parseLong(value == null ? "" : value.trim());
-        } catch (Exception ignored) {
-            return null;
-        }
-    }
+    private record ServiceVerificationResult(boolean success, boolean managedService, Long monitoredPid) {
 
-    private String resolveJarName(String keyword) {
-        if (TextKit.isBlank(keyword)) {
-            return null;
+        private static ServiceVerificationResult failed() {
+            return new ServiceVerificationResult(false, true, null);
         }
-        Matcher matcher = Pattern.compile("-jar\\s+([^\\s]+\\.jar)").matcher(keyword);
-        if (matcher.find()) {
-            return Path.of(matcher.group(1)).getFileName().toString();
+
+        private static ServiceVerificationResult managed(Long monitoredPid) {
+            return new ServiceVerificationResult(true, true, monitoredPid);
         }
-        if (keyword.endsWith(".jar")) {
-            return Path.of(keyword).getFileName().toString();
+
+        private static ServiceVerificationResult skipped() {
+            return new ServiceVerificationResult(true, false, null);
         }
-        return null;
     }
 
     private boolean isProcessAlive(HostEntity targetHost, Long pid) {
@@ -1024,49 +1007,6 @@ public class DeploymentRunner {
         }
     }
 
-    private String resolvePidDiscoveryKeyword(DeploymentEntity deployment) {
-        Map<String, String> variables = jsonMapper.toStringMap(deployment.getVariablesJson());
-        String startCommand = variables.get("startCommand");
-        if (startCommand != null) {
-            String processCommand = normalizeStartCommandForPidDiscovery(startCommand);
-            if (processCommand != null && !processCommand.isBlank()) {
-                return processCommand;
-            }
-        }
-        String jarPath = variables.get("jarPath");
-        if (jarPath != null && !jarPath.isBlank()) {
-            return Path.of(jarPath).getFileName().toString();
-        }
-        return null;
-    }
-
-    private String normalizeStartCommandForPidDiscovery(String startCommand) {
-        if (startCommand == null || startCommand.isBlank()) {
-            return null;
-        }
-        String command = startCommand.trim();
-        if (command.endsWith("&")) {
-            command = command.substring(0, command.length() - 1).trim();
-        }
-        Matcher redirectionMatcher = REDIRECTION_PATTERN.matcher(command);
-        if (redirectionMatcher.find()) {
-            command = command.substring(0, redirectionMatcher.start()).trim();
-        }
-        while (command.startsWith("nohup ")) {
-            command = command.substring("nohup ".length()).trim();
-        }
-        command = command.replaceAll("\\s+", " ");
-        Matcher javaJarMatcher = Pattern.compile("^(java(?:\\s+-(?!jar\\b)\\S+)*\\s+-jar\\s+[^\\s]+)").matcher(command);
-        if (javaJarMatcher.find()) {
-            return javaJarMatcher.group(1).trim();
-        }
-        Matcher nodeMatcher = Pattern.compile("^(node\\s+[^\\s]+)").matcher(command);
-        if (nodeMatcher.find()) {
-            return nodeMatcher.group(1).trim();
-        }
-        return command.isBlank() ? null : command;
-    }
-
     private long resolveStartupTimeoutMillis(DeploymentEntity deployment) {
         Integer startupTimeoutSeconds = deployment.getPipeline().getStartupTimeoutSeconds();
         if (startupTimeoutSeconds == null || startupTimeoutSeconds <= 0) {
@@ -1075,12 +1015,12 @@ public class DeploymentRunner {
         return Math.max(5L, startupTimeoutSeconds.longValue()) * 1_000L;
     }
 
-    private StartupLogCursor initializeStartupLogCursor(DeploymentEntity deployment, HostEntity targetHost) {
+    private StartupLogCursor initializeStartupLogCursor(DeploymentEntity deployment) {
         String runtimeLogPath = resolveRuntimeLogPath(deployment);
         if (runtimeLogPath == null) {
             return null;
         }
-        return new StartupLogCursor(runtimeLogPath, resolveRuntimeLogSize(targetHost, runtimeLogPath));
+        return new StartupLogCursor(runtimeLogPath, 0L);
     }
 
     private StartupLogReadResult readRuntimeLogDelta(StartupLogCursor cursor, HostEntity targetHost) {
@@ -1162,23 +1102,6 @@ public class DeploymentRunner {
         return new StartupLogReadResult(new StartupLogCursor(runtimeLogPath, size), content);
     }
 
-    private long resolveRuntimeLogSize(HostEntity targetHost, String runtimeLogPath) {
-        try {
-            if (targetHost != null && targetHost.getType() == HostType.SSH) {
-                String output = hostService.executeRemoteScript(
-                        targetHost.getId(),
-                        "if [ -f \"" + runtimeLogPath.replace("\"", "\\\"") + "\" ]; then wc -c < \"" + runtimeLogPath.replace("\"", "\\\"") + "\" | tr -d '[:space:]'; else echo 0; fi\n",
-                        8
-                );
-                return parseLongSafely(output, 0L);
-            }
-            Path logPath = Path.of(runtimeLogPath);
-            return Files.exists(logPath) ? Files.size(logPath) : 0L;
-        } catch (Exception ignored) {
-            return 0L;
-        }
-    }
-
     private long parseLongSafely(String value, long fallback) {
         try {
             return Long.parseLong(value == null ? "" : value.trim());
@@ -1188,16 +1111,8 @@ public class DeploymentRunner {
     }
 
     private String resolveRuntimeLogPath(DeploymentEntity deployment) {
-        Map<String, String> variables = jsonMapper.toStringMap(deployment.getVariablesJson());
-        String targetDir = variables.get("targetDir");
-        if (targetDir == null || targetDir.isBlank()) {
-            return null;
-        }
-        String applicationName = variables.get("applicationName");
-        if (applicationName == null || applicationName.isBlank()) {
-            applicationName = "application";
-        }
-        return targetDir + "/" + applicationName + ".log";
+        Map<String, String> variables = deployment.getVariables() == null ? Map.of() : deployment.getVariables();
+        return TextKit.trimToNull(variables.get("runtimeLogPath"));
     }
 
     private void appendRuntimeLogDelta(Path logFile, String delta) {
@@ -1228,41 +1143,34 @@ public class DeploymentRunner {
 
     private int runProcess(ProcessBuilder processBuilder, String stdin, Path logFile, Long deploymentId) throws Exception {
         log.info("部署 {} 开始执行进程，命令={}，目录={}。", deploymentId, processBuilder.command(), processBuilder.directory());
-        Process process = processBuilder.start();
-        runningProcesses.put(deploymentId, process);
         if (stdin != null) {
             log.info("部署 {} 正在向进程标准输入写入脚本内容，长度={}。", deploymentId, stdin.length());
-            try (OutputStreamWriter writer = new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8)) {
-                writer.write(stdin);
-                writer.flush();
-            }
         }
-
-        try (BufferedWriter writer = Files.newBufferedWriter(logFile, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-             InputStream stream = process.getInputStream();
-             InputStreamReader reader = new InputStreamReader(stream, StandardCharsets.UTF_8)) {
-            char[] buffer = new char[2048];
-            int len;
-            while (true) {
-                try {
-                    len = reader.read(buffer);
-                } catch (IOException ex) {
-                    if (isStopInterruption(deploymentId, ex)) {
-                        log.info("部署 {} 的日志流在手动停止后关闭，按正常停止处理。", deploymentId);
-                        break;
-                    }
-                    throw ex;
-                }
-                if (len == -1) {
-                    break;
-                }
-                writer.write(buffer, 0, len);
-                writer.flush();
-            }
+        try (java.io.BufferedWriter writer = Files.newBufferedWriter(
+                logFile,
+                StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.APPEND
+        )) {
+            int exitCode = ProcessKit.runStreaming(
+                    processBuilder,
+                    stdin,
+                    (buffer, offset, length) -> {
+                        writer.write(buffer, offset, length);
+                        writer.flush();
+                    },
+                    ex -> {
+                        if (isStopInterruption(deploymentId, ex)) {
+                            log.info("部署 {} 的日志流在手动停止后关闭，按正常停止处理。", deploymentId);
+                            return true;
+                        }
+                        return false;
+                    },
+                    process -> runningProcesses.put(deploymentId, process)
+            );
+            log.info("部署 {} 的进程执行结束，退出码={}。", deploymentId, exitCode);
+            return exitCode;
         }
-        int exitCode = process.waitFor();
-        log.info("部署 {} 的进程执行结束，退出码={}。", deploymentId, exitCode);
-        return exitCode;
     }
 
     private boolean isStopInterruption(Long deploymentId, IOException ex) {
@@ -1312,16 +1220,9 @@ public class DeploymentRunner {
             return;
         }
         HostEntity targetHost = deployment.getPipeline() == null ? null : deployment.getPipeline().getTargetHost();
-        Path buildWorkspaceRoot = resolveLocalWorkspaceRoot();
-        Path deployWorkspaceRoot = resolveTargetWorkspaceRoot(targetHost, buildWorkspaceRoot);
         Long pid = deployment.getMonitoredPid();
         if (pid == null) {
-            pid = readMonitoredPid(
-                    deployment,
-                    targetHost,
-                    deployWorkspaceRoot.resolve(PID_DIR),
-                    deployment.getId()
-            );
+            pid = readMonitoredPid(deployment, targetHost, deployment.getId());
         }
         if (pid == null) {
             return;
@@ -1364,26 +1265,6 @@ public class DeploymentRunner {
         }
     }
 
-    private void clearRuntimePidFileIfPresent(DeploymentEntity deployment, HostEntity targetHost, Path deployWorkspaceRoot) {
-        try {
-            String pidFilePath = jsonMapper.toStringMap(deployment.getVariablesJson()).get("pidFilePath");
-            if (pidFilePath == null || pidFilePath.isBlank()) {
-                return;
-            }
-            if (targetHost != null && targetHost.getType() == HostType.SSH) {
-                hostService.executeRemoteScript(
-                        targetHost.getId(),
-                        "rm -f \"" + pidFilePath.replace("\"", "\\\"") + "\"\n",
-                        8
-                );
-                return;
-            }
-            Files.deleteIfExists(Path.of(pidFilePath));
-        } catch (Exception ex) {
-            log.warn("部署 {} 清理旧 PID 文件失败：{}", deployment == null ? null : deployment.getId(), ex.getMessage());
-        }
-    }
-
     private void syncArtifactsToRemote(
             HostEntity targetHost,
             Path localArtifactDir,
@@ -1395,7 +1276,7 @@ public class DeploymentRunner {
         appendSystemLog(logFile, "开始同步构建产物到远程主机：" + remoteArtifactDir);
         log.info("部署 {} 开始同步构建产物到远端目录 {}。", deploymentId, remoteArtifactDir);
         int copyExitCode = runProcess(
-                new ProcessBuilder(buildArtifactSyncCommand(targetHost, sshDir, localArtifactDir, remoteArtifactDir.toString())).redirectErrorStream(true),
+                ProcessKit.mergedBuilder(buildArtifactSyncCommand(targetHost, sshDir, localArtifactDir, remoteArtifactDir.toString())),
                 null,
                 logFile,
                 deploymentId

@@ -1,8 +1,9 @@
 package top.fusb.deploybot.notification.service;
 
-import com.fasterxml.jackson.core.type.TypeReference;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import top.fusb.deploybot.kit.TextKit;
 import top.fusb.deploybot.kit.TimeKit;
@@ -21,7 +22,6 @@ import top.fusb.deploybot.repo.UserRepository;
 import top.fusb.deploybot.notification.sender.NotificationMessage;
 import top.fusb.deploybot.notification.sender.NotificationSendResult;
 import top.fusb.deploybot.notification.sender.NotificationSender;
-import top.fusb.deploybot.service.JsonMapper;
 import top.fusb.deploybot.service.ScriptTemplateService;
 
 import java.time.LocalDateTime;
@@ -32,6 +32,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
 public class DeploymentNotificationService {
     private static final Logger log = LoggerFactory.getLogger(DeploymentNotificationService.class);
     private static final String DEFAULT_TEMPLATE = """
@@ -52,30 +53,10 @@ public class DeploymentNotificationService {
     private final NotificationChannelRepository notificationChannelRepository;
     private final List<NotificationSender> senders;
     private final ScriptTemplateService scriptTemplateService;
-    private final JsonMapper jsonMapper;
     private final UserRepository userRepository;
     private final NotificationDeliveryRecordService notificationDeliveryRecordService;
-    private final String baseUrl;
-
-    public DeploymentNotificationService(
-            DeploymentRepository deploymentRepository,
-            NotificationChannelRepository notificationChannelRepository,
-            List<NotificationSender> senders,
-            ScriptTemplateService scriptTemplateService,
-            JsonMapper jsonMapper,
-            UserRepository userRepository,
-            NotificationDeliveryRecordService notificationDeliveryRecordService,
-            @org.springframework.beans.factory.annotation.Value("${deploybot.base-url:http://localhost:8080}") String baseUrl
-    ) {
-        this.deploymentRepository = deploymentRepository;
-        this.notificationChannelRepository = notificationChannelRepository;
-        this.senders = senders;
-        this.scriptTemplateService = scriptTemplateService;
-        this.jsonMapper = jsonMapper;
-        this.userRepository = userRepository;
-        this.notificationDeliveryRecordService = notificationDeliveryRecordService;
-        this.baseUrl = baseUrl;
-    }
+    @Value("${deploybot.base-url:http://localhost:8080}")
+    private String baseUrl;
 
     public void notifyDeploymentEvent(Long deploymentId, NotificationEventType eventType) {
         deploymentRepository.findById(deploymentId).ifPresent(item -> notifyDeploymentEvent(item, eventType));
@@ -84,14 +65,10 @@ public class DeploymentNotificationService {
     public void notifyDeploymentEvent(DeploymentEntity deployment, NotificationEventType eventType) {
         try {
             PipelineEntity pipeline = deployment.getPipeline();
-            if (pipeline == null || TextKit.isBlank(pipeline.getNotificationBindingsJson())) {
+            if (pipeline == null || pipeline.getNotificationBindings() == null || pipeline.getNotificationBindings().isEmpty()) {
                 return;
             }
-            List<NotificationBinding> bindings = jsonMapper.read(
-                    pipeline.getNotificationBindingsJson(),
-                    new TypeReference<>() {
-                    }
-            );
+            List<NotificationBinding> bindings = pipeline.getNotificationBindings();
             List<Long> channelIds = bindings.stream()
                     .filter(item -> item != null && item.notificationId() != null && item.eventType() == eventType)
                     .map(NotificationBinding::notificationId)
@@ -190,8 +167,7 @@ public class DeploymentNotificationService {
         variables.put("stoppedBy", nullToDash(deployment.getStoppedBy()));
         variables.put("stoppedByDisplayName", resolveDisplayName(deployment.getStoppedBy()));
         variables.put("hostName", pipeline == null || pipeline.getTargetHost() == null ? "本机" : TextKit.valueOrDash(pipeline.getTargetHost().getName()));
-        variables.put("applicationName", pipeline == null ? "-" : TextKit.valueOrDash(pipeline.getApplicationName()));
-        variables.put("springProfile", pipeline == null ? "-" : TextKit.valueOrDash(pipeline.getSpringProfile()));
+        variables.put("serviceName", pipeline == null ? "-" : TextKit.valueOrDash(pipeline.getName()));
         variables.put("startedAt", TimeKit.formatDateTime(deployment.getStartedAt()));
         variables.put("finishedAt", TimeKit.formatDateTime(deployment.getFinishedAt()));
         variables.put("duration", TimeKit.formatDuration(deployment.getStartedAt(), deployment.getFinishedAt()));

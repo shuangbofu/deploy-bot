@@ -10,6 +10,8 @@ public record TemplateRequest(
         String description,
         /** 模板类型。 */
         String templateType,
+        /** 对应的部署类型插件标识。 */
+        String pluginId,
         /** 构建脚本。 */
         String buildScriptContent,
         /** 发布脚本。 */

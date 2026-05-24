@@ -30,7 +30,7 @@ export function getDeploymentProgressLabel(
   progressText?: string | null,
 ) {
   if (progressText && progressText.trim()) {
-    return progressText;
+    return progressText.trim().replace(/（(?:失败|已停止)）$/u, '');
   }
   if (status === 'RUNNING') {
     return '部署中';
