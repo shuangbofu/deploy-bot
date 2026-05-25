@@ -47,6 +47,11 @@ public class TemplateController {
         return service.findPage(page, pageSize, keyword, templateType, pluginId, monitorProcess);
     }
 
+    @GetMapping("/{id}")
+    public TemplateEntity detail(@PathVariable Long id) {
+        return service.findById(id);
+    }
+
     /**
      * 新建模板。
      */

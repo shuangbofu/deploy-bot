@@ -95,6 +95,10 @@ export default function App() {
           <Route path="hosts/:hostId/environments" element={<RuntimeEnvironmentsPage />} />
           <Route path="plugins" element={<PluginAdminPage />} />
           <Route path="plugins/:pluginId/templates" element={<TemplateAdminPage />} />
+          <Route path="plugins/:pluginId/templates/new" element={<TemplateAdminPage mode="create" />} />
+          <Route path="plugins/:pluginId/templates/builtin/:builtinTemplateKey" element={<TemplateAdminPage mode="builtin-view" />} />
+          <Route path="plugins/:pluginId/templates/:templateId" element={<TemplateAdminPage mode="view" />} />
+          <Route path="plugins/:pluginId/templates/:templateId/edit" element={<TemplateAdminPage mode="edit" />} />
           <Route path="templates" element={<Navigate to="/admin/plugins" replace />} />
           <Route path="pipelines" element={<AdminPipelineWorkspacePage />} />
           <Route path="pipelines/new" element={<PipelineAdminPage mode="create" />} />

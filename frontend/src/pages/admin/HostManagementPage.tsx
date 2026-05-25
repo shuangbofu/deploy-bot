@@ -414,7 +414,7 @@ export default function HostManagementPage() {
               },
               {
                 title: '操作',
-                width: 420,
+                width: 360,
                 render: (_, record) => (
                   <Space>
                     <Button size="small" onClick={() => navigate(`/admin/hosts/${record.id}/environments`)}>

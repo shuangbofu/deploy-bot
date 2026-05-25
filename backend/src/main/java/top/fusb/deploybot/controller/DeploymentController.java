@@ -3,6 +3,7 @@ package top.fusb.deploybot.controller;
 import top.fusb.deploybot.dto.DeploymentRequest;
 import top.fusb.deploybot.dto.DeploymentFilterOptions;
 import top.fusb.deploybot.dto.DeploymentListSummary;
+import top.fusb.deploybot.dto.DeploymentPrecheckResult;
 import top.fusb.deploybot.dto.DeploymentPluginPlanSummary;
 import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.model.DeploymentEntity;
@@ -155,6 +156,11 @@ public class DeploymentController {
     @PostMapping
     public DeploymentEntity create(@Valid @RequestBody DeploymentRequest request) {
         return service.create(request);
+    }
+
+    @PostMapping("/precheck")
+    public DeploymentPrecheckResult precheck(@Valid @RequestBody DeploymentRequest request) {
+        return service.precheck(request);
     }
 
     /**

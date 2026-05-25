@@ -211,6 +211,12 @@ export interface DeploymentPayload {
   replaceRunning: boolean;
 }
 
+export interface DeploymentPrecheckResult {
+  passed: boolean;
+  missingItems: string[];
+  message: string;
+}
+
 /**
  * 系统设置表单请求体。
  */

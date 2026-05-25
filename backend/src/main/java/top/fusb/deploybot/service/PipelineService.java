@@ -2,6 +2,7 @@ package top.fusb.deploybot.service;
 
 import lombok.RequiredArgsConstructor;
 import top.fusb.deploybot.dto.PageResult;
+import top.fusb.deploybot.dto.PipelineBranchOption;
 import top.fusb.deploybot.dto.PipelineHallSummary;
 import top.fusb.deploybot.dto.PipelineRequest;
 import top.fusb.deploybot.exception.BusinessException;
@@ -128,9 +129,33 @@ public class PipelineService {
                             latestDeployment == null ? null : latestDeployment.getFinishedAt(),
                             latestDeployment == null ? null : latestDeployment.getProgressPercent(),
                             latestDeployment == null ? null : latestDeployment.getProgressText(),
+                            latestDeployment == null ? pipeline.getId() : latestDeployment.getId(),
                             favoritePipelineIds.contains(pipeline.getId())
                     );
                 })
+                .toList();
+    }
+
+    public List<PipelineBranchOption> buildBranchOptions(Long pipelineId, List<String> branches) {
+        PipelineEntity pipeline = findById(pipelineId);
+        Set<String> recentBranches = deploymentRepository.findTop10ByPipelineIdOrderByCreatedAtDesc(pipelineId).stream()
+                .map(top.fusb.deploybot.model.DeploymentEntity::getBranchName)
+                .filter(TextKit::isNotBlank)
+                .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+        Set<String> mergedBranches = new java.util.LinkedHashSet<>();
+        if (branches != null) {
+            branches.stream().filter(TextKit::isNotBlank).map(String::trim).forEach(mergedBranches::add);
+        }
+        if (TextKit.isNotBlank(pipeline.getDefaultBranch())) {
+            mergedBranches.add(pipeline.getDefaultBranch().trim());
+        }
+        mergedBranches.addAll(recentBranches);
+        return mergedBranches.stream()
+                .map(branch -> new PipelineBranchOption(
+                        branch,
+                        branch.equals(pipeline.getDefaultBranch()),
+                        recentBranches.contains(branch)
+                ))
                 .toList();
     }
 

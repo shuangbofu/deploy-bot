@@ -493,7 +493,7 @@ export default function RuntimeEnvironmentsPage() {
               },
               {
                 title: '操作',
-                width: 260,
+                width: 190,
                 render: (_, record) => (
                   <Space>
                     <Button size="small" onClick={() => openEdit(record)}>编辑</Button>

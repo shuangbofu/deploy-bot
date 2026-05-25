@@ -253,7 +253,7 @@ export default function ProjectAdminPage() {
               },
               {
                 title: '操作',
-                width: 280,
+                width: 238,
                 render: (_, record) => (
                   <Space>
                     <Button

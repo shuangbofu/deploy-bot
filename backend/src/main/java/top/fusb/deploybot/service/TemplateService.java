@@ -28,6 +28,11 @@ public class TemplateService {
                 .toList();
     }
 
+    public TemplateEntity findById(Long id) {
+        return normalizePluginId(repository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.TEMPLATE_NOT_FOUND)));
+    }
+
     public PageResult<TemplateEntity> findPage(int page, int pageSize, String keyword, String templateType, String pluginId, Boolean monitorProcess) {
         org.springframework.data.domain.Page<TemplateEntity> result = repository.findAll((root, query, cb) -> {
             List<jakarta.persistence.criteria.Predicate> predicates = new java.util.ArrayList<>();

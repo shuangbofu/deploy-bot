@@ -189,7 +189,7 @@ export default function UserPipelineHistoryPage({
               { title: '耗时', render: (_, row) => formatDeploymentElapsed(row, tick) },
               {
                 title: '操作',
-                width: 220,
+                width: 210,
                 render: (_, row) => (
                   <Space wrap>
                     <Button

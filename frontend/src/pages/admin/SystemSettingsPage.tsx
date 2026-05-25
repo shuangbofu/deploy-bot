@@ -827,7 +827,7 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
                             { title: '状态', render: (_, record) => enabledStatus(record.enabled), width: 100 },
                             {
                               title: '操作',
-                              width: 160,
+                              width: 136,
                               render: (_, record) => (
                                 <Space>
                                   <Button size="small" onClick={() => openEditWebhook(record)}>编辑</Button>
@@ -872,7 +872,7 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
                             { title: '状态', render: (_, record) => enabledStatus(record.enabled), width: 100 },
                             {
                               title: '操作',
-                              width: 160,
+                              width: 136,
                               render: (_, record) => (
                                 <Space>
                                   <Button size="small" onClick={() => openEditTemplate(record)}>编辑</Button>

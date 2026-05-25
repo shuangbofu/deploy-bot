@@ -1,5 +1,9 @@
-import { useLayoutEffect, useRef, useState } from 'react';
-import { Button } from 'antd';
+import { forwardRef, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
+
+export type LogAnchor = {
+  index: number;
+  label: string;
+};
 
 type LogViewerProps = {
   /** 原始日志内容。 */
@@ -10,6 +14,20 @@ type LogViewerProps = {
   autoScrollAvailable?: boolean;
   /** 运行中但暂时没有新日志时显示的临时提示，不写入日志正文。 */
   idleHint?: string;
+  /** 滚动控制状态变化时通知父组件刷新按钮。 */
+  onControlStateChange?: () => void;
+  /** 日志目录变化时通知父组件渲染顶部目录按钮。 */
+  onAnchorsChange?: (anchors: LogAnchor[]) => void;
+};
+
+export type LogViewerHandle = {
+  canBackToTop: boolean;
+  canBackToBottom: boolean;
+  autoScroll: boolean;
+  scrollToTop: () => void;
+  scrollToBottom: () => void;
+  toggleAutoScroll: () => void;
+  scrollToLine: (lineIndex: number) => void;
 };
 
 const normalizeTerminalLogLines = (content: string) => {
@@ -35,16 +53,35 @@ const normalizeTerminalLogLines = (content: string) => {
   return lines;
 };
 
+const buildLogAnchors = (lines: string[]) => lines
+  .map((line, index) => ({ line, index }))
+  .filter(({ line }) => /^\[步骤\s*\d+\/\d+]/.test(line)
+    || /^\[完成]/.test(line)
+    || /^\[系统].*(构建完成|发布阶段|部署失败|启动观察未通过|服务检测超时)/.test(line)
+    || /(BUILD FAILURE|npm ERR|ERROR|Exception|失败|错误)/.test(line))
+  .slice(-18)
+  .map(({ line, index }) => ({
+    index,
+    label: line.replace(/^\[系统]\s*\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\s*/, '[系统] ').slice(0, 34),
+  }));
+
 /**
  * 日志查看器。
  * 负责高亮命令追踪和错误行，并把页面滚动限制在日志容器内部。
  */
-export default function LogViewer({ content, maxHeight, autoScrollAvailable = false, idleHint }: LogViewerProps) {
+const LogViewer = forwardRef<LogViewerHandle, LogViewerProps>(function LogViewer(
+  { content, maxHeight, autoScrollAvailable = false, idleHint, onControlStateChange, onAnchorsChange },
+  ref,
+) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [showBackToBottom, setShowBackToBottom] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
-  const lines = normalizeTerminalLogLines(content);
+  const onControlStateChangeRef = useRef(onControlStateChange);
+  const onAnchorsChangeRef = useRef(onAnchorsChange);
+  const lines = useMemo(() => normalizeTerminalLogLines(content), [content]);
+  const anchors = useMemo(() => buildLogAnchors(lines), [lines]);
+  const anchorSignature = useMemo(() => anchors.map((anchor) => `${anchor.index}:${anchor.label}`).join('|'), [anchors]);
   const updateScrollButtons = (element: HTMLDivElement) => {
     const bottomDistance = element.scrollHeight - element.scrollTop - element.clientHeight;
     setShowBackToTop(element.scrollTop > 120);
@@ -67,6 +104,22 @@ export default function LogViewer({ content, maxHeight, autoScrollAvailable = fa
     }
   }, [autoScrollAvailable]);
 
+  useLayoutEffect(() => {
+    onControlStateChangeRef.current = onControlStateChange;
+  }, [onControlStateChange]);
+
+  useLayoutEffect(() => {
+    onAnchorsChangeRef.current = onAnchorsChange;
+  }, [onAnchorsChange]);
+
+  useLayoutEffect(() => {
+    onControlStateChangeRef.current?.();
+  }, [autoScroll, showBackToBottom, showBackToTop]);
+
+  useLayoutEffect(() => {
+    onAnchorsChangeRef.current?.(anchors);
+  }, [anchorSignature, anchors]);
+
   const scrollToTop = () => {
     if (!containerRef.current) {
       return;
@@ -86,6 +139,20 @@ export default function LogViewer({ content, maxHeight, autoScrollAvailable = fa
       window.requestAnimationFrame(() => scrollToBottom());
     }
   };
+  const scrollToLine = (lineIndex: number) => {
+    const element = containerRef.current?.querySelector<HTMLElement>(`[data-log-line="${lineIndex}"]`);
+    element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
+  useImperativeHandle(ref, () => ({
+    canBackToTop: showBackToTop,
+    canBackToBottom: showBackToBottom,
+    autoScroll,
+    scrollToTop,
+    scrollToBottom,
+    toggleAutoScroll,
+    scrollToLine,
+  }), [autoScroll, showBackToBottom, showBackToTop]);
 
   return (
     <div className="log-viewer-shell">
@@ -112,6 +179,7 @@ export default function LogViewer({ content, maxHeight, autoScrollAvailable = fa
             <div
               key={`${index}-${line}`}
               className={lineClassName}
+              data-log-line={index}
             >
               {line || ' '}
             </div>
@@ -123,19 +191,8 @@ export default function LogViewer({ content, maxHeight, autoScrollAvailable = fa
           </div>
         ) : null}
       </div>
-      <div className="log-viewer-actions">
-        {showBackToTop ? (
-          <Button size="small" onClick={scrollToTop}>回到顶部</Button>
-        ) : null}
-        {showBackToBottom ? (
-          <Button size="small" onClick={scrollToBottom}>回到底部</Button>
-        ) : null}
-        {autoScrollAvailable ? (
-          <Button size="small" onClick={toggleAutoScroll}>
-            {autoScroll ? '暂停滚动' : '恢复滚动'}
-          </Button>
-        ) : null}
-      </div>
     </div>
   );
-}
+});
+
+export default LogViewer;

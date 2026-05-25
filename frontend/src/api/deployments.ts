@@ -1,5 +1,5 @@
 import client from './client';
-import type { DeploymentFilterOptions, DeploymentPayload, DeploymentSummary, LogResponse, PageResult, UserRecentPipelineSummary } from './types';
+import type { DeploymentFilterOptions, DeploymentPayload, DeploymentPrecheckResult, DeploymentSummary, LogResponse, PageResult, UserRecentPipelineSummary } from './types';
 
 /**
  * 部署记录与部署动作接口。
@@ -32,6 +32,7 @@ export const deploymentsApi = {
   }) => (await client.get<PageResult<DeploymentSummary>>('/deployments/mine/page', { params })).data,
   detail: async (id: number | string) => (await client.get<DeploymentSummary>(`/deployments/${id}`)).data,
   getLog: async (id: number | string) => (await client.get<LogResponse>(`/deployments/${id}/log`)).data,
+  precheck: async (payload: DeploymentPayload) => (await client.post<DeploymentPrecheckResult>('/deployments/precheck', payload)).data,
   create: async (payload: DeploymentPayload) => (await client.post<DeploymentSummary>('/deployments', payload)).data,
   stop: async (id: number | string) => (await client.post<DeploymentSummary>(`/deployments/${id}/stop`)).data,
   rollback: async (id: number | string) => (await client.post<DeploymentSummary>(`/deployments/${id}/rollback`)).data,

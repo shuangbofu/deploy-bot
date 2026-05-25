@@ -3,8 +3,8 @@ import {
   ChartPieSlice,
   ClockCounterClockwise,
   DesktopTower,
-  FolderOpen,
   GearSix,
+  GitBranch,
   HardDrives,
   Package,
   PuzzlePiece,
@@ -32,7 +32,7 @@ type Props = {
 
 const icons = {
   dashboard: ChartPieSlice,
-  project: FolderOpen,
+  project: GitBranch,
   host: HardDrives,
   plugin: PuzzlePiece,
   pipeline: RocketLaunch,

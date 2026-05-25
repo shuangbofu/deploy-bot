@@ -203,6 +203,7 @@ export default function UserAdminPage() {
             { title: '状态', render: (_, record) => (record.enabled ? '启用' : '停用') },
             {
               title: '操作',
+              width: 220,
               render: (_, record) => (
                 <Space>
                   <Button size="small" onClick={() => openEdit(record)}>编辑</Button>

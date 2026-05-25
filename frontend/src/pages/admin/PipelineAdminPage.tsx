@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Steps, Table, Tag, message } from 'antd';
+import { EllipsisOutlined } from '@ant-design/icons';
+import { Button, Card, Dropdown, Form, Input, Modal, Select, Space, Steps, Table, Tag, message } from 'antd';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { deploymentPluginsApi } from '../../api/deploymentPlugins';
 import { hostsApi } from '../../api/hosts';
@@ -319,6 +320,14 @@ const includesOptionValue = (options: SelectOptionItem[], value?: SelectOptionVa
   value != null && options.some((item) => item.value === value)
 );
 
+const buildPipelineFormSnapshot = (value: PipelineFormState) => JSON.stringify({
+  ...value,
+  tags: [...(value.tags || [])].sort(),
+  variables: Object.fromEntries(Object.entries(value.variables || {}).sort(([left], [right]) => left.localeCompare(right))),
+  pluginConfig: Object.fromEntries(Object.entries(value.pluginConfig || {}).sort(([left], [right]) => left.localeCompare(right))),
+  notificationIds: [...(value.notificationIds || [])].sort((left, right) => left - right),
+});
+
 const getLocalBuildEnvironmentOptions = (
   items: RuntimeEnvironmentSummary[],
   type: RuntimeEnvironmentSummary['type'],
@@ -387,6 +396,7 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
   const [searchParams] = useSearchParams();
   const routePipelineId = pipelineId ? Number(pipelineId) : undefined;
   const tableWrapRef = useRef<HTMLDivElement | null>(null);
+  const initialFormSnapshotRef = useRef(buildPipelineFormSnapshot(emptyPipeline));
   const [projects, setProjects] = useState<PipelineSummary['project'][]>([]);
   const [hosts, setHosts] = useState<HostSummary[]>([]);
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
@@ -414,6 +424,28 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
   const [tagFilter, setTagFilter] = useState<string[]>();
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
   const workspaceBackPath = searchParams.get('fromTab') === 'manage' ? '/admin/pipelines?tab=manage' : '/admin/pipelines';
+
+  const updateFormWithSnapshot = (nextForm: PipelineFormState) => {
+    initialFormSnapshotRef.current = buildPipelineFormSnapshot(nextForm);
+    setForm(nextForm);
+  };
+
+  const isFormChanged = () => initialFormSnapshotRef.current !== buildPipelineFormSnapshot(form);
+
+  const cancelEditing = () => {
+    if (!isFormChanged()) {
+      navigate(workspaceBackPath);
+      return;
+    }
+    Modal.confirm({
+      title: '丢弃当前修改？',
+      content: '当前流水线配置还没有保存，确认取消后这些修改会丢失。',
+      okText: '丢弃修改',
+      cancelText: '继续编辑',
+      okButtonProps: { danger: true },
+      onOk: () => navigate(workspaceBackPath),
+    });
+  };
 
   const rememberPipelineTableScrollLeft = () => {
     const scrollBody = tableWrapRef.current?.querySelector('.ant-table-body') as HTMLDivElement | null;
@@ -528,7 +560,11 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
           return;
         }
         if (!form.defaultBranch && branches.length > 0) {
-          setForm((previous) => ({ ...previous, defaultBranch: branches[0] }));
+          setForm((previous) => {
+            const next = { ...previous, defaultBranch: branches[0] };
+            initialFormSnapshotRef.current = buildPipelineFormSnapshot(next);
+            return next;
+          });
         }
       })
       .catch(() => {
@@ -564,7 +600,7 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
   useEffect(() => {
     if (mode === 'create') {
       setEditingId(undefined);
-      setForm(emptyPipeline);
+      updateFormWithSnapshot(emptyPipeline);
       setBranchOptions([]);
       setMavenSettings([]);
       setCurrentStep(0);
@@ -596,7 +632,7 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
     setEditingId(undefined);
     const currentTemplateOption = templateOptions.find((item) => matchesPipelineTemplateOption(item, record));
     const plugin = plugins.find((item) => item.descriptor.pluginId === (currentTemplateOption?.pluginId || record.templatePluginId || record.template?.pluginId)) || null;
-    setForm({
+    const nextForm = {
       name: record.name || '',
       description: record.description || '',
       tags: normalizeTags(record.tags),
@@ -617,7 +653,8 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
       startupTimeoutSeconds: record.startupTimeoutSeconds || undefined,
       pluginConfig: extractPluginConfig(record, plugin),
       notificationIds: deriveNotificationIds(normalizeNotificationBindings(record.notificationBindings)),
-    });
+    };
+    updateFormWithSnapshot(nextForm);
     setBranchOptions(mergeBranchOptions([], record.defaultBranch || 'main'));
     setCurrentStep(0);
   };
@@ -937,6 +974,9 @@ const selectedTemplateVariables = useMemo(
           ...(item.type === 'MAVEN' ? { mavenSettingsId: undefined } : {}),
         };
       });
+      if (next !== previous && initialFormSnapshotRef.current === buildPipelineFormSnapshot(previous)) {
+        initialFormSnapshotRef.current = buildPipelineFormSnapshot(next);
+      }
       return next;
     });
   }, [buildEnvironmentOptionsMap, mode, requiredEnvironmentTypes]);
@@ -953,10 +993,14 @@ const selectedTemplateVariables = useMemo(
       if (singleValue == null && previous.runtimeJavaEnvironmentId == null) {
         return previous;
       }
-      return {
+      const next = {
         ...previous,
         runtimeJavaEnvironmentId: singleValue as number | undefined,
       };
+      if (initialFormSnapshotRef.current === buildPipelineFormSnapshot(previous)) {
+        initialFormSnapshotRef.current = buildPipelineFormSnapshot(next);
+      }
+      return next;
     });
   }, [mode, requiredRuntimeEnvironmentTypes, runtimeJavaOptions]);
 
@@ -972,10 +1016,14 @@ const selectedTemplateVariables = useMemo(
       if (singleValue == null && previous.mavenSettingsId == null) {
         return previous;
       }
-      return {
+      const next = {
         ...previous,
         mavenSettingsId: singleValue as number | undefined,
       };
+      if (initialFormSnapshotRef.current === buildPipelineFormSnapshot(previous)) {
+        initialFormSnapshotRef.current = buildPipelineFormSnapshot(next);
+      }
+      return next;
     });
   }, [form.mavenEnvironmentId, mavenSettingsOptions, mode, requiredEnvironmentTypes]);
 
@@ -1095,7 +1143,7 @@ const selectedTemplateVariables = useMemo(
           extra={<Button onClick={() => navigate(workspaceBackPath)}>返回</Button>}
         />
         <div className="app-page-scroll">
-          <div className="space-y-4">
+          <div className="mx-auto max-w-6xl space-y-4">
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <Card title="基础信息" className="app-card">
               <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
@@ -1163,16 +1211,22 @@ const selectedTemplateVariables = useMemo(
         <PageHeaderBar
           title={mode === 'edit' ? '编辑流水线' : '新建流水线'}
           description="配置项目、模板、环境、运行参数和变量。"
-          extra={<Button onClick={() => navigate(workspaceBackPath)}>返回</Button>}
+          extra={(
+            <Space>
+              <Button danger={isFormChanged()} onClick={cancelEditing}>{isFormChanged() ? '取消' : '返回'}</Button>
+              <Button onClick={() => updateFormWithSnapshot(JSON.parse(initialFormSnapshotRef.current))}>重置</Button>
+              <Button type="primary" onClick={() => savePipeline().catch(() => undefined)}>{mode === 'edit' ? '保存' : '创建'}</Button>
+            </Space>
+          )}
         />
-        <div className="app-page-scroll">
-          <div className="mx-auto flex min-h-[calc(100vh-170px)] max-w-5xl flex-col">
+        <div className="app-page-scroll min-h-0">
+          <div className="mx-auto flex h-full min-h-0 max-w-5xl flex-col">
             <div className="sticky top-0 z-20 pb-3">
               <Card className="app-card">
               <Steps size="small" current={currentStep} onChange={setCurrentStep} items={stepItems} />
             </Card>
             </div>
-            <div className="flex-1 pb-20">
+            <div className="min-h-0 flex-1 overflow-auto pb-4">
             {currentStepKey === 'basic' ? <Card title="基础信息" className="app-card">
               <Form layout="vertical">
                 <Form.Item label="流水线名称" required>
@@ -1269,12 +1323,12 @@ const selectedTemplateVariables = useMemo(
               <Select mode="multiple" allowClear value={form.notificationIds} placeholder="选择这条流水线要绑定的通知配置" options={notifications.filter((item) => item.enabled).map((item) => ({ label: item.name, value: item.id }))} onChange={(value) => setForm({ ...form, notificationIds: value })} className="w-full" />
             </Card> : null}
             </div>
-            <div className="sticky bottom-0 z-20 flex justify-end gap-2 border-t border-slate-200/70 px-4 py-3 backdrop-blur-sm">
-              <Button onClick={() => navigate(workspaceBackPath)}>取消</Button>
-              {currentStep > 0 ? <Button onClick={() => setCurrentStep((value) => value - 1)}>上一步</Button> : null}
-              {currentStep < stepItems.length - 1 ? <Button onClick={() => setCurrentStep((value) => value + 1)}>下一步</Button> : null}
-              <Button type="primary" onClick={() => savePipeline().catch(() => undefined)}>{mode === 'edit' ? '保存' : '创建'}</Button>
-            </div>
+            {stepItems.length > 1 ? (
+              <div className="shrink-0 flex justify-end gap-2 border-t border-slate-200/70 px-4 py-3 backdrop-blur-sm">
+                {currentStep > 0 ? <Button onClick={() => setCurrentStep((value) => value - 1)}>上一步</Button> : null}
+                {currentStep < stepItems.length - 1 ? <Button onClick={() => setCurrentStep((value) => value + 1)}>下一步</Button> : null}
+              </div>
+            ) : null}
           </div>
         </div>
       </>
@@ -1383,7 +1437,7 @@ const selectedTemplateVariables = useMemo(
         <Table
           rowKey="id"
           loading={loading}
-          scroll={{ x: 1720 }}
+          scroll={{ x: 2200 }}
           dataSource={tableData}
           locale={{ emptyText: <EmptyPane description="还没有流水线，点击右上角先把项目和模板组合起来。" /> }}
           pagination={{
@@ -1397,13 +1451,7 @@ const selectedTemplateVariables = useMemo(
           columns={[
               {
                 title: '名称',
-                width: 200,
-                onHeaderCell: () => ({
-                  style: {
-                    minWidth: 200,
-                    maxWidth: 100,
-                  },
-                }),
+                width: 220,
                 render: (_, row) => (
                   <div className="flex items-center gap-0.5">
                     <div className="scale-[0.82] origin-left">
@@ -1413,24 +1461,13 @@ const selectedTemplateVariables = useMemo(
                   </div>
                 ),
               },
-              { title: '项目', render: (_, row) => row.project?.name },
-              { title: '目标主机', render: (_, row) => row.targetHost?.name || '-' },
-              { title: '模板',  onCell: () => ({
-                                               style: {
-                                                 minWidth: 150,
-                                                 maxWidth: 300,
-                                               },
-                                             }), render: (_, row) => row.resolvedTemplateOption?.name || row.templateNameSnapshot || row.template?.name },
+              { title: '项目', width: 160, render: (_, row) => row.project?.name },
+              { title: '目标主机', width: 160, render: (_, row) => row.targetHost?.name || '-' },
+              { title: '模板', width: 220, render: (_, row) => row.resolvedTemplateOption?.name || row.templateNameSnapshot || row.template?.name },
               {
                 title: '描述',
                 dataIndex: 'description',
-                width: 360,
-                onCell: () => ({
-                  style: {
-                    minWidth: 250,
-                    maxWidth: 360,
-                  },
-                }),
+                width: 320,
                 render: (value) => value ? (
                   <div className="py-1 text-sm leading-6 whitespace-normal break-words text-slate-600 line-clamp-2" title={value}>
                     {value}
@@ -1459,6 +1496,7 @@ const selectedTemplateVariables = useMemo(
               { title: '默认分支', dataIndex: 'defaultBranch', width: 120 },
               {
                 title: '变量',
+                width: 360,
                 render: (_, row) => (
                     <Space wrap>
                       {row.parsedTemplateVariables.length === 0 ? <span className="text-slate-400">无</span> : null}
@@ -1495,7 +1533,7 @@ const selectedTemplateVariables = useMemo(
               },
               {
                 title: '环境版本',
-                width: 360,
+                width: 320,
                 render: (_, row) => {
                   const items = [
                     row.javaEnvironment ? `构建组件 ${row.javaEnvironment.type}：${row.javaEnvironment.name}` : null,
@@ -1516,23 +1554,40 @@ const selectedTemplateVariables = useMemo(
               },
               {
                 title: '操作',
-                width: 240,
+                width: 146,
+                fixed: 'right',
                 render: (_, record) => (
-                  <Space>
+                  <Space size={6} className="w-full justify-center whitespace-nowrap px-1">
                     <Button size="small" onClick={() => {
                       rememberPipelineTableScrollLeft();
                       navigate(`/admin/pipelines/${record.id}?fromTab=manage`);
                     }}>查看</Button>
                     <Button size="small" onClick={() => openEdit(record)}>编辑</Button>
-                    <Button size="small" onClick={() => openDuplicate(record)}>复制</Button>
-                    <Popconfirm
-                      title="确认删除这条流水线吗？"
-                      okText="确认"
-                      cancelText="取消"
-                      onConfirm={() => removePipeline(record.id)}
+                    <Dropdown
+                      trigger={['click']}
+                      menu={{
+                        items: [
+                          { key: 'duplicate', label: '复制' },
+                          { key: 'delete', label: <span className="text-red-500">删除</span> },
+                        ],
+                        onClick: ({ key }) => {
+                          if (key === 'duplicate') {
+                            openDuplicate(record);
+                          }
+                          if (key === 'delete') {
+                            Modal.confirm({
+                              title: '确认删除这条流水线吗？',
+                              okText: '确认',
+                              cancelText: '取消',
+                              okButtonProps: { danger: true },
+                              onOk: () => removePipeline(record.id),
+                            });
+                          }
+                        },
+                      }}
                     >
-                      <Button size="small" danger>删除</Button>
-                    </Popconfirm>
+                      <Button size="small" icon={<EllipsisOutlined />} />
+                    </Dropdown>
                   </Space>
                 ),
               },

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Card, Divider, Form, Input, Modal, Popconfirm, Select, Space, Steps, Switch, Table, Tag, Tabs, message } from 'antd';
 import { useNavigate, useParams } from 'react-router-dom';
 import { deploymentPluginsApi } from '../../api/deploymentPlugins';
@@ -46,6 +46,8 @@ const emptyTemplate: TemplateFormState = {
   deployScriptContent: '',
   monitorProcess: false,
 };
+
+const buildTemplateFormSnapshot = (value: TemplateFormState) => JSON.stringify(value);
 
 const parseVariablesSchema = (content) => {
   if (!content) {
@@ -145,23 +147,46 @@ function renderVariableTitle(item: { label?: string; name: string }) {
   return item.label || item.name;
 }
 
-export default function TemplateAdminPage() {
+type TemplatePageMode = 'list' | 'create' | 'edit' | 'view' | 'builtin-view';
+
+export default function TemplateAdminPage({ mode = 'list' }: { mode?: TemplatePageMode }) {
   const navigate = useNavigate();
-  const { pluginId: routePluginId } = useParams();
+  const { pluginId: routePluginId, templateId, builtinTemplateKey } = useParams();
   const [templates, setTemplates] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [plugins, setPlugins] = useState<DeploymentPluginDefinitionSummary[]>([]);
   const [shellVariables, setShellVariables] = useState<ShellVariableSummary[]>([]);
   const [form, setForm] = useState<TemplateFormState>(emptyTemplate);
+  const initialFormSnapshotRef = useRef(buildTemplateFormSnapshot(emptyTemplate));
   const [editingId, setEditingId] = useState();
-  const [modalOpen, setModalOpen] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
-  const [previewBuiltinTemplate, setPreviewBuiltinTemplate] = useState<any | null>(null);
   const [keyword, setKeyword] = useState('');
   const [templateTypeFilter, setTemplateTypeFilter] = useState<string>();
   const [monitorFilter, setMonitorFilter] = useState<string>();
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
+
+  const updateFormWithSnapshot = (nextForm: TemplateFormState) => {
+    initialFormSnapshotRef.current = buildTemplateFormSnapshot(nextForm);
+    setForm(nextForm);
+  };
+
+  const isFormChanged = () => initialFormSnapshotRef.current !== buildTemplateFormSnapshot(form);
+
+  const cancelEditing = () => {
+    if (!isFormChanged()) {
+      navigate(`/admin/plugins/${routePluginId}/templates`);
+      return;
+    }
+    Modal.confirm({
+      title: '丢弃当前修改？',
+      content: '当前模板配置还没有保存，确认取消后这些修改会丢失。',
+      okText: '丢弃修改',
+      cancelText: '继续编辑',
+      okButtonProps: { danger: true },
+      onOk: () => navigate(`/admin/plugins/${routePluginId}/templates`),
+    });
+  };
 
   const loadTemplates = async () => {
     setLoading(true);
@@ -194,44 +219,87 @@ export default function TemplateAdminPage() {
       .catch(() => message.error('加载插件失败'));
   }, []);
 
+  const pluginNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    plugins.forEach((item) => map.set(item.descriptor.pluginId, item.descriptor.displayName));
+    return map;
+  }, [plugins]);
+
+  const activePlugin = useMemo(
+    () => plugins.find((item) => item.descriptor.pluginId === routePluginId) || null,
+    [plugins, routePluginId],
+  );
+
+  const activePluginName = routePluginId ? pluginNameMap.get(routePluginId) : undefined;
+  const activePluginMutationRules = useMemo(
+    () => activePlugin?.variableMutationRules || [],
+    [activePlugin],
+  );
+  const builtinTemplates = useMemo(
+    () => (activePlugin?.builtinTemplates || []).map((item, index) => ({
+      ...item,
+      key: `${activePlugin?.descriptor.pluginId || 'plugin'}-${item.templateKey || item.name || index}`,
+    })),
+    [activePlugin],
+  );
+  const selectedBuiltinTemplate = useMemo(
+    () => builtinTemplates.find((item) => (item.templateKey || item.key) === builtinTemplateKey) || null,
+    [builtinTemplateKey, builtinTemplates],
+  );
+
   useEffect(() => {
     if (!routePluginId) {
       navigate('/admin/plugins', { replace: true });
     }
   }, [navigate, routePluginId]);
 
-  const openCreate = () => {
-    const currentPlugin = plugins.find((item) => item.descriptor.pluginId === routePluginId);
-    const builtin = currentPlugin?.builtinTemplates?.[0];
+  useEffect(() => {
+    if (!activePlugin || mode !== 'create') {
+      return;
+    }
+    const builtin = activePlugin.builtinTemplates?.[0];
     setEditingId(undefined);
-    setForm({
+    updateFormWithSnapshot({
       name: '',
       description: builtin?.description || '',
-      pluginId: currentPlugin?.descriptor.pluginId,
-      templateType: builtin?.templateType || currentPlugin?.descriptor.templateTypes?.[0] || 'generic',
+      pluginId: activePlugin.descriptor.pluginId,
+      templateType: builtin?.templateType || activePlugin.descriptor.templateTypes?.[0] || 'generic',
       variablesSchema: parseVariablesSchema(builtin?.variablesSchema),
       buildScriptContent: builtin?.buildScriptContent || 'set -e\n',
       deployScriptContent: builtin?.deployScriptContent || '',
       monitorProcess: Boolean(builtin?.monitorProcess),
     });
     setCurrentStep(0);
-    setModalOpen(true);
+  }, [activePlugin, mode]);
+
+  useEffect(() => {
+    if (mode !== 'edit' && mode !== 'view' || !templateId) {
+      return;
+    }
+    templatesApi.get(Number(templateId))
+      .then((record) => {
+        setEditingId(mode === 'edit' ? record.id : undefined);
+        updateFormWithSnapshot({
+          name: record.name || '',
+          description: record.description || '',
+          pluginId: record.pluginId || undefined,
+          templateType: record.templateType || 'generic',
+          variablesSchema: parseVariablesSchema(record.variablesSchema),
+          buildScriptContent: record.buildScriptContent || 'set -e\n',
+          deployScriptContent: record.deployScriptContent || '',
+          monitorProcess: Boolean(record.monitorProcess),
+        });
+        setCurrentStep(0);
+      })
+      .catch(() => message.error('加载模板详情失败'));
+  }, [mode, templateId]);
+
+  const openCreate = () => {
+    navigate(`/admin/plugins/${routePluginId}/templates/new`);
   };
 
   const openEdit = (record) => {
-    setEditingId(record.id);
-    setForm({
-      name: record.name || '',
-      description: record.description || '',
-      pluginId: record.pluginId || undefined,
-      templateType: record.templateType || 'generic',
-      variablesSchema: parseVariablesSchema(record.variablesSchema),
-      buildScriptContent: record.buildScriptContent || 'set -e\n',
-      deployScriptContent: record.deployScriptContent || '',
-      monitorProcess: Boolean(record.monitorProcess),
-    });
-    setCurrentStep(0);
-    setModalOpen(true);
+    navigate(`/admin/plugins/${routePluginId}/templates/${record.id}/edit`);
   };
 
   const saveTemplate = async () => {
@@ -264,8 +332,7 @@ export default function TemplateAdminPage() {
     setForm(emptyTemplate);
     setEditingId(undefined);
     setCurrentStep(0);
-    setModalOpen(false);
-    await loadTemplates();
+    navigate(`/admin/plugins/${routePluginId}/templates`);
     message.success(editingId ? '模板已更新' : '模板已创建');
   };
 
@@ -337,30 +404,6 @@ export default function TemplateAdminPage() {
     parsedVariables: parseVariablesSchema(item.variablesSchema),
   })), [templates]);
 
-  const pluginNameMap = useMemo(() => {
-    const map = new Map<string, string>();
-    plugins.forEach((item) => map.set(item.descriptor.pluginId, item.descriptor.displayName));
-    return map;
-  }, [plugins]);
-
-  const activePlugin = useMemo(
-    () => plugins.find((item) => item.descriptor.pluginId === routePluginId) || null,
-    [plugins, routePluginId],
-  );
-
-  const activePluginName = routePluginId ? pluginNameMap.get(routePluginId) : undefined;
-  const activePluginMutationRules = useMemo(
-    () => activePlugin?.variableMutationRules || [],
-    [activePlugin],
-  );
-  const builtinTemplates = useMemo(
-    () => (activePlugin?.builtinTemplates || []).map((item, index) => ({
-      ...item,
-      key: `${activePlugin?.descriptor.pluginId || 'plugin'}-${item.templateKey || item.name || index}`,
-    })),
-    [activePlugin],
-  );
-
   const mutationRuleOptions = useMemo(
     () => activePluginMutationRules.map((rule, index) => ({
       value: rule.ruleId || `${rule.phase}-${rule.mutationType}-${index}`,
@@ -417,6 +460,206 @@ export default function TemplateAdminPage() {
     );
   };
 
+  const renderTemplateFormContent = () => (
+    <div className="mx-auto flex h-full min-h-0 max-w-5xl flex-col">
+      <div className="sticky top-0 z-20 pb-3">
+        <Card className="app-card">
+          <Steps
+            size="small"
+            responsive
+            current={currentStep}
+            onChange={(value) => setCurrentStep(value)}
+            items={[
+              { title: '基础信息', description: '模板名称、类型、描述' },
+              { title: '构建', description: '本机构建脚本' },
+              { title: '发布', description: '目标主机发布脚本与进程监控' },
+              { title: '变量', description: '从脚本提取并整理变量' },
+            ]}
+          />
+        </Card>
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto pb-4">
+        {currentStep === 0 ? (
+          <Card title="基础信息" className="app-card">
+            <Form layout="vertical">
+              <Form.Item label="模板名称">
+                <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+              </Form.Item>
+              <Form.Item label="归属插件">
+                <Input value={activePluginName || form.pluginId || ''} disabled />
+              </Form.Item>
+              <Form.Item label="描述">
+                <Input.TextArea rows={3} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
+              </Form.Item>
+              <Form.Item label="插件内类型">
+                <Select
+                  value={form.templateType}
+                  options={availableTemplateTypeOptions}
+                  onChange={(value) => setForm({ ...form, pluginId: routePluginId, templateType: value })}
+                  disabled={availableTemplateTypeOptions.length <= 1}
+                />
+              </Form.Item>
+            </Form>
+          </Card>
+        ) : null}
+        {currentStep === 1 ? (
+          <Card title="构建" className="app-card">
+            <div className="mb-2 font-medium text-slate-800">本机构建脚本</div>
+            <ShellVariableHint stage="build" scriptContent={form.buildScriptContent} variables={shellVariables} />
+            <CodeEditor
+              rows={14}
+              language="shell"
+              value={form.buildScriptContent}
+              onChange={(value) => setForm({ ...form, buildScriptContent: value })}
+              templateVariablePhases={templateVariablePhases}
+            />
+            <div className="mt-4">
+              <TemplateVariablesEditor
+                title="构建变量"
+                phase="build"
+                availableMutationRules={mutationRuleOptions}
+                mutationRuleHelpMap={mutationRuleHelpMap}
+                value={buildVariables}
+                onChange={(value) => {
+                  const others = (form.variablesSchema || []).filter((item) => !['build', 'shared'].includes(item.phase || 'shared'));
+                  setForm({ ...form, variablesSchema: [...others, ...value] });
+                }}
+              />
+              <div className="mt-3">
+                <Button onClick={() => syncVariablesFromScript('build')}>从构建脚本提取变量</Button>
+              </div>
+            </div>
+          </Card>
+        ) : null}
+        {currentStep === 2 ? (
+          <Card title="发布" className="app-card">
+            <div className="mb-2 font-medium text-slate-800">目标主机发布脚本</div>
+            <ShellVariableHint stage="deploy" scriptContent={form.deployScriptContent} variables={shellVariables} />
+            <CodeEditor
+              rows={10}
+              language="shell"
+              value={form.deployScriptContent}
+              onChange={(value) => setForm({ ...form, deployScriptContent: value })}
+              templateVariablePhases={templateVariablePhases}
+            />
+            <div className="mt-4">
+              <TemplateVariablesEditor
+                title="发布变量"
+                phase="deploy"
+                availableMutationRules={mutationRuleOptions}
+                mutationRuleHelpMap={mutationRuleHelpMap}
+                value={deployVariables}
+                onChange={(value) => {
+                  const others = (form.variablesSchema || []).filter((item) => !['deploy', 'shared'].includes(item.phase || 'shared'));
+                  setForm({ ...form, variablesSchema: [...others, ...value] });
+                }}
+              />
+              <div className="mt-3">
+                <Button onClick={() => syncVariablesFromScript('deploy')}>从发布脚本提取变量</Button>
+              </div>
+            </div>
+            <Divider />
+            <Form layout="vertical">
+              <Form.Item label="监控进程">
+                <Switch
+                  checked={Boolean(form.monitorProcess)}
+                  checkedChildren="是"
+                  unCheckedChildren="否"
+                  onChange={(checked) => setForm({ ...form, monitorProcess: checked })}
+                />
+              </Form.Item>
+            </Form>
+          </Card>
+        ) : null}
+        {currentStep === 3 ? (
+          <Card title="变量总览" className="app-card">
+            <TemplateVariablesEditor
+              availableMutationRules={mutationRuleOptions}
+              mutationRuleHelpMap={mutationRuleHelpMap}
+              value={form.variablesSchema}
+              onChange={(value) => setForm({ ...form, variablesSchema: value })}
+            />
+          </Card>
+        ) : null}
+      </div>
+      <div className="shrink-0 flex justify-end gap-2 border-t border-slate-200/70 px-4 py-3 backdrop-blur-sm">
+        {currentStep > 0 ? <Button onClick={() => setCurrentStep((value) => value - 1)}>上一步</Button> : null}
+        {currentStep < 3 ? <Button onClick={() => setCurrentStep((value) => value + 1)}>下一步</Button> : null}
+      </div>
+    </div>
+  );
+
+  const renderTemplatePreviewContent = (template: any) => (
+    <div className="space-y-4">
+      <Card className="app-card template-detail-summary">
+        <div className="template-detail-summary__title">
+          <div className="flex min-w-0 items-center gap-3">
+            <PipelineIcon type={template.templateType} />
+            <div className="min-w-0">
+              <div className="truncate text-base font-semibold text-slate-900">{template.name || '未命名模板'}</div>
+              <div className="mt-1 text-sm leading-6 text-slate-500">{template.description || '暂无说明'}</div>
+            </div>
+          </div>
+          <span className={`template-detail-monitor ${template.monitorProcess ? 'template-detail-monitor--on' : ''}`}>
+            <span />
+            {template.monitorProcess ? '监控进程' : '不监控进程'}
+          </span>
+        </div>
+        <div className="template-detail-meta">
+          <div>
+            <span>归属插件</span>
+            <strong>{activePluginName || template.pluginId || '-'}</strong>
+          </div>
+          <div>
+            <span>插件内类型</span>
+            <strong>{template.templateType ? template.templateType.replace(/_/g, ' / ') : '通用'}</strong>
+          </div>
+          <div>
+            <span>变量数量</span>
+            <strong>{parseVariablesSchema(template.variablesSchema).length} 个</strong>
+          </div>
+          <div>
+            <span>发布阶段</span>
+            <strong>{template.deployScriptContent ? '有独立发布脚本' : '无独立发布脚本'}</strong>
+          </div>
+        </div>
+      </Card>
+      <Card className="app-card template-detail-content-card">
+      <Tabs
+        className="app-soft-tabs"
+        items={[
+          {
+            key: 'build',
+            label: '构建',
+            children: (
+              <TemplatePreviewStage
+                stage="build"
+                variables={renderPreviewVariableCards(parseVariablesSchema(template.variablesSchema), 'build')}
+                scriptContent={template.buildScriptContent}
+                templateVariablePhases={buildTemplateVariablePhaseMap(parseVariablesSchema(template.variablesSchema))}
+                shellVariables={shellVariables}
+              />
+            ),
+          },
+          {
+            key: 'deploy',
+            label: '发布',
+            children: (
+              <TemplatePreviewStage
+                stage="deploy"
+                variables={renderPreviewVariableCards(parseVariablesSchema(template.variablesSchema), 'deploy')}
+                scriptContent={template.deployScriptContent}
+                templateVariablePhases={buildTemplateVariablePhaseMap(parseVariablesSchema(template.variablesSchema))}
+                shellVariables={shellVariables}
+              />
+            ),
+          },
+        ]}
+      />
+      </Card>
+    </div>
+  );
+
   const availableTemplateTypeOptions = useMemo(() => {
     const types = activePlugin?.descriptor.templateTypes || [];
     if (types.length === 0) {
@@ -429,7 +672,7 @@ export default function TemplateAdminPage() {
   }, [activePlugin]);
 
   useEffect(() => {
-    if (!modalOpen) {
+    if (mode !== 'create' && mode !== 'edit') {
       return;
     }
     const allowed = new Set(availableTemplateTypeOptions.map((item) => item.value));
@@ -440,15 +683,82 @@ export default function TemplateAdminPage() {
         templateType: availableTemplateTypeOptions[0]?.value || 'generic',
       }));
     }
-  }, [availableTemplateTypeOptions, form.templateType, modalOpen, routePluginId]);
+  }, [availableTemplateTypeOptions, form.templateType, mode, routePluginId]);
+
+  if (mode === 'create' || mode === 'edit') {
+    return (
+      <>
+        <PageHeaderBar
+          title={mode === 'edit' ? '编辑模板' : '新建模板'}
+          description={activePluginName || '插件模板'}
+          extra={(
+            <Space>
+              <Button danger={isFormChanged()} onClick={cancelEditing}>{isFormChanged() ? '取消' : '返回'}</Button>
+              <Button onClick={() => updateFormWithSnapshot(JSON.parse(initialFormSnapshotRef.current))}>重置</Button>
+              <Button type="primary" onClick={() => saveTemplate().catch(() => message.error(mode === 'edit' ? '更新模板失败' : '创建模板失败'))}>
+                {mode === 'edit' ? '保存' : '创建'}
+              </Button>
+            </Space>
+          )}
+        />
+        <div className="app-page-scroll min-h-0">
+          {renderTemplateFormContent()}
+        </div>
+      </>
+    );
+  }
+
+  if (mode === 'view') {
+    return (
+      <>
+        <PageHeaderBar
+          title={form.name || '查看模板'}
+          description={form.description || activePluginName || '插件模板'}
+          extra={(
+            <Space>
+              <Button onClick={() => navigate(`/admin/plugins/${routePluginId}/templates`)}>返回模板</Button>
+              <Button type="primary" onClick={() => navigate(`/admin/plugins/${routePluginId}/templates/${templateId}/edit`)}>编辑</Button>
+            </Space>
+          )}
+        />
+        <div className="app-page-scroll">
+          <div className="mx-auto max-w-6xl">
+            {renderTemplatePreviewContent({
+              ...form,
+              variablesSchema: form.variablesSchema,
+            })}
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  if (mode === 'builtin-view') {
+    return (
+      <>
+        <PageHeaderBar
+          title={selectedBuiltinTemplate?.name || '默认模板'}
+          description={selectedBuiltinTemplate?.description || activePluginName || '插件模板'}
+          extra={<Button onClick={() => navigate(`/admin/plugins/${routePluginId}/templates`)}>返回模板</Button>}
+        />
+        <div className="app-page-scroll">
+          <div className="mx-auto max-w-6xl">
+            {selectedBuiltinTemplate ? renderTemplatePreviewContent(selectedBuiltinTemplate) : (
+              <Card className="app-card">
+                <EmptyPane description="没有找到这个默认模板。" />
+              </Card>
+            )}
+          </div>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
       <PageHeaderBar
         title={activePluginName ? `${activePluginName} · 模板` : '插件模板'}
-        description={activePluginName
-          ? `当前正在维护插件「${activePluginName}」下的派生模板。这里不再平铺所有模板，而是只处理当前插件自己的模板资产。`
-          : '正在根据插件查看模板。'}
+        description={activePluginName ? `维护插件「${activePluginName}」的默认模板和自定义模板。` : '查看插件模板。'}
         extra={(
           <Space>
             <Button onClick={() => navigate('/admin/plugins')}>返回插件</Button>
@@ -498,7 +808,7 @@ export default function TemplateAdminPage() {
                         title: '查看内容',
                         width: 120,
                         render: (_, record) => (
-                          <Button size="small" onClick={() => setPreviewBuiltinTemplate(record)}>
+                          <Button size="small" onClick={() => navigate(`/admin/plugins/${routePluginId}/templates/builtin/${record.templateKey || record.key}`)}>
                             查看详情
                           </Button>
                         ),
@@ -626,9 +936,10 @@ export default function TemplateAdminPage() {
               },
               {
                 title: '操作',
-                width: 180,
+                width: 170,
                 render: (_, record) => (
                   <Space>
+                    <Button size="small" onClick={() => navigate(`/admin/plugins/${routePluginId}/templates/${record.id}`)}>查看</Button>
                     <Button size="small" onClick={() => openEdit(record)}>编辑</Button>
                     <Popconfirm
                       title="确认删除这个模板吗？"
@@ -650,254 +961,6 @@ export default function TemplateAdminPage() {
         />
       </Card>
       </div>
-      <Modal
-        title={editingId ? '编辑模板' : '新建模板'}
-        open={modalOpen}
-        width={980}
-        footer={(
-          <div className="flex items-center justify-between">
-            <Button
-              onClick={() => {
-                setModalOpen(false);
-                setCurrentStep(0);
-              }}
-            >
-              取消
-            </Button>
-            <Space>
-              {currentStep > 0 ? (
-                <Button onClick={() => setCurrentStep((value) => value - 1)}>上一步</Button>
-              ) : null}
-              {currentStep < 3 ? (
-                <Button type="primary" onClick={() => setCurrentStep((value) => value + 1)}>下一步</Button>
-              ) : (
-                <Button
-                  type="primary"
-                  onClick={() => saveTemplate().catch(() => message.error(editingId ? '更新模板失败' : '创建模板失败'))}
-                >
-                  保存
-                </Button>
-              )}
-            </Space>
-          </div>
-        )}
-        onCancel={() => {
-          setModalOpen(false);
-          setCurrentStep(0);
-        }}
-        destroyOnHidden
-      >
-        <div className="space-y-4">
-          <Card className="border-slate-200 bg-slate-50">
-            <Steps
-              size="small"
-              responsive
-              current={currentStep}
-              onChange={(value) => setCurrentStep(value)}
-              items={[
-                { title: '基础信息', description: '模板名称、类型、描述' },
-                { title: '构建', description: '本机构建脚本' },
-                { title: '发布', description: '目标主机发布脚本与进程监控' },
-                { title: '变量', description: '从脚本提取并整理变量' },
-              ]}
-            />
-          </Card>
-          <div>
-            {currentStep === 0 ? (
-              <Card size="small" title="步骤 1 · 基础信息">
-              <Form layout="vertical">
-                <Form.Item label="模板名称">
-                  <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
-                </Form.Item>
-                <Form.Item label="归属插件">
-                  <Input value={activePluginName || form.pluginId || ''} disabled />
-                </Form.Item>
-                <Form.Item label="描述">
-                  <Input.TextArea rows={3} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
-                </Form.Item>
-                <Form.Item label="插件内类型">
-                  <Select
-                    value={form.templateType}
-                    options={availableTemplateTypeOptions}
-                    onChange={(value) => setForm({ ...form, pluginId: routePluginId, templateType: value })}
-                    disabled={availableTemplateTypeOptions.length <= 1}
-                  />
-                </Form.Item>
-              </Form>
-              </Card>
-            ) : null}
-            {currentStep === 1 ? (
-              <Card size="small" title="步骤 2 · 构建">
-                <div>
-                  <div className="mb-2 font-medium text-slate-800">2.1 本机构建脚本</div>
-                  <div className="mb-2 text-xs text-slate-500">
-                    这里负责 git clone、npm、maven、打包和准备产物。构建产物建议统一输出到 <code>$ARTIFACT_DIR</code>。
-                  </div>
-                  <ShellVariableHint stage="build" scriptContent={form.buildScriptContent} variables={shellVariables} />
-                  <CodeEditor
-                    rows={14}
-                    language="shell"
-                    value={form.buildScriptContent}
-                    onChange={(value) => setForm({ ...form, buildScriptContent: value })}
-                    templateVariablePhases={templateVariablePhases}
-                  />
-                  <div className="mt-4">
-                    <TemplateVariablesEditor
-                      title="2.2 构建变量"
-                      description="这些变量用于本机构建阶段。先在构建脚本里写占位符，再同步变量并补充说明；如果插件需要处理某个变量，直接把对应处理逻辑挂到这个变量上。"
-                      phase="build"
-                      availableMutationRules={mutationRuleOptions}
-                      mutationRuleHelpMap={mutationRuleHelpMap}
-                      value={buildVariables}
-                      onChange={(value) => {
-                        const others = (form.variablesSchema || []).filter((item) => !['build', 'shared'].includes(item.phase || 'shared'));
-                        setForm({ ...form, variablesSchema: [...others, ...value] });
-                      }}
-                    />
-                    <div className="mt-3">
-                      <Button onClick={() => syncVariablesFromScript('build')}>从构建脚本提取变量</Button>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            ) : null}
-            {currentStep === 2 ? (
-              <Card size="small" title="步骤 3 · 发布">
-                <div className="space-y-4">
-                <div>
-                  <div className="mb-2 font-medium text-slate-800">3.1 目标主机发布脚本</div>
-                  <div className="mb-2 text-xs text-slate-500">
-                    这里运行在目标主机上，只负责接收 <code>$ARTIFACT_DIR</code> 里的产物并发布。留空表示当前模板没有独立的发布阶段。
-                  </div>
-                  <ShellVariableHint stage="deploy" scriptContent={form.deployScriptContent} variables={shellVariables} />
-                  <CodeEditor
-                    rows={10}
-                    language="shell"
-                    value={form.deployScriptContent}
-                    onChange={(value) => setForm({ ...form, deployScriptContent: value })}
-                    templateVariablePhases={templateVariablePhases}
-                  />
-                  <div className="mt-4">
-                    <TemplateVariablesEditor
-                      title="3.2 发布变量"
-                      description="这些变量用于目标主机发布阶段，通常对应远程目录、远程启动命令等；如果插件需要处理某个变量，直接把对应处理逻辑挂到这个变量上。"
-                      phase="deploy"
-                      availableMutationRules={mutationRuleOptions}
-                      mutationRuleHelpMap={mutationRuleHelpMap}
-                      value={deployVariables}
-                      onChange={(value) => {
-                        const others = (form.variablesSchema || []).filter((item) => !['deploy', 'shared'].includes(item.phase || 'shared'));
-                        setForm({ ...form, variablesSchema: [...others, ...value] });
-                      }}
-                    />
-                    <div className="mt-3">
-                      <Button onClick={() => syncVariablesFromScript('deploy')}>从发布脚本提取变量</Button>
-                    </div>
-                  </div>
-                </div>
-                <Divider className="my-0" />
-                <Form layout="vertical">
-                  <Form.Item label="3.3 监控进程">
-                    <Switch
-                      checked={Boolean(form.monitorProcess)}
-                      checkedChildren="是"
-                      unCheckedChildren="否"
-                      onChange={(checked) => setForm({ ...form, monitorProcess: checked })}
-                    />
-                  </Form.Item>
-                  {form.monitorProcess ? (
-                    <div className="text-xs text-slate-500">
-                      开启后表示系统会在发布后尝试接管服务。更精确的启动关键字和启动超时配置放在流水线上，按具体部署环境单独设置。
-                    </div>
-                  ) : (
-                    <div className="text-xs text-slate-500">
-                      只有发布脚本最终会拉起长期运行的进程时，才需要开启监控进程。
-                    </div>
-                  )}
-                </Form>
-              </div>
-              </Card>
-            ) : null}
-            {currentStep === 3 ? (
-              <Card size="small" title="步骤 4 · 变量总览">
-                <div>
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <div>
-                      <div className="font-medium text-slate-800">4.1 变量总览</div>
-                      <div className="mt-1 text-xs text-slate-500">
-                        这里汇总展示模板对外暴露的变量，流水线填写默认值时会按构建 / 发布阶段分组显示。
-                      </div>
-                    </div>
-                  </div>
-                  <TemplateVariablesEditor
-                    availableMutationRules={mutationRuleOptions}
-                    mutationRuleHelpMap={mutationRuleHelpMap}
-                    value={form.variablesSchema}
-                    onChange={(value) => setForm({ ...form, variablesSchema: value })}
-                  />
-                </div>
-              </Card>
-            ) : null}
-          </div>
-        </div>
-      </Modal>
-      <Modal
-        title={previewBuiltinTemplate ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <Tag className="app-tag-success !m-0">插件自带</Tag>
-            <Tag className="app-tag-info !m-0">{previewBuiltinTemplate.templateType ? previewBuiltinTemplate.templateType.replace(/_/g, ' / ') : '通用'}</Tag>
-            <span>{previewBuiltinTemplate.name}</span>
-            <span className="ml-1 inline-flex items-center gap-1 text-sm font-normal text-slate-600">
-              <span className={`h-2 w-2 rounded-full ${previewBuiltinTemplate.monitorProcess ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-              {previewBuiltinTemplate.monitorProcess ? '监控进程' : '不监控进程'}
-            </span>
-          </div>
-        ) : '插件自带模板'}
-        open={Boolean(previewBuiltinTemplate)}
-        width={980}
-        footer={null}
-        onCancel={() => setPreviewBuiltinTemplate(null)}
-        destroyOnHidden
-      >
-        {previewBuiltinTemplate ? (
-          <div className="space-y-2">
-            <div className="border-b border-slate-100 pb-2 text-sm leading-6 text-slate-600">
-              {previewBuiltinTemplate.description || '暂无说明'}
-            </div>
-            <Tabs
-              className="app-soft-tabs"
-              items={[
-                {
-                  key: 'build',
-                  label: '构建',
-                  children: (
-                    <TemplatePreviewStage
-                      stage="build"
-                      variables={renderPreviewVariableCards(parseVariablesSchema(previewBuiltinTemplate.variablesSchema), 'build')}
-                      scriptContent={previewBuiltinTemplate.buildScriptContent}
-                      templateVariablePhases={buildTemplateVariablePhaseMap(parseVariablesSchema(previewBuiltinTemplate.variablesSchema))}
-                      shellVariables={shellVariables}
-                    />
-                  ),
-                },
-                {
-                  key: 'deploy',
-                  label: '发布',
-                  children: (
-                    <TemplatePreviewStage
-                      stage="deploy"
-                      variables={renderPreviewVariableCards(parseVariablesSchema(previewBuiltinTemplate.variablesSchema), 'deploy')}
-                      scriptContent={previewBuiltinTemplate.deployScriptContent}
-                      templateVariablePhases={buildTemplateVariablePhaseMap(parseVariablesSchema(previewBuiltinTemplate.variablesSchema))}
-                      shellVariables={shellVariables}
-                    />
-                  ),
-                },
-              ]}
-            />
-          </div>
-        ) : null}
-      </Modal>
     </>
   );
 }

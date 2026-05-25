@@ -399,7 +399,7 @@ export default function ServiceManagementPage() {
               { title: '最近更新', render: (_, row) => formatDateTime(row.updatedAt) },
               {
                 title: '操作',
-                width: 260,
+                width: 340,
                 render: (_, row) => (
                   <Space wrap>
                     {row.status === 'RUNNING' ? (

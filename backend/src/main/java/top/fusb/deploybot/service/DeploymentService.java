@@ -3,6 +3,7 @@ package top.fusb.deploybot.service;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import top.fusb.deploybot.dto.DeploymentRequest;
+import top.fusb.deploybot.dto.DeploymentPrecheckResult;
 import top.fusb.deploybot.dto.DeploymentFilterOptions;
 import top.fusb.deploybot.dto.DeploymentListSummary;
 import top.fusb.deploybot.dto.PageResult;
@@ -551,7 +552,35 @@ public class DeploymentService {
         });
     }
 
+    public DeploymentPrecheckResult precheck(DeploymentRequest request) {
+        PipelineEntity pipeline = pipelineRepository.findById(request.pipelineId())
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.PIPELINE_NOT_FOUND));
+        List<String> missingItems = collectPipelineMissingItems(pipeline);
+        boolean hasRunning = !deploymentRepository.findByPipelineIdAndStatusInOrderByCreatedAtDesc(
+                pipeline.getId(),
+                List.of(DeploymentStatus.PENDING, DeploymentStatus.RUNNING)
+        ).isEmpty();
+        if (hasRunning && !Boolean.TRUE.equals(request.replaceRunning())) {
+            missingItems.add("当前流水线已有运行中的部署");
+        }
+        return new DeploymentPrecheckResult(
+                missingItems.isEmpty(),
+                missingItems,
+                missingItems.isEmpty() ? "部署前检查通过。" : "部署前检查未通过：" + String.join("、", missingItems)
+        );
+    }
+
     private void validatePipelineReadyForDeployment(PipelineEntity pipeline) {
+        List<String> missingItems = collectPipelineMissingItems(pipeline);
+        if (!missingItems.isEmpty()) {
+            throw new BusinessException(
+                    ErrorSubCode.PIPELINE_CONFIG_INCOMPLETE,
+                    "流水线配置不完整，请先补充：" + String.join("、", missingItems)
+            );
+        }
+    }
+
+    private List<String> collectPipelineMissingItems(PipelineEntity pipeline) {
         List<String> missingItems = new ArrayList<>();
         if (pipeline == null) {
             missingItems.add("流水线");
@@ -577,12 +606,7 @@ public class DeploymentService {
                 validateRequiredTemplateVariables(pipeline, resolvedTemplate.variablesSchema(), missingItems);
             }
         }
-        if (!missingItems.isEmpty()) {
-            throw new BusinessException(
-                    ErrorSubCode.PIPELINE_CONFIG_INCOMPLETE,
-                    "流水线配置不完整，请先补充：" + String.join("、", missingItems)
-            );
-        }
+        return missingItems;
     }
 
     private void validateRequiredRuntimeEnvironments(PipelineEntity pipeline, List<String> missingItems) {

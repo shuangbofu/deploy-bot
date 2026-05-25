@@ -22,6 +22,7 @@ public record PipelineHallSummary(
         LocalDateTime latestFinishedAt,
         Integer latestProgressPercent,
         String latestProgressText,
+        Long version,
         Boolean favorited
 ) {
 }

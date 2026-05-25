@@ -43,6 +43,7 @@ public interface DeploymentRepository extends JpaRepository<DeploymentEntity, Lo
             """)
     List<String> findDistinctProjectNamesByTriggeredBy(@Param("triggeredBy") String triggeredBy);
     java.util.Optional<DeploymentEntity> findFirstByPipelineIdOrderByCreatedAtDesc(Long pipelineId);
+    List<DeploymentEntity> findTop10ByPipelineIdOrderByCreatedAtDesc(Long pipelineId);
     List<DeploymentEntity> findByPipelineIdAndStatusInOrderByCreatedAtDesc(Long pipelineId, List<DeploymentStatus> statuses);
     Optional<DeploymentEntity> findFirstByPipelineIdAndStatusOrderByCreatedAtDesc(Long pipelineId, DeploymentStatus status);
     Optional<DeploymentEntity> findFirstByPipelineIdAndStatusAndIdLessThanAndCommitShaIsNotNullOrderByCreatedAtDesc(Long pipelineId, DeploymentStatus status, Long id);

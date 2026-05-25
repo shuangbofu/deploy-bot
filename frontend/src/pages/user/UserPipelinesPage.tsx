@@ -13,7 +13,8 @@ import PipelineIcon from '../../components/PipelineIcon';
 import StatusTag from '../../components/StatusTag';
 import { ACTIVE_DEPLOYMENT_STATUSES } from '../../constants/deployment';
 import { usePipelineHallPreferences, type PipelineHallFilterMode } from '../../hooks/usePipelineHallPreferences';
-import type { PipelineHallRunningServiceSummary, PipelineHallSummary, PipelineSummary, UserRecentPipelineSummary } from '../../types/domain';
+import { usePipelineHallStream } from '../../hooks/usePipelineHallStream';
+import type { PipelineBranchOption, PipelineHallRunningServiceSummary, PipelineHallSummary, PipelineSummary, UserRecentPipelineSummary } from '../../types/domain';
 import { formatDateTime } from '../../utils/datetime';
 import { formatDeploymentElapsed } from '../../utils/deploymentDuration';
 import { getDeploymentProgressColor, getDeploymentProgressLabel } from '../../utils/deploymentProgress';
@@ -176,7 +177,7 @@ export default function UserPipelinesPage({
   const [submittingId, setSubmittingId] = useState<number>();
   const [deployModalOpen, setDeployModalOpen] = useState(false);
   const [deployingPipeline, setDeployingPipeline] = useState<PipelineSummary>();
-  const [branchOptions, setBranchOptions] = useState<string[]>([]);
+  const [branchOptions, setBranchOptions] = useState<PipelineBranchOption[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string>();
   const [branchesLoading, setBranchesLoading] = useState(false);
   const [tick, setTick] = useState(() => Date.now());
@@ -279,10 +280,21 @@ export default function UserPipelinesPage({
   };
 
   const hasLiveRunningServices = runningServices.some((item) => item.status === 'RUNNING');
+  const hallStreamVersion = useMemo(
+    () => hallItems.reduce((max, item) => Math.max(max, item.version || item.latestDeploymentId || item.pipelineId || 0), 0),
+    [hallItems],
+  );
 
   useEffect(() => {
     loadData().catch(() => message.error('加载流水线失败'));
   }, [showRunningServices]);
+
+  usePipelineHallStream({
+    enabled: hallItems.length > 0,
+    version: hallStreamVersion,
+    onUpdate: setHallItems,
+    onError: () => {},
+  });
 
   useEffect(() => {
     if (hallLoading && hallItems.length === 0 && recentLoading && runningLoading) {
@@ -469,12 +481,20 @@ export default function UserPipelinesPage({
     setBranchesLoading(true);
     try {
       const branches = await pipelinesApi.getBranches(pipeline.id);
-      setBranchOptions(branches);
-      if (branches.length > 0) {
-        setSelectedBranch(branches.includes(pipeline.defaultBranch || '') ? pipeline.defaultBranch : branches[0]);
+      const options = await pipelinesApi.getBranchOptions(pipeline.id).catch(() => (
+        branches.map((name) => ({
+          name,
+          defaultBranch: name === pipeline.defaultBranch,
+          recent: false,
+        }))
+      ));
+      setBranchOptions(options);
+      if (options.length > 0) {
+        const optionNames = options.map((item) => item.name);
+        setSelectedBranch(optionNames.includes(pipeline.defaultBranch || '') ? pipeline.defaultBranch : optionNames[0]);
       }
     } catch {
-      setBranchOptions(pipeline.defaultBranch ? [pipeline.defaultBranch] : []);
+      setBranchOptions(pipeline.defaultBranch ? [{ name: pipeline.defaultBranch, defaultBranch: true, recent: false }] : []);
       message.error('加载分支失败，已回退到默认分支');
     } finally {
       setBranchesLoading(false);
@@ -487,14 +507,20 @@ export default function UserPipelinesPage({
       return;
     }
     const activePipeline = hallItems.find((item) => item.pipelineId === deployingPipeline.id);
+    const payload = {
+      pipelineId: deployingPipeline.id,
+      branchName: selectedBranch,
+      triggeredBy: 'user',
+      replaceRunning: Boolean(activePipeline?.latestStatus && ACTIVE_DEPLOYMENT_STATUSES.includes(activePipeline.latestStatus)),
+    };
     setSubmittingId(deployingPipeline.id);
     try {
-      const deployment = await deploymentsApi.create({
-        pipelineId: deployingPipeline.id,
-        branchName: selectedBranch,
-        triggeredBy: 'user',
-        replaceRunning: Boolean(activePipeline?.latestStatus && ACTIVE_DEPLOYMENT_STATUSES.includes(activePipeline.latestStatus)),
-      });
+      const precheck = await deploymentsApi.precheck(payload);
+      if (!precheck.passed) {
+        message.error(precheck.message || '部署前检查未通过');
+        return;
+      }
+      const deployment = await deploymentsApi.create(payload);
       setDeployModalOpen(false);
       setDeployingPipeline(undefined);
       setBranchOptions([]);
@@ -1069,7 +1095,19 @@ export default function UserPipelinesPage({
             className="w-full"
             loading={branchesLoading}
             value={selectedBranch}
-            options={branchOptions.map((item) => ({ label: item, value: item }))}
+            options={branchOptions.map((item) => ({
+              label: (
+                <div className="pipeline-branch-option">
+                  <span>{item.name}</span>
+                  <span className="pipeline-branch-option__tags">
+                    {item.defaultBranch ? <span className="pipeline-branch-option__tag">默认</span> : null}
+                    {item.recent ? <span className="pipeline-branch-option__tag pipeline-branch-option__tag--recent">最近</span> : null}
+                  </span>
+                </div>
+              ),
+              value: item.name,
+              title: item.name,
+            }))}
             onChange={setSelectedBranch}
             placeholder="请选择分支"
             showSearch

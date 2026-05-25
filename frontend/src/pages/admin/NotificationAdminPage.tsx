@@ -263,7 +263,7 @@ export default function NotificationAdminPage({
               { title: '状态', render: (_, record) => renderEnabledStatus(record.enabled), width: 100 },
               {
                 title: '操作',
-                width: 160,
+                width: 136,
                 render: (_, record) => (
                   <Space>
                     <Button size="small" onClick={() => openEditChannel(record)}>编辑</Button>

@@ -195,6 +195,7 @@ export default function DeploymentRecordsPage() {
               { title: '耗时', render: (_, row) => formatDeploymentElapsed(row, tick) },
               {
                 title: '操作',
+                width: 220,
                 render: (_, row) => (
                   <Space wrap>
                     <Button size="small" type="primary" onClick={() => navigate(`/admin/deployments/${row.id}`)}>

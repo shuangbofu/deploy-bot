@@ -2,6 +2,7 @@ package top.fusb.deploybot.controller;
 
 import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.dto.DeploymentPluginPlanSummary;
+import top.fusb.deploybot.dto.PipelineBranchOption;
 import top.fusb.deploybot.dto.PipelineHallRunningServiceSummary;
 import top.fusb.deploybot.dto.PipelineHallSummary;
 import top.fusb.deploybot.dto.PipelineRequest;
@@ -13,6 +14,7 @@ import top.fusb.deploybot.service.PipelineService;
 import top.fusb.deploybot.service.ServiceManager;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -22,8 +24,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 
 @RestController
 @RequestMapping("/api/pipelines")
@@ -56,6 +61,51 @@ public class PipelineController {
     @GetMapping("/hall/running-services")
     public List<PipelineHallRunningServiceSummary> runningServices() {
         return serviceManager.findRunningHallSummaries();
+    }
+
+    @GetMapping(value = "/hall/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter hallStream(@RequestParam(required = false) Long version) {
+        service.findHallSummaries();
+        SseEmitter emitter = new SseEmitter(0L);
+        Thread thread = new Thread(() -> {
+            String lastSignature = null;
+            try {
+                while (true) {
+                    List<PipelineHallSummary> summaries = service.findHallSummaries();
+                    String nextSignature = hallSignature(summaries);
+                    Long nextVersion = (long) nextSignature.hashCode();
+                    if (!Objects.equals(nextSignature, lastSignature) && !Objects.equals(nextVersion, version)) {
+                        emitter.send(SseEmitter.event()
+                                .name("hall")
+                                .data(Map.of(
+                                        "version", nextVersion,
+                                        "items", summaries
+                                )));
+                        lastSignature = nextSignature;
+                    }
+                    Thread.sleep(1200L);
+                }
+            } catch (Exception ex) {
+                emitter.completeWithError(ex);
+            }
+        }, "pipeline-hall-stream");
+        thread.setDaemon(true);
+        thread.start();
+        return emitter;
+    }
+
+    private String hallSignature(List<PipelineHallSummary> summaries) {
+        return summaries.stream()
+                .map(item -> String.join(":",
+                        String.valueOf(item.pipelineId()),
+                        String.valueOf(item.latestDeploymentId()),
+                        String.valueOf(item.latestStatus()),
+                        String.valueOf(item.latestProgressPercent()),
+                        String.valueOf(item.latestProgressText()),
+                        String.valueOf(item.latestFinishedAt()),
+                        String.valueOf(item.favorited())
+                ))
+                .reduce("", (left, right) -> left + "|" + right);
     }
 
     @GetMapping("/page")
@@ -92,6 +142,11 @@ public class PipelineController {
     @GetMapping("/{id}/branches")
     public List<String> branches(@PathVariable Long id) {
         return gitBranchService.listBranches(id);
+    }
+
+    @GetMapping("/{id}/branch-options")
+    public List<PipelineBranchOption> branchOptions(@PathVariable Long id) {
+        return service.buildBranchOptions(id, gitBranchService.listBranches(id));
     }
 
     /**
