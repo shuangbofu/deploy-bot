@@ -460,6 +460,7 @@ export default function TemplateAdminPage() {
       <div className="app-page-scroll">
       <Card className="app-card">
         <Tabs
+          className="app-soft-tabs"
           defaultActiveKey="builtin"
           items={[
             {
@@ -864,6 +865,7 @@ export default function TemplateAdminPage() {
               {previewBuiltinTemplate.description || '暂无说明'}
             </div>
             <Tabs
+              className="app-soft-tabs"
               items={[
                 {
                   key: 'build',

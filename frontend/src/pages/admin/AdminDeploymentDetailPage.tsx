@@ -3,11 +3,12 @@ import { Button, Card, Col, Descriptions, Popconfirm, Progress, Row, Space, mess
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { deploymentPluginsApi } from '../../api/deploymentPlugins';
 import { deploymentsApi } from '../../api/deployments';
-import DeploymentSnapshotCard from '../../components/DeploymentSnapshotCard';
+import DeploymentInspectionTabs from '../../components/DeploymentInspectionTabs';
 import LogViewer from '../../components/LogViewer';
 import PageHeaderBar from '../../components/PageHeaderBar';
 import StatusTag from '../../components/StatusTag';
 import { ACTIVE_DEPLOYMENT_STATUSES } from '../../constants/deployment';
+import { useDeploymentLogStream } from '../../hooks/useDeploymentLogStream';
 import type { DeploymentPluginDefinitionSummary, DeploymentSummary } from '../../types/domain';
 import { copyText } from '../../utils/clipboard';
 import { getDeploymentProgress, getDeploymentProgressColor, getDeploymentProgressLabel } from '../../utils/deploymentProgress';
@@ -26,6 +27,8 @@ export default function AdminDeploymentDetailPage() {
   const [logContent, setLogContent] = useState('');
   const [detailLoading, setDetailLoading] = useState(true);
   const [logLoading, setLogLoading] = useState(true);
+  const [logOffset, setLogOffset] = useState(0);
+  const [lastLogUpdateAt, setLastLogUpdateAt] = useState(() => Date.now());
   const [plugins, setPlugins] = useState<DeploymentPluginDefinitionSummary[]>([]);
   const [tick, setTick] = useState(() => Date.now());
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -53,6 +56,8 @@ export default function AdminDeploymentDetailPage() {
     try {
       const logResponse = await deploymentsApi.getLog(String(deploymentId));
       setLogContent(logResponse.content);
+      setLogOffset(new TextEncoder().encode(logResponse.content || '').length);
+      setLastLogUpdateAt(Date.now());
     } finally {
       if (!options?.silent) {
         setLogLoading(false);
@@ -77,14 +82,44 @@ export default function AdminDeploymentDetailPage() {
     }
     const timer = window.setInterval(() => {
       loadDeploymentDetail({ silent: true }).catch(() => message.error('刷新部署详情失败'));
-      loadDeploymentLog({ silent: true }).catch(() => message.error('刷新部署日志失败'));
     }, 3000);
     return () => window.clearInterval(timer);
   }, [deployment, deploymentId]);
 
+  useDeploymentLogStream({
+    deploymentId,
+    enabled: Boolean(deployment?.status && ACTIVE_DEPLOYMENT_STATUSES.includes(deployment.status)),
+    offset: logOffset,
+    onLog: (payload) => {
+      if (payload.content) {
+        setLogContent((previous) => `${previous}${payload.content}`);
+        setLastLogUpdateAt(Date.now());
+      }
+      if (typeof payload.offset === 'number') {
+        setLogOffset(payload.offset);
+      }
+      if (payload.finished) {
+        loadDeploymentDetail({ silent: true }).catch(() => undefined);
+      }
+    },
+    onDone: () => {
+      loadDeploymentDetail({ silent: true }).catch(() => undefined);
+      loadDeploymentLog({ silent: true }).catch(() => undefined);
+    },
+    onError: () => {
+      if (deployment?.status && ACTIVE_DEPLOYMENT_STATUSES.includes(deployment.status)) {
+        loadDeploymentLog({ silent: true }).catch(() => undefined);
+      }
+    },
+  });
+
   /** 进度值使用后端阶段化结果，避免前端重复推导。 */
   const progress = useMemo(() => getDeploymentProgress(deployment), [deployment]);
   const stoppable = Boolean(deployment?.status && ACTIVE_DEPLOYMENT_STATUSES.includes(deployment.status));
+  const logStreaming = Boolean(deployment?.status && ACTIVE_DEPLOYMENT_STATUSES.includes(deployment.status));
+  const logIdleHint = logStreaming && !logLoading && tick - lastLogUpdateAt > 5000
+    ? '任务仍在运行，等待新的日志输出...'
+    : undefined;
   const rollbackable = Boolean(
     deployment?.artifactPath
       && deployment?.status
@@ -185,7 +220,7 @@ export default function AdminDeploymentDetailPage() {
       />
       <div ref={contentRef} className="deployment-detail-content" style={contentHeight ? { height: contentHeight } : undefined}>
         <Row className="deployment-detail-grid" gutter={[0, 0]} style={contentHeight ? { height: '100%' } : undefined}>
-        <Col className="deployment-detail-col deployment-detail-sidebar-col" xs={24} xl={7} xxl={6} style={contentHeight ? { height: '100%' } : undefined}>
+        <Col className="deployment-detail-col deployment-detail-sidebar-col" xs={24} xl={5} xxl={4} style={contentHeight ? { height: '100%' } : undefined}>
           <div className="deployment-detail-sidebar" style={contentHeight ? { height: '100%' } : undefined}>
             <Card
               className="app-card"
@@ -225,15 +260,17 @@ export default function AdminDeploymentDetailPage() {
                 {deployment?.status !== 'STOPPED' ? renderDescriptionItem('错误信息', deployment?.errorMessage) : null}
               </Descriptions>
             </Card>
-            <DeploymentSnapshotCard
+            <DeploymentInspectionTabs
               loading={detailLoading}
               executionSnapshot={executionSnapshot}
               pipelinePluginId={deployment?.pipeline?.templatePluginId || deployment?.pipeline?.template?.pluginId}
               plugins={plugins}
+              commitSha={deployment?.commitSha}
+              gitDiffSnapshot={deployment?.gitDiffSnapshot}
             />
           </div>
         </Col>
-        <Col className="deployment-detail-col deployment-detail-main-col" xs={24} xl={17} xxl={18} style={contentHeight ? { height: '100%' } : undefined}>
+        <Col className="deployment-detail-col deployment-detail-main-col" xs={24} xl={19} xxl={20} style={contentHeight ? { height: '100%' } : undefined}>
           <Card
             className="app-card deployment-detail-log-card"
             style={contentHeight ? { height: '100%' } : undefined}
@@ -249,7 +286,8 @@ export default function AdminDeploymentDetailPage() {
           >
             <LogViewer
               content={logContent}
-              autoScrollAvailable={Boolean(deployment?.status && ACTIVE_DEPLOYMENT_STATUSES.includes(deployment.status))}
+              autoScrollAvailable={logStreaming}
+              idleHint={logIdleHint}
             />
           </Card>
         </Col>

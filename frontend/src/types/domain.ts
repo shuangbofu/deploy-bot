@@ -484,6 +484,10 @@ export interface DeploymentSummary {
   rollbackFromDeploymentId?: number | null;
   /** 被监控的进程 PID。 */
   monitoredPid?: number | null;
+  /** 本次部署实际构建出的 Git 提交。 */
+  commitSha?: string | null;
+  /** 与上一成功部署相比的 Git 差异快照。 */
+  gitDiffSnapshot?: Record<string, unknown> | null;
 }
 
 export interface UserRecentPipelineSummary {

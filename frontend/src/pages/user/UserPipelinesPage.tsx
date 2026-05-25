@@ -1,5 +1,5 @@
-import { EllipsisOutlined, StarFilled } from '@ant-design/icons';
-import { ClockCounterClockwise, GridFour, Heart, ListBullets, PlayCircle, SquaresFour, WarningCircle } from '@phosphor-icons/react';
+import { EllipsisOutlined } from '@ant-design/icons';
+import { Heart } from '@phosphor-icons/react';
 import type { CSSProperties } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Card, Dropdown, Input, Modal, Popconfirm, Progress, Segmented, Select, Space, Table, Tag, Typography, message } from 'antd';
@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { deploymentsApi } from '../../api/deployments';
 import { pipelinesApi } from '../../api/pipelines';
 import EmptyPane from '../../components/EmptyPane';
+import HallSwitchIcon from '../../components/HallSwitchIcon';
 import PageHeaderBar from '../../components/PageHeaderBar';
 import PipelineIcon from '../../components/PipelineIcon';
 import StatusTag from '../../components/StatusTag';
@@ -564,11 +565,11 @@ export default function UserPipelinesPage({
                 setSelectedPipelineId(undefined);
               }}
               options={[
-                { value: 'all', icon: <SquaresFour weight="fill" />, label: `全部 ${hallViewStats.all}` },
-                { value: 'favorites', icon: <Heart weight="fill" />, label: `收藏 ${hallViewStats.favorites}` },
-                { value: 'running', icon: <PlayCircle weight="fill" />, label: `运行中 ${hallViewStats.running}` },
-                { value: 'failed', icon: <WarningCircle weight="fill" />, label: `失败 ${hallViewStats.failed}` },
-                { value: 'recent', icon: <ClockCounterClockwise weight="fill" />, label: `最近 ${hallViewStats.recent}` },
+                { value: 'all', icon: <HallSwitchIcon name="all" tone="blue" />, label: `全部 ${hallViewStats.all}` },
+                { value: 'favorites', icon: <HallSwitchIcon name="favorites" tone="rose" />, label: `收藏 ${hallViewStats.favorites}` },
+                { value: 'running', icon: <HallSwitchIcon name="running" tone="emerald" />, label: `运行中 ${hallViewStats.running}` },
+                { value: 'failed', icon: <HallSwitchIcon name="failed" tone="amber" />, label: `失败 ${hallViewStats.failed}` },
+                { value: 'recent', icon: <HallSwitchIcon name="recent" tone="cyan" />, label: `最近 ${hallViewStats.recent}` },
               ]}
             />
             <Segmented
@@ -576,8 +577,8 @@ export default function UserPipelinesPage({
               value={viewMode}
               onChange={(value) => setViewMode(value as 'card' | 'table')}
               options={[
-                { value: 'card', icon: <GridFour weight="fill" />, label: '卡片' },
-                { value: 'table', icon: <ListBullets weight="fill" />, label: '表格' },
+                { value: 'card', icon: <HallSwitchIcon name="card" tone="violet" />, label: '卡片' },
+                { value: 'table', icon: <HallSwitchIcon name="table" tone="slate" />, label: '表格' },
               ]}
             />
           </Space>
@@ -720,7 +721,7 @@ export default function UserPipelinesPage({
                                 <div className="pipeline-card-content">
                                   <PipelineIcon type={item.templateType} />
                                   <div className="min-w-0 flex-1 pipeline-card-title-block">
-                                    <Typography.Text className="block text-[11px] uppercase tracking-[0.24em] text-slate-400">
+                                    <Typography.Text className="pipeline-project-kicker block">
                                       {item.projectName || 'Project'}
                                     </Typography.Text>
                                     <div className="pipeline-card-title-meta-row">
@@ -729,7 +730,7 @@ export default function UserPipelinesPage({
                                         className={`pipeline-hall-favorite-button${item.favorited ? ' pipeline-hall-favorite-button--active' : ''}`}
                                         onClick={() => toggleFavorite(item.pipelineId, item.favorited).catch(() => message.error(item.favorited ? '取消收藏失败' : '收藏失败'))}
                                       >
-                                        <StarFilled />
+                                        <Heart weight={item.favorited ? 'fill' : 'regular'} />
                                       </button>
                                       {item.latestDeploymentOrder ? (
                                         <span className="pipeline-card-order">
@@ -744,7 +745,7 @@ export default function UserPipelinesPage({
                                 <StatusTag status={item.latestStatus || undefined} progress={item.latestProgressPercent} />
                               </div>
                             </div>
-                            <Typography.Title level={4} className="pipeline-card-title !m-0">
+                            <Typography.Title level={4} className="pipeline-title-text pipeline-card-title !m-0">
                               {item.pipelineName}
                             </Typography.Title>
                             <div className="pipeline-card-middle">
@@ -889,19 +890,19 @@ export default function UserPipelinesPage({
                             className={`pipeline-hall-favorite-button shrink-0${row.favorited ? ' pipeline-hall-favorite-button--active' : ''}`}
                             onClick={() => toggleFavorite(row.pipelineId, row.favorited).catch(() => message.error(row.favorited ? '取消收藏失败' : '收藏失败'))}
                           >
-                            <StarFilled />
+                            <Heart weight={row.favorited ? 'fill' : 'regular'} />
                           </button>
                           <PipelineIcon type={row.templateType} />
-                          <div className="min-w-0">
+                          <div className="pipeline-table-name-block min-w-0">
                             <div className="flex items-center gap-1">
-                              <div className="truncate font-medium text-slate-900" title={row.pipelineName}>{row.pipelineName}</div>
                               {row.latestDeploymentOrder ? (
                                 <div className="shrink-0 text-xs font-semibold text-sky-600">
                                   #{row.latestDeploymentOrder}
                                 </div>
                               ) : null}
+                              <div className="pipeline-title-text pipeline-table-title truncate" title={row.pipelineName}>{row.pipelineName}</div>
                             </div>
-                            <div className="truncate text-xs text-slate-500" title={row.projectName || ''}>{row.projectName || '-'}</div>
+                            <div className="pipeline-project-kicker truncate" title={row.projectName || ''}>{row.projectName || '-'}</div>
                           </div>
                         </div>
                       ),
@@ -917,11 +918,11 @@ export default function UserPipelinesPage({
                     },
                     {
                       title: '标签',
-                      width: 220,
+                      width: 168,
                       render: (_, row) => {
                         const tags = sortTagNames(normalizeTags(row.tags));
                         return tags.length > 0 ? (
-                          <Space wrap>
+                          <Space className="pipeline-table-tags" size={[4, 4]} wrap>
                             {tags.map((tag) => (
                               <Tag
                                 key={tag}
@@ -977,23 +978,27 @@ export default function UserPipelinesPage({
                     },
                     {
                       title: '最近耗时',
-                      width: 140,
-                      render: (_, row) => formatDeploymentElapsed({
-                        startedAt: row.latestStartedAt || undefined,
-                        createdAt: row.latestCreatedAt || undefined,
-                        finishedAt: row.latestFinishedAt || undefined,
-                        status: row.latestStatus || undefined,
-                      }, tick),
+                      width: 118,
+                      render: (_, row) => (
+                        <span className="pipeline-table-duration">
+                          {formatDeploymentElapsed({
+                            startedAt: row.latestStartedAt || undefined,
+                            createdAt: row.latestCreatedAt || undefined,
+                            finishedAt: row.latestFinishedAt || undefined,
+                            status: row.latestStatus || undefined,
+                          }, tick)}
+                        </span>
+                      ),
                     },
                     {
                       title: '操作',
-                      width: 260,
+                      width: 154,
                       render: (_, row) => {
                         const activeDeployment = row.latestStatus && ACTIVE_DEPLOYMENT_STATUSES.includes(row.latestStatus)
                           ? row
                           : undefined;
                         return (
-                          <Space>
+                          <Space className="pipeline-table-actions" size={6}>
                             {activeDeployment ? (
                               renderStopButton(row.pipelineId, activeDeployment.latestDeploymentId!, 'small')
                             ) : (

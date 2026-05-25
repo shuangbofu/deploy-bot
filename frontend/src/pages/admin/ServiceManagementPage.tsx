@@ -236,6 +236,7 @@ export default function ServiceManagementPage() {
           </div>
         </div>
         <Tabs
+          className="app-soft-tabs"
           activeKey={historyTabKey}
           onChange={setHistoryTabKey}
           items={[

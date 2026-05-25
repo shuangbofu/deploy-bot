@@ -143,6 +143,16 @@ public class DeploymentEntity {
     @Column(length = 2000)
     private String artifactPath;
 
+    /** 本次部署实际构建出的 Git 提交。 */
+    @Column(length = 64)
+    private String commitSha;
+
+    /** 与上一成功部署相比的 Git 差异快照。 */
+    @Convert(converter = ObjectMapJsonConverter.class)
+    @Lob
+    @Column(name = "git_diff_snapshot_json")
+    private Map<String, Object> gitDiffSnapshot;
+
     /** 本次部署创建时固化的执行快照，便于后续排查历史版本差异。 */
     @Convert(converter = ObjectMapJsonConverter.class)
     @Lob

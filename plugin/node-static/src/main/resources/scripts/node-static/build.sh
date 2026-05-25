@@ -5,7 +5,7 @@ set -e
 rm -rf "$WORKSPACE"
 
 # [步骤 2/4] 拉取代码并切换分支
-git clone --depth=1 --branch "$BRANCH" "$GIT_URL" "$WORKSPACE"
+git clone --progress --verbose --depth=1 --branch "$BRANCH" "$GIT_URL" "$WORKSPACE"
 cd "$WORKSPACE"
 
 # [步骤 3/4] 执行前端构建

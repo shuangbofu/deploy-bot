@@ -6,7 +6,7 @@ rm -rf "$WORKSPACE"
 mkdir -p "$WORKSPACE"
 
 # [步骤 2/7] 拉取代码：分支=$BRANCH 仓库=$GIT_URL
-git clone --depth=1 --branch "$BRANCH" "$GIT_URL" "$WORKSPACE"
+git clone --progress --verbose --depth=1 --branch "$BRANCH" "$GIT_URL" "$WORKSPACE"
 
 # [步骤 3/7] 构建前端工程：{{frontendDir}}
 cd "$WORKSPACE/{{frontendDir}}"

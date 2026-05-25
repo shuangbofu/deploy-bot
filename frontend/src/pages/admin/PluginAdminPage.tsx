@@ -451,6 +451,7 @@ export default function PluginAdminPage() {
               {previewBuiltinTemplate.description || '暂无说明'}
             </div>
             <Tabs
+              className="app-soft-tabs"
               items={[
                 {
                   key: 'build',

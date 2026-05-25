@@ -417,9 +417,7 @@ curl -X POST http://<backend-host>:<backend-port>/api/projects/test-connection \
 
 ## 路线图
 
-- WebSocket / SSE 实时日志推送
 - 远程主机环境自动安装与探测增强
-- 更细粒度的模板测试与变量校验
 - 部署队列、并发限制与审批流
 - 更完整的审计日志与操作追踪
 

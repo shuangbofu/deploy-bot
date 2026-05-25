@@ -20,6 +20,7 @@ import top.fusb.deploybot.notification.service.DeploymentNotificationAsyncServic
 import top.fusb.deploybot.service.GitCredentialService;
 import top.fusb.deploybot.service.HostService;
 import top.fusb.deploybot.service.DeploymentCleanupService;
+import top.fusb.deploybot.service.DeploymentGitDiffAsyncService;
 import top.fusb.deploybot.service.DeploymentPluginBridgeService;
 import top.fusb.deploybot.service.ServiceManager;
 import top.fusb.deploybot.service.SystemSettingsService;
@@ -40,7 +41,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -67,6 +70,7 @@ public class DeploymentRunner {
     private final GitCredentialService gitCredentialService;
     private final HostService hostService;
     private final DeploymentCleanupService deploymentCleanupService;
+    private final DeploymentGitDiffAsyncService deploymentGitDiffAsyncService;
     private final DeploymentNotificationAsyncService deploymentNotificationAsyncService;
     private final DeploymentPluginBridgeService deploymentPluginBridgeService;
     private final Map<Long, Process> runningProcesses = new ConcurrentHashMap<>();
@@ -154,6 +158,7 @@ public class DeploymentRunner {
             );
             log.info("部署 {} 构建阶段结束，退出码={}.", deploymentId, exitCode);
             deployment = refreshDeploymentState(deployment);
+            recordCurrentCommit(deployment, logFile);
             if (isStopRequested(deploymentId) || deployment.getStatus() == DeploymentStatus.STOPPED) {
                 deployment.setStatus(DeploymentStatus.STOPPED);
                 if (deployment.getFinishedAt() == null) {
@@ -298,6 +303,7 @@ public class DeploymentRunner {
                 }
             }
             deploymentRepository.save(deployment);
+            deploymentGitDiffAsyncService.generateAsync(deployment.getId());
             deploymentCleanupService.cleanupAfterDeployment(deployment, buildWorkspaceRoot);
             deploymentNotificationAsyncService.notifyAsync(deployment.getId(), NotificationEventType.DEPLOYMENT_FINISHED);
         } catch (Exception ex) {
@@ -490,6 +496,69 @@ public class DeploymentRunner {
         processBuilder.environment().put("DEPLOYBOT_GIT_EXECUTABLE", gitCredentialService.getGitExecutable());
         log.info("已准备远程发布进程，目标主机={}。", targetHost.getHostname());
         return processBuilder;
+    }
+
+    private void recordCurrentCommit(DeploymentEntity deployment, Path logFile) {
+        Path sourceDir = resolveBuildSourceDir(deployment);
+        if (sourceDir == null || !Files.isDirectory(sourceDir.resolve(".git"))) {
+            log.info("部署 {} 未找到 Git 工作目录，跳过 commit 记录。sourceDir={}", deployment.getId(), sourceDir);
+            return;
+        }
+        try {
+            String currentSha = runGit(sourceDir, "rev-parse", "HEAD");
+            if (TextKit.isBlank(currentSha)) {
+                return;
+            }
+            deployment.setCommitSha(currentSha.trim());
+            deploymentRepository.save(deployment);
+            appendSystemLog(logFile, "已记录本次 Git 提交：" + shortCommit(currentSha) + "。");
+        } catch (Exception ex) {
+            log.warn("部署 {} 记录 Git commit 失败：{}", deployment.getId(), ex.getMessage());
+        }
+    }
+
+    private Path resolveBuildSourceDir(DeploymentEntity deployment) {
+        Map<String, String> variables = deployment.getVariables() == null ? Map.of() : deployment.getVariables();
+        String workspace = variables.get("WORKSPACE");
+        if (TextKit.isNotBlank(workspace)) {
+            return Path.of(workspace);
+        }
+        String root = variables.get("buildWorkspaceRoot");
+        if (TextKit.isBlank(root)) {
+            root = variables.get("workspaceRoot");
+        }
+        if (TextKit.isBlank(root) || deployment.getId() == null) {
+            return null;
+        }
+        return Path.of(root).resolve("runs").resolve(String.valueOf(deployment.getId()));
+    }
+
+    private String shortCommit(String sha) {
+        if (TextKit.isBlank(sha)) {
+            return "";
+        }
+        String text = sha.trim();
+        return text.length() <= 8 ? text : text.substring(0, 8);
+    }
+
+    private String runGit(Path sourceDir, String... args) throws IOException, InterruptedException {
+        List<String> command = new ArrayList<>();
+        command.add(gitCredentialService.getGitExecutable());
+        command.addAll(List.of(args));
+        ProcessBuilder processBuilder = ProcessKit.mergedBuilder(command.toArray(String[]::new))
+                .directory(sourceDir.toFile());
+        processBuilder.environment().put("GIT_TERMINAL_PROMPT", "0");
+        processBuilder.environment().put("GIT_ASKPASS", "echo");
+        Process process = processBuilder.start();
+        String output;
+        try (InputStream inputStream = process.getInputStream()) {
+            output = new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
+        }
+        int exitCode = process.waitFor();
+        if (exitCode != 0) {
+            throw new IllegalStateException("git " + String.join(" ", args) + " exited with code " + exitCode + ": " + output);
+        }
+        return output == null ? "" : output.trim();
     }
 
     private java.util.List<String> buildSshCommand(HostEntity targetHost, Path sshDir) throws Exception {

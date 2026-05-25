@@ -20,8 +20,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 
@@ -103,6 +106,47 @@ public class DeploymentController {
     @GetMapping(value = "/{id}/log", produces = MediaType.APPLICATION_JSON_VALUE)
     public Map<String, String> log(@PathVariable Long id) throws IOException {
         return Map.of("content", service.readLog(id));
+    }
+
+    /**
+     * 流式读取部署日志增量。
+     */
+    @GetMapping(value = "/{id}/log/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter logStream(@PathVariable Long id, @RequestParam(defaultValue = "0") long offset) {
+        service.findById(id);
+        SseEmitter emitter = new SseEmitter(0L);
+        Thread thread = new Thread(() -> {
+            long currentOffset = Math.max(0L, offset);
+            try {
+                boolean finished = false;
+                int idleAfterFinished = 0;
+                while (!finished || idleAfterFinished < 2) {
+                    DeploymentService.LogChunk chunk = service.readAuthorizedLogChunk(id, currentOffset);
+                    currentOffset = chunk.offset();
+                    if (chunk.content() != null && !chunk.content().isEmpty()) {
+                        emitter.send(SseEmitter.event()
+                                .name("log")
+                                .data(Map.of(
+                                        "contentBase64", Base64.getEncoder().encodeToString(chunk.content().getBytes(StandardCharsets.UTF_8)),
+                                        "offset", chunk.offset(),
+                                        "finished", chunk.finished()
+                                )));
+                    }
+                    finished = chunk.finished();
+                    if (finished) {
+                        idleAfterFinished++;
+                    }
+                    Thread.sleep(200L);
+                }
+                emitter.send(SseEmitter.event().name("done").data(Map.of("offset", currentOffset)));
+                emitter.complete();
+            } catch (Exception ex) {
+                emitter.completeWithError(ex);
+            }
+        }, "deployment-log-stream-" + id);
+        thread.setDaemon(true);
+        thread.start();
+        return emitter;
     }
 
     /**

@@ -1111,6 +1111,40 @@ public class DeploymentService {
         return readLogWithTimeout(path);
     }
 
+    public LogChunk readAuthorizedLogChunk(Long id, long offset) throws IOException {
+        DeploymentEntity entity = deploymentRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.DEPLOYMENT_NOT_FOUND));
+        if (entity.getLogPath() == null) {
+            return new LogChunk("", Math.max(0L, offset), isDeploymentFinished(entity));
+        }
+        Path path = Path.of(entity.getLogPath());
+        if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
+            return new LogChunk("", Math.max(0L, offset), isDeploymentFinished(entity));
+        }
+        long safeOffset = Math.max(0L, offset);
+        long size = Files.size(path);
+        if (size < safeOffset) {
+            safeOffset = 0L;
+        }
+        if (size == safeOffset) {
+            return new LogChunk("", size, isDeploymentFinished(entity));
+        }
+        try (var inputStream = Files.newInputStream(path)) {
+            inputStream.skip(safeOffset);
+            String content = new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
+            return new LogChunk(content, size, isDeploymentFinished(entity));
+        }
+    }
+
+    private boolean isDeploymentFinished(DeploymentEntity entity) {
+        return entity.getStatus() == DeploymentStatus.SUCCESS
+                || entity.getStatus() == DeploymentStatus.FAILED
+                || entity.getStatus() == DeploymentStatus.STOPPED;
+    }
+
+    public record LogChunk(String content, long offset, boolean finished) {
+    }
+
     private String readLogWithTimeout(Path path) {
         if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
             return "[系统] 日志路径不是普通文件，已跳过读取：" + path;
@@ -1148,7 +1182,9 @@ public class DeploymentService {
                 toPipelineRef(entity),
                 entity.getArtifactPath(),
                 entity.getRollbackFromDeploymentId(),
-                entity.getMonitoredPid()
+                entity.getMonitoredPid(),
+                entity.getCommitSha(),
+                entity.getGitDiffSnapshot()
         );
     }
 

@@ -3,6 +3,7 @@ package top.fusb.deploybot.dto;
 import top.fusb.deploybot.model.DeploymentStatus;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 
 public record DeploymentListSummary(
         Long id,
@@ -22,7 +23,9 @@ public record DeploymentListSummary(
         PipelineRef pipeline,
         String artifactPath,
         Long rollbackFromDeploymentId,
-        Long monitoredPid
+        Long monitoredPid,
+        String commitSha,
+        Map<String, Object> gitDiffSnapshot
 ) {
     public record PipelineRef(
             Long id,

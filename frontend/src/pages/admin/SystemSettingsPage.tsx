@@ -400,8 +400,8 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
                   </Card>
                   <Card className="app-card">
                     <div className="mb-4">
-                      <div className="text-base font-semibold text-slate-800">菜单图标</div>
-                      <div className="mt-1 text-sm text-slate-500">在双色和实心两种菜单图标风格之间切换。</div>
+                      <div className="text-base font-semibold text-slate-800">图标样式</div>
+                      <div className="mt-1 text-sm text-slate-500">在双色线性和实心两种图标风格之间切换。</div>
                     </div>
                     <div className="settings-choice-grid">
                       <button
@@ -409,8 +409,8 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
                         className={`settings-choice ${menuIconStyle === 'duotone' ? 'settings-choice--active' : ''}`}
                         onClick={() => setMenuIconStyle('duotone')}
                       >
-                        <span className="settings-choice__title">双色图标</span>
-                        <span className="settings-choice__description">有层次但不厚重，适合默认菜单。</span>
+                        <span className="settings-choice__title">双色线性</span>
+                        <span className="settings-choice__description">线条更轻，保留少量双色层次。</span>
                       </button>
                       <button
                         type="button"
@@ -418,7 +418,7 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
                         onClick={() => setMenuIconStyle('fill')}
                       >
                         <span className="settings-choice__title">实心图标</span>
-                        <span className="settings-choice__description">更明确、更醒目，折叠菜单下识别更快。</span>
+                        <span className="settings-choice__description">更明确、更醒目，折叠状态下识别更快。</span>
                       </button>
                     </div>
                   </Card>
@@ -799,6 +799,7 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
             <NotificationAdminPage embedded showRecords={false} />
             <Card className="app-card">
               <Tabs
+                className="app-soft-tabs"
                 items={[
                   {
                     key: 'webhooks',

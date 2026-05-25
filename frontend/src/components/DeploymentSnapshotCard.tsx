@@ -8,6 +8,7 @@ interface Props {
   executionSnapshot: Record<string, unknown> | null;
   pipelinePluginId?: string | null;
   plugins: DeploymentPluginDefinitionSummary[];
+  embedded?: boolean;
 }
 
 const inferCodeLanguage = (field?: PluginFormFieldSummary) => {
@@ -43,7 +44,7 @@ const readRuntimeEnvironments = (
 
 const stringifySnapshotValue = (value: unknown) => String(value ?? '').trim();
 
-export default function DeploymentSnapshotCard({ loading, executionSnapshot, pipelinePluginId, plugins }: Props) {
+export default function DeploymentSnapshotCard({ loading, executionSnapshot, pipelinePluginId, plugins, embedded = false }: Props) {
   const [previewField, setPreviewField] = useState<{ label: string; value: string; language: string } | null>(null);
   const pluginId = stringifySnapshotValue(executionSnapshot?.pluginId) || pipelinePluginId || undefined;
   const plugin = plugins.find((item) => item.descriptor.pluginId === pluginId) || null;
@@ -111,8 +112,8 @@ export default function DeploymentSnapshotCard({ loading, executionSnapshot, pip
     return items;
   }, [executionSnapshot, pluginFieldMap]);
 
-  return (
-    <Card className="app-card deployment-detail-snapshot-card" title="部署快照" loading={loading}>
+  const content = (
+    <>
       <Descriptions column={1} size="small">
         {snapshotFields.length > 0 ? snapshotFields.map((item) => (
           <Descriptions.Item key={item.label} label={item.label}>
@@ -179,6 +180,16 @@ export default function DeploymentSnapshotCard({ loading, executionSnapshot, pip
           />
         ) : null}
       </Modal>
+    </>
+  );
+
+  if (embedded) {
+    return content;
+  }
+
+  return (
+    <Card className="app-card deployment-detail-snapshot-card" title="部署快照" loading={loading}>
+      {content}
     </Card>
   );
 }

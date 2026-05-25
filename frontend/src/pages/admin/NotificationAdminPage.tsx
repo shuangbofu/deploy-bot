@@ -195,6 +195,7 @@ export default function NotificationAdminPage({
   const content = (
     <Card className="app-card">
           <Tabs
+            className="app-soft-tabs"
             defaultActiveKey={showConfigurations ? defaultActiveKey : 'records'}
             items={[
               ...(showConfigurations ? [

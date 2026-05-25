@@ -8,18 +8,43 @@ type LogViewerProps = {
   maxHeight?: number;
   /** 日志仍在刷新时才允许暂停自动跟随。 */
   autoScrollAvailable?: boolean;
+  /** 运行中但暂时没有新日志时显示的临时提示，不写入日志正文。 */
+  idleHint?: string;
+};
+
+const normalizeTerminalLogLines = (content: string) => {
+  const text = content || '暂无日志输出。';
+  const lines: string[] = [];
+  let currentLine = '';
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === '\r') {
+      currentLine = '';
+      continue;
+    }
+    if (char === '\n') {
+      lines.push(currentLine);
+      currentLine = '';
+      continue;
+    }
+    currentLine += char;
+  }
+  if (currentLine || lines.length === 0) {
+    lines.push(currentLine);
+  }
+  return lines;
 };
 
 /**
  * 日志查看器。
  * 负责高亮命令追踪和错误行，并把页面滚动限制在日志容器内部。
  */
-export default function LogViewer({ content, maxHeight, autoScrollAvailable = false }: LogViewerProps) {
+export default function LogViewer({ content, maxHeight, autoScrollAvailable = false, idleHint }: LogViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [showBackToBottom, setShowBackToBottom] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
-  const lines = (content || '暂无日志输出。').split('\n');
+  const lines = normalizeTerminalLogLines(content);
   const updateScrollButtons = (element: HTMLDivElement) => {
     const bottomDistance = element.scrollHeight - element.scrollTop - element.clientHeight;
     setShowBackToTop(element.scrollTop > 120);
@@ -92,6 +117,11 @@ export default function LogViewer({ content, maxHeight, autoScrollAvailable = fa
             </div>
           );
         })}
+        {idleHint ? (
+          <div className="log-line log-line-idle-hint">
+            {idleHint}
+          </div>
+        ) : null}
       </div>
       <div className="log-viewer-actions">
         {showBackToTop ? (
