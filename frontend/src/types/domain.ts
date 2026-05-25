@@ -583,75 +583,13 @@ export interface HostResourceSnapshot {
   diskUsedGb?: number | null;
   /** 磁盘使用率。 */
   diskUsagePercent?: number | null;
-  /** 预览文本。 */
-  preview?: string;
   /** 前端资源采集错误提示。 */
   errorMessage?: string;
 }
 
-export interface DashboardTrendItem {
-  /** 日期键值，通常为 YYYY-MM-DD。 */
-  key: string;
-  /** 图表横轴显示文案。 */
-  label: string;
-  /** 当天部署总数。 */
-  total: number;
-  /** 当天成功数。 */
-  success: number;
-}
-
-export interface DashboardDeploymentSummary {
-  id: number;
-  pipelineName?: string | null;
-  projectName?: string | null;
-  branchName?: string | null;
-  triggeredBy?: string | null;
-  triggeredByDisplayName?: string | null;
-  status?: DeploymentStatus | null;
-  createdAt?: string | null;
-  startedAt?: string | null;
-  finishedAt?: string | null;
-  progressPercent?: number | null;
-  progressText?: string | null;
-}
-
-export interface DashboardServiceSummary {
-  id: number;
-  serviceName?: string | null;
-  status?: string | null;
-  pipelineName?: string | null;
-  targetHostName?: string | null;
-  updatedAt?: string | null;
-}
-
-export interface DashboardStatsSummary {
-  projects: number;
-  templates: number;
-  pipelines: number;
-  deployments: number;
-  hosts: number;
-  services: number;
-  users: number;
-  runningServices: number;
-  successRate: number;
-  runningDeployments: number;
-  failedDeployments: number;
-}
-
-export interface DashboardSummary {
-  stats: DashboardStatsSummary;
-  trend: DashboardTrendItem[];
-  latestDeployments: DashboardDeploymentSummary[];
-  attentionDeployments: DashboardDeploymentSummary[];
-  services: DashboardServiceSummary[];
-}
-
 export interface DashboardMetricCard {
   key: string;
-  label: string;
   value: string;
-  suffix?: string | null;
-  trendLabel?: string | null;
 }
 
 export interface DashboardChartPoint {

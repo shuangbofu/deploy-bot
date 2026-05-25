@@ -3,25 +3,13 @@ package top.fusb.deploybot.service;
 import lombok.RequiredArgsConstructor;
 import top.fusb.deploybot.dto.DashboardAnalytics;
 import top.fusb.deploybot.dto.DashboardChartPoint;
-import top.fusb.deploybot.dto.DashboardDeploymentSummary;
 import top.fusb.deploybot.dto.DashboardMetricCard;
 import top.fusb.deploybot.dto.DashboardQuery;
 import top.fusb.deploybot.dto.DashboardRecentPoint;
-import top.fusb.deploybot.dto.DashboardServiceSummary;
-import top.fusb.deploybot.dto.DashboardStatsSummary;
-import top.fusb.deploybot.dto.DashboardSummary;
-import top.fusb.deploybot.dto.DashboardTrendItem;
 import top.fusb.deploybot.model.DeploymentEntity;
 import top.fusb.deploybot.model.DeploymentStatus;
-import top.fusb.deploybot.model.ServiceEntity;
-import top.fusb.deploybot.model.ServiceStatus;
 import top.fusb.deploybot.model.UserEntity;
 import top.fusb.deploybot.repo.DeploymentRepository;
-import top.fusb.deploybot.repo.HostRepository;
-import top.fusb.deploybot.repo.PipelineRepository;
-import top.fusb.deploybot.repo.ProjectRepository;
-import top.fusb.deploybot.repo.ServiceRepository;
-import top.fusb.deploybot.repo.TemplateRepository;
 import top.fusb.deploybot.repo.UserRepository;
 import top.fusb.deploybot.security.AuthContextHolder;
 import top.fusb.deploybot.security.AuthenticatedUser;
@@ -46,15 +34,8 @@ import java.util.stream.Collectors;
 public class DashboardService {
     private static final List<DeploymentStatus> ACTIVE_STATUSES = List.of(DeploymentStatus.PENDING, DeploymentStatus.RUNNING);
     private static final List<DeploymentStatus> FINISHED_STATUSES = List.of(DeploymentStatus.SUCCESS, DeploymentStatus.FAILED, DeploymentStatus.STOPPED);
-    private static final List<DeploymentStatus> ATTENTION_STATUSES = List.of(DeploymentStatus.PENDING, DeploymentStatus.RUNNING, DeploymentStatus.FAILED);
 
-    private final ProjectRepository projectRepository;
-    private final TemplateRepository templateRepository;
-    private final PipelineRepository pipelineRepository;
     private final DeploymentRepository deploymentRepository;
-    private final HostService hostService;
-    private final HostRepository hostRepository;
-    private final ServiceRepository serviceRepository;
     private final UserRepository userRepository;
 
     private enum DashboardGranularity {
@@ -65,19 +46,6 @@ public class DashboardService {
     }
 
     private record DashboardRange(LocalDateTime startTime, LocalDateTime endTime, DashboardGranularity granularity) {
-    }
-
-    public DashboardSummary buildSummary() {
-        AuthenticatedUser currentUser = requireCurrentUser();
-        boolean admin = currentUser.isAdmin();
-        DashboardStatsSummary stats = buildStats(currentUser, admin);
-        List<DashboardTrendItem> trend = buildTrend(currentUser, admin);
-        List<DashboardDeploymentSummary> latestDeployments = buildLatestDeployments(currentUser, admin);
-        List<DashboardDeploymentSummary> attentionDeployments = buildAttentionDeployments(currentUser, admin);
-        List<DashboardServiceSummary> services = admin
-                ? serviceRepository.findTop6ByOrderByUpdatedAtDesc().stream().map(this::toDashboardServiceSummary).toList()
-                : List.of();
-        return new DashboardSummary(stats, trend, latestDeployments, attentionDeployments, services);
     }
 
     public DashboardAnalytics buildAnalytics(DashboardQuery query) {
@@ -100,105 +68,6 @@ public class DashboardService {
                 buildRecentPoints(deployments),
                 buildDurationDistribution(deployments)
         );
-    }
-
-    private DashboardStatsSummary buildStats(AuthenticatedUser currentUser, boolean admin) {
-        long deploymentCount = admin
-                ? deploymentRepository.count()
-                : deploymentRepository.countByTriggeredBy(currentUser.username());
-        long runningDeployments = admin
-                ? deploymentRepository.countByStatusIn(ACTIVE_STATUSES)
-                : deploymentRepository.countByTriggeredByAndStatusIn(currentUser.username(), ACTIVE_STATUSES);
-        long failedDeployments = admin
-                ? deploymentRepository.countByStatus(DeploymentStatus.FAILED)
-                : deploymentRepository.countByTriggeredByAndStatus(currentUser.username(), DeploymentStatus.FAILED);
-        long successDeployments = admin
-                ? deploymentRepository.countByStatus(DeploymentStatus.SUCCESS)
-                : deploymentRepository.countByTriggeredByAndStatus(currentUser.username(), DeploymentStatus.SUCCESS);
-        long finishedDeployments = admin
-                ? deploymentRepository.countByStatusIn(FINISHED_STATUSES)
-                : deploymentRepository.countByTriggeredByAndStatusIn(currentUser.username(), FINISHED_STATUSES);
-        int successRate = finishedDeployments > 0 ? (int) Math.round(successDeployments * 100.0 / finishedDeployments) : 0;
-
-        long hostCount = 0;
-        if (admin) {
-            hostService.ensureLocalHost();
-            hostCount = hostRepository.count();
-        }
-        long serviceCount = admin ? serviceRepository.count() : 0;
-        long runningServices = admin ? serviceRepository.countByStatus(ServiceStatus.RUNNING) : 0;
-        long userCount = admin ? userRepository.count() : 0;
-
-        return new DashboardStatsSummary(
-                admin ? projectRepository.count() : 0,
-                admin ? templateRepository.count() : 0,
-                pipelineRepository.count(),
-                deploymentCount,
-                hostCount,
-                serviceCount,
-                userCount,
-                runningServices,
-                successRate,
-                runningDeployments,
-                failedDeployments
-        );
-    }
-
-    private List<DashboardTrendItem> buildTrend(AuthenticatedUser currentUser, boolean admin) {
-        LocalDate today = LocalDate.now();
-        LocalDate startDate = today.minusDays(6);
-        LocalDateTime startTime = startDate.atStartOfDay();
-        List<DeploymentEntity> deployments = admin
-                ? deploymentRepository.findByCreatedAtGreaterThanEqualOrderByCreatedAtDesc(startTime)
-                : deploymentRepository.findByTriggeredByAndCreatedAtGreaterThanEqualOrderByCreatedAtDesc(currentUser.username(), startTime);
-        Map<LocalDate, long[]> buckets = new LinkedHashMap<>();
-        for (int i = 0; i < 7; i++) {
-            LocalDate date = startDate.plusDays(i);
-            buckets.put(date, new long[]{0, 0});
-        }
-        for (DeploymentEntity deployment : deployments) {
-            if (deployment.getCreatedAt() == null) {
-                continue;
-            }
-            LocalDate date = deployment.getCreatedAt().toLocalDate();
-            long[] bucket = buckets.get(date);
-            if (bucket == null) {
-                continue;
-            }
-            bucket[0] += 1;
-            if (deployment.getStatus() == DeploymentStatus.SUCCESS) {
-                bucket[1] += 1;
-            }
-        }
-        List<DashboardTrendItem> result = new ArrayList<>();
-        for (Map.Entry<LocalDate, long[]> entry : buckets.entrySet()) {
-            LocalDate date = entry.getKey();
-            long[] bucket = entry.getValue();
-            result.add(new DashboardTrendItem(
-                    date.toString(),
-                    date.getMonthValue() + "/" + date.getDayOfMonth(),
-                    bucket[0],
-                    bucket[1]
-            ));
-        }
-        return result;
-    }
-
-    private List<DashboardDeploymentSummary> buildLatestDeployments(AuthenticatedUser currentUser, boolean admin) {
-        List<DeploymentEntity> deployments = admin
-                ? deploymentRepository.findTop5ByOrderByCreatedAtDesc()
-                : deploymentRepository.findTop5ByTriggeredByOrderByCreatedAtDesc(currentUser.username());
-        return deployments.stream().map(this::toDashboardDeploymentSummary).toList();
-    }
-
-    private List<DashboardDeploymentSummary> buildAttentionDeployments(AuthenticatedUser currentUser, boolean admin) {
-        List<DeploymentEntity> deployments = admin
-                ? deploymentRepository.findTop5ByStatusInOrderByCreatedAtDesc(ATTENTION_STATUSES)
-                : deploymentRepository.findTop5ByTriggeredByAndStatusInOrderByCreatedAtDesc(currentUser.username(), ATTENTION_STATUSES);
-        return deployments.stream()
-                .sorted(Comparator.comparing(this::attentionWeight).thenComparing(DeploymentEntity::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
-                .map(this::toDashboardDeploymentSummary)
-                .toList();
     }
 
     private List<DeploymentEntity> loadDeployments(AuthenticatedUser currentUser, boolean admin, LocalDateTime startTime) {
@@ -275,16 +144,16 @@ public class DashboardService {
         long successRate = finished > 0 ? Math.round(success * 100.0 / finished) : 0;
 
         List<DashboardMetricCard> metrics = new ArrayList<>();
-        metrics.add(new DashboardMetricCard("deployments", "部署总数", String.valueOf(total), "次", "当前筛选范围"));
-        metrics.add(new DashboardMetricCard("successRate", "成功率", String.valueOf(successRate), "%", "成功 / 已结束"));
-        metrics.add(new DashboardMetricCard("failed", "失败数", String.valueOf(failed), "次", "需要关注"));
-        metrics.add(new DashboardMetricCard("avgDuration", "平均耗时", formatDuration(avgSeconds), null, "已结束部署"));
-        metrics.add(new DashboardMetricCard("running", "进行中", String.valueOf(running), "个", "等待或运行"));
-        metrics.add(new DashboardMetricCard("stopped", "已停止", String.valueOf(stopped), "次", "人工停止"));
+        metrics.add(new DashboardMetricCard("deployments", String.valueOf(total)));
+        metrics.add(new DashboardMetricCard("successRate", String.valueOf(successRate)));
+        metrics.add(new DashboardMetricCard("failed", String.valueOf(failed)));
+        metrics.add(new DashboardMetricCard("avgDuration", String.valueOf(avgSeconds)));
+        metrics.add(new DashboardMetricCard("running", String.valueOf(running)));
+        metrics.add(new DashboardMetricCard("stopped", String.valueOf(stopped)));
         long activePipelines = deployments.stream().map(this::resolvePipelineName).filter(Objects::nonNull).distinct().count();
         long activeProjects = deployments.stream().map(this::resolveProjectName).filter(Objects::nonNull).distinct().count();
-        metrics.add(new DashboardMetricCard("activePipelines", "活跃流水线", String.valueOf(activePipelines), "条", "有部署记录"));
-        metrics.add(new DashboardMetricCard("activeProjects", "活跃项目", String.valueOf(activeProjects), "个", "有部署记录"));
+        metrics.add(new DashboardMetricCard("activePipelines", String.valueOf(activePipelines)));
+        metrics.add(new DashboardMetricCard("activeProjects", String.valueOf(activeProjects)));
         return metrics;
     }
 
@@ -296,12 +165,12 @@ public class DashboardService {
             if (bucket == null) {
                 continue;
             }
-            bucket.compute("部署总数", (ignored, value) -> value == null ? 1 : value + 1);
-            bucket.compute(statusLabel(deployment.getStatus()), (ignored, value) -> value == null ? 1 : value + 1);
+            bucket.compute("total", (ignored, value) -> value == null ? 1 : value + 1);
+            bucket.compute(statusCategory(deployment.getStatus()), (ignored, value) -> value == null ? 1 : value + 1);
         }
         List<DashboardChartPoint> result = new ArrayList<>();
         buckets.forEach((key, values) -> values.forEach((category, value) ->
-                result.add(new DashboardChartPoint(key, trendLabel(key, range.granularity()), category, value, null))));
+                result.add(new DashboardChartPoint(key, trendLabel(key, range.granularity()), category, value))));
         return result;
     }
 
@@ -311,10 +180,10 @@ public class DashboardService {
         LocalDateTime end = truncateTime(range.endTime(), range.granularity()).plusSeconds(1);
         while (cursor.isBefore(end)) {
             Map<String, Long> values = new LinkedHashMap<>();
-            values.put("部署总数", 0L);
-            values.put("成功", 0L);
-            values.put("失败", 0L);
-            values.put("运行中", 0L);
+            values.put("total", 0L);
+            values.put(DeploymentStatus.SUCCESS.name(), 0L);
+            values.put(DeploymentStatus.FAILED.name(), 0L);
+            values.put("ACTIVE", 0L);
             buckets.put(bucketKey(cursor, range.granularity()), values);
             cursor = switch (range.granularity()) {
                 case HOUR -> cursor.plusHours(1);
@@ -330,7 +199,7 @@ public class DashboardService {
         Map<DeploymentStatus, Long> counts = new EnumMap<>(DeploymentStatus.class);
         deployments.forEach(deployment -> counts.compute(deployment.getStatus(), (ignored, value) -> value == null ? 1 : value + 1));
         return counts.entrySet().stream()
-                .map(entry -> new DashboardChartPoint(entry.getKey().name(), statusLabel(entry.getKey()), "状态", entry.getValue(), null))
+                .map(entry -> new DashboardChartPoint(entry.getKey().name(), entry.getKey().name(), "status", entry.getValue()))
                 .toList();
     }
 
@@ -341,7 +210,7 @@ public class DashboardService {
                 .stream()
                 .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
                 .limit(limit)
-                .map(entry -> new DashboardChartPoint(entry.getKey(), entry.getKey(), "部署次数", entry.getValue(), null))
+                .map(entry -> new DashboardChartPoint(entry.getKey(), entry.getKey(), "deployments", entry.getValue()))
                 .toList();
     }
 
@@ -364,39 +233,29 @@ public class DashboardService {
 
     private List<DashboardChartPoint> buildDurationDistribution(List<DeploymentEntity> deployments) {
         Map<String, Long> buckets = new LinkedHashMap<>();
-        buckets.put("1 分钟内", 0L);
-        buckets.put("1-5 分钟", 0L);
-        buckets.put("5-15 分钟", 0L);
-        buckets.put("15-30 分钟", 0L);
-        buckets.put("30 分钟以上", 0L);
+        buckets.put("lt60", 0L);
+        buckets.put("1to5m", 0L);
+        buckets.put("5to15m", 0L);
+        buckets.put("15to30m", 0L);
+        buckets.put("gte30m", 0L);
         deployments.stream().map(this::durationSeconds).filter(value -> value > 0).forEach(seconds -> {
             String key;
             if (seconds < 60) {
-                key = "1 分钟内";
+                key = "lt60";
             } else if (seconds < 300) {
-                key = "1-5 分钟";
+                key = "1to5m";
             } else if (seconds < 900) {
-                key = "5-15 分钟";
+                key = "5to15m";
             } else if (seconds < 1800) {
-                key = "15-30 分钟";
+                key = "15to30m";
             } else {
-                key = "30 分钟以上";
+                key = "gte30m";
             }
             buckets.compute(key, (ignored, value) -> value == null ? 1 : value + 1);
         });
         return buckets.entrySet().stream()
-                .map(entry -> new DashboardChartPoint(entry.getKey(), entry.getKey(), "部署次数", entry.getValue(), null))
+                .map(entry -> new DashboardChartPoint(entry.getKey(), entry.getKey(), "deployments", entry.getValue()))
                 .toList();
-    }
-
-    private int attentionWeight(DeploymentEntity entity) {
-        if (entity.getStatus() == DeploymentStatus.FAILED) {
-            return 0;
-        }
-        if (entity.getStatus() == DeploymentStatus.RUNNING) {
-            return 1;
-        }
-        return 2;
     }
 
     private long countStatus(List<DeploymentEntity> deployments, DeploymentStatus status) {
@@ -408,20 +267,6 @@ public class DashboardService {
             return 0;
         }
         return Math.max(0, Duration.between(deployment.getStartedAt(), deployment.getFinishedAt()).toSeconds());
-    }
-
-    private String formatDuration(long seconds) {
-        if (seconds <= 0) {
-            return "-";
-        }
-        if (seconds < 60) {
-            return seconds + " 秒";
-        }
-        long minutes = seconds / 60;
-        if (minutes < 60) {
-            return minutes + " 分钟";
-        }
-        return (minutes / 60) + " 小时";
     }
 
     private String bucketKey(LocalDateTime time, DashboardGranularity granularity) {
@@ -460,20 +305,11 @@ public class DashboardService {
         };
     }
 
-    private String statusLabel(DeploymentStatus status) {
-        if (status == DeploymentStatus.SUCCESS) {
-            return "成功";
+    private String statusCategory(DeploymentStatus status) {
+        if (ACTIVE_STATUSES.contains(status)) {
+            return "ACTIVE";
         }
-        if (status == DeploymentStatus.FAILED) {
-            return "失败";
-        }
-        if (status == DeploymentStatus.RUNNING || status == DeploymentStatus.PENDING) {
-            return "运行中";
-        }
-        if (status == DeploymentStatus.STOPPED) {
-            return "已停止";
-        }
-        return "未知";
+        return status == null ? "UNKNOWN" : status.name();
     }
 
     private String resolveProjectName(DeploymentEntity deployment) {
@@ -524,34 +360,6 @@ public class DashboardService {
 
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
-    }
-
-    private DashboardDeploymentSummary toDashboardDeploymentSummary(DeploymentEntity entity) {
-        return new DashboardDeploymentSummary(
-                entity.getId(),
-                entity.getPipeline() == null ? null : entity.getPipeline().getName(),
-                entity.getPipeline() != null && entity.getPipeline().getProject() != null ? entity.getPipeline().getProject().getName() : null,
-                entity.getBranchName(),
-                entity.getTriggeredBy(),
-                resolveDisplayName(entity.getTriggeredBy()),
-                entity.getStatus(),
-                entity.getCreatedAt(),
-                entity.getStartedAt(),
-                entity.getFinishedAt(),
-                entity.getProgressPercent(),
-                entity.getProgressText()
-        );
-    }
-
-    private DashboardServiceSummary toDashboardServiceSummary(ServiceEntity entity) {
-        return new DashboardServiceSummary(
-                entity.getId(),
-                entity.getServiceName(),
-                entity.getStatus() == null ? null : entity.getStatus().name(),
-                entity.getPipeline() == null ? null : entity.getPipeline().getName(),
-                entity.getPipeline() != null && entity.getPipeline().getTargetHost() != null ? entity.getPipeline().getTargetHost().getName() : "本机",
-                entity.getUpdatedAt()
-        );
     }
 
     private String resolveDisplayName(String username) {

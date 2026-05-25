@@ -19,7 +19,7 @@ export default function ProjectAdminPage() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [testingConnection, setTestingConnection] = useState(false);
+  const [testingConnectionKey, setTestingConnectionKey] = useState<string>();
   const [form, setForm] = useState<ProjectPayload>(emptyProject);
   const [editingId, setEditingId] = useState<number>();
   const [modalOpen, setModalOpen] = useState(false);
@@ -121,7 +121,7 @@ export default function ProjectAdminPage() {
     message.success(editingId ? '项目已更新' : '项目已创建');
   };
 
-  const testConnectionWithPayload = async (payload: ProjectPayload) => {
+  const testConnectionWithPayload = async (payload: ProjectPayload, loadingKey: string) => {
     if (!payload.gitUrl.trim()) {
       message.error('请先填写 Git 地址。');
       return;
@@ -136,7 +136,7 @@ export default function ProjectAdminPage() {
       return;
     }
 
-    setTestingConnection(true);
+    setTestingConnectionKey(loadingKey);
     try {
       const result = await projectsApi.testConnection(payload);
       Modal.success({
@@ -156,12 +156,12 @@ export default function ProjectAdminPage() {
         ),
       });
     } finally {
-      setTestingConnection(false);
+      setTestingConnectionKey(undefined);
     }
   };
 
   const testConnection = async () => {
-    await testConnectionWithPayload(form);
+    await testConnectionWithPayload(form, 'form');
   };
 
   const removeProject = async (id: number) => {
@@ -258,7 +258,7 @@ export default function ProjectAdminPage() {
                   <Space>
                     <Button
                       size="small"
-                      loading={testingConnection}
+                      loading={testingConnectionKey === `project-${record.id}`}
                       onClick={() => testConnectionWithPayload({
                         name: record.name || '',
                         description: record.description || '',
@@ -266,7 +266,7 @@ export default function ProjectAdminPage() {
                         gitAuthType: record.gitAuthType || 'NONE',
                         gitUsername: '',
                         gitPassword: '',
-                      }).catch(() => undefined)}
+                      }, `project-${record.id}`).catch(() => undefined)}
                     >
                       测试连通性
                     </Button>
@@ -292,7 +292,7 @@ export default function ProjectAdminPage() {
         okText="保存"
         cancelText="取消"
         footer={[
-          <Button key="test" loading={testingConnection} onClick={() => testConnection().catch(() => undefined)}>
+          <Button key="test" loading={testingConnectionKey === 'form'} onClick={() => testConnection().catch(() => undefined)}>
             测试连通性
           </Button>,
           <Button key="cancel" onClick={() => setModalOpen(false)}>

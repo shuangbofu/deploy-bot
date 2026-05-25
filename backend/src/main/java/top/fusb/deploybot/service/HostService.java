@@ -373,22 +373,10 @@ public class HostService {
                 printf '__DEPLOYBOT_DISK_TOTAL_GB__%s\\n' "$(( DISK_TOTAL_KB / 1024 / 1024 ))"
                 printf '__DEPLOYBOT_DISK_USED_GB__%s\\n' "$(( DISK_USED_KB / 1024 / 1024 ))"
                 printf '__DEPLOYBOT_DISK_PERCENT__%s\\n' "$DISK_USE_PERCENT"
-                echo "__DEPLOYBOT_PREVIEW__"
-                echo "系统类型: $OS_TYPE"
-                echo "工作空间: $WORKSPACE"
-                echo "CPU 核数: $CPU_CORES"
-                echo "CPU 使用率: ${CPU_USAGE:-未知}%"
-                echo "1 分钟负载: ${LOAD_AVG:-未知}"
-                echo "内存: ${MEM_USED_MB}MB / ${MEM_TOTAL_MB}MB"
-                echo "磁盘: $(( DISK_USED_KB / 1024 / 1024 ))GB / $(( DISK_TOTAL_KB / 1024 / 1024 ))GB (${DISK_USE_PERCENT}%)"
                 """.replace("__DEPLOYBOT_WORKSPACE__", escapedWorkspace);
     }
 
     private HostResourceSnapshot mapResourceSnapshot(HostEntity host, String workspaceRoot, String output) {
-        String preview = output.contains("__DEPLOYBOT_PREVIEW__")
-                ? output.substring(output.indexOf("__DEPLOYBOT_PREVIEW__") + "__DEPLOYBOT_PREVIEW__".length()).trim()
-                : output.trim();
-
         Long memoryTotalMb = parseLong(extractValue(output, "__DEPLOYBOT_MEM_TOTAL_MB__"));
         Long memoryUsedMb = parseLong(extractValue(output, "__DEPLOYBOT_MEM_USED_MB__"));
         Long diskTotalGb = parseLong(extractValue(output, "__DEPLOYBOT_DISK_TOTAL_GB__"));
@@ -408,8 +396,7 @@ public class HostService {
                 percent(memoryUsedMb, memoryTotalMb),
                 diskTotalGb,
                 diskUsedGb,
-                parseInteger(extractValue(output, "__DEPLOYBOT_DISK_PERCENT__")),
-                preview
+                parseInteger(extractValue(output, "__DEPLOYBOT_DISK_PERCENT__"))
         );
     }
 

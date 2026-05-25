@@ -8,6 +8,7 @@ import AdminDeploymentDetailPage from './pages/admin/AdminDeploymentDetailPage';
 import AdminPipelineWorkspacePage from './pages/admin/AdminPipelineWorkspacePage';
 import DeploymentRecordsPage from './pages/admin/DeploymentRecordsPage';
 import HostManagementPage from './pages/admin/HostManagementPage';
+import HostResourcePage from './pages/admin/HostResourcePage';
 import PipelineAdminPage from './pages/admin/PipelineAdminPage';
 import PluginAdminPage from './pages/admin/PluginAdminPage';
 import ProjectAdminPage from './pages/admin/ProjectAdminPage';
@@ -92,6 +93,7 @@ export default function App() {
           <Route path="dashboard" element={<AdminDashboardPage />} />
           <Route path="projects" element={<ProjectAdminPage />} />
           <Route path="hosts" element={<HostManagementPage />} />
+          <Route path="hosts/:hostId/resources" element={<HostResourcePage />} />
           <Route path="hosts/:hostId/environments" element={<RuntimeEnvironmentsPage />} />
           <Route path="plugins" element={<PluginAdminPage />} />
           <Route path="plugins/:pluginId/templates" element={<TemplateAdminPage />} />

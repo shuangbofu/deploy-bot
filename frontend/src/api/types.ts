@@ -1,7 +1,6 @@
 import type {
   DashboardAnalytics,
   DashboardAnalyticsQuery,
-  DashboardSummary,
   DeploymentSummary,
   HostConnectionTestResult,
   HostResourceSnapshot,

@@ -33,8 +33,6 @@ public record HostResourceSnapshot(
         /** 已用磁盘（GB）。 */
         Long diskUsedGb,
         /** 磁盘使用率。 */
-        Integer diskUsagePercent,
-        /** 面向用户的预览文本。 */
-        String preview
+        Integer diskUsagePercent
 ) {
 }

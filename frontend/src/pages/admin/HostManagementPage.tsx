@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Button, Card, Descriptions, Form, Input, Modal, Popconfirm, Progress, Select, Space, Switch, Table, message } from 'antd';
+import { EllipsisOutlined } from '@ant-design/icons';
+import { Button, Card, Dropdown, Form, Input, Modal, Select, Space, Switch, Table, message } from 'antd';
 import { CaretDown, CaretRight } from '@phosphor-icons/react';
 import { useNavigate } from 'react-router-dom';
 import { hostsApi } from '../../api/hosts';
@@ -8,15 +9,12 @@ import type { HostPayload } from '../../api/types';
 import EmptyPane from '../../components/EmptyPane';
 import PageHeaderBar from '../../components/PageHeaderBar';
 import type {
-  HostResourceSnapshot,
   HostSshAuthType,
   HostSummary,
   HostType,
   RuntimeEnvironmentSummary,
 } from '../../types/domain';
-import { formatDateTime } from '../../utils/datetime';
 import { getRuntimeEnvironmentTypeLabel, sortRuntimeEnvironmentTypes } from '../../utils/runtimeEnvironment';
-import { getRequestErrorMessage } from '../../utils/requestError';
 
 const hostTypeOptions: { label: string; value: HostType }[] = [
   { label: 'SSH 远程主机', value: 'SSH' },
@@ -60,11 +58,10 @@ const emptyHost: HostFormState = {
   enabled: true,
 };
 
-function renderEnabledStatus(enabled: boolean) {
+function renderEnabledStatusDot(enabled: boolean) {
   return (
-    <span className="status-chip">
+    <span className="inline-flex items-center" title={enabled ? '启用' : '停用'}>
       <span className={`status-dot ${enabled ? 'status-dot--success' : 'status-dot--pending'}`} />
-      <span>{enabled ? '启用' : '停用'}</span>
     </span>
   );
 }
@@ -147,10 +144,6 @@ export default function HostManagementPage() {
   const [editingId, setEditingId] = useState<number | undefined>();
   const [modalOpen, setModalOpen] = useState(false);
   const [testingHostId, setTestingHostId] = useState<number | undefined>();
-  const [previewingHostId, setPreviewingHostId] = useState<number | undefined>();
-  const [resourceModalOpen, setResourceModalOpen] = useState(false);
-  const [resourceSnapshot, setResourceSnapshot] = useState<HostResourceSnapshot>();
-  const [hostResourceErrors, setHostResourceErrors] = useState<Record<number, string>>({});
   const [keyword, setKeyword] = useState('');
   const [typeFilter, setTypeFilter] = useState<HostType>();
   const [enabledFilter, setEnabledFilter] = useState<string>();
@@ -271,24 +264,8 @@ export default function HostManagementPage() {
     }
   };
 
-  const previewResources = async (id: number) => {
-    setPreviewingHostId(id);
-    try {
-      setResourceSnapshot(await hostsApi.previewResources(id));
-      setHostResourceErrors((previous) => {
-        const next = { ...previous };
-        delete next[id];
-        return next;
-      });
-      setResourceModalOpen(true);
-    } catch (error) {
-      setHostResourceErrors((previous) => ({
-        ...previous,
-        [id]: getRequestErrorMessage(error, '读取主机资源失败'),
-      }));
-    } finally {
-      setPreviewingHostId(undefined);
-    }
+  const openResourcePage = (id: number) => {
+    navigate(`/admin/hosts/${id}/resources`);
   };
 
   return (
@@ -369,7 +346,19 @@ export default function HostManagementPage() {
             onChange: (current, pageSize) => setPagination({ current, pageSize }),
           }}
           columns={[
-              { title: '名称', dataIndex: 'name', width: 180 },
+              {
+                title: '名称',
+                dataIndex: 'name',
+                width: 180,
+                render: (value, row) => (
+                  <span className="flex min-w-0 items-center gap-2">
+                    {renderEnabledStatusDot(row.enabled !== false)}
+                    <span className="min-w-0 truncate" title={value || '-'}>
+                      {value || '-'}
+                    </span>
+                  </span>
+                ),
+              },
               { title: '类型', render: (_, row) => renderNoWrapText(row.type === 'LOCAL' ? '本机' : 'SSH 远程主机'), width: 180 },
               { title: '说明', dataIndex: 'description', width: 240, render: (value) => renderCompactText(value) },
               { title: '主机地址', render: (_, row) => row.type === 'LOCAL' ? '-' : row.hostname || '-', width: 180 },
@@ -402,41 +391,47 @@ export default function HostManagementPage() {
                   );
                 },
               },
-              { title: '状态', render: (_, row) => renderEnabledStatus(row.enabled !== false), width: 100 },
-              {
-                title: '资源状态',
-                width: 220,
-                render: (_, row) => hostResourceErrors[row.id] ? (
-                  <span className="app-tag-warning inline-flex max-w-full rounded-full px-2 py-1 text-xs" title={hostResourceErrors[row.id]}>
-                    资源读取失败
-                  </span>
-                ) : <span className="text-slate-400">-</span>,
-              },
               {
                 title: '操作',
-                width: 360,
+                width: 188,
+                fixed: 'right',
                 render: (_, record) => (
-                  <Space>
+                  <Space size={6} className="w-full justify-center whitespace-nowrap px-1">
                     <Button size="small" onClick={() => navigate(`/admin/hosts/${record.id}/environments`)}>
                       环境管理
                     </Button>
-                    <Button size="small" loading={testingHostId === record.id} onClick={() => testConnection(record.id).catch((error) => message.error(error?.response?.data?.message || '测试连接失败'))}>
-                      测试连接
-                    </Button>
-                    <Button size="small" loading={previewingHostId === record.id} onClick={() => previewResources(record.id)}>
-                      资源预览
-                    </Button>
                     <Button size="small" onClick={() => openEdit(record)}>编辑</Button>
-                    {record.type !== 'LOCAL' && !record.builtIn ? (
-                      <Popconfirm
-                        title="确认删除这台主机吗？"
-                        okText="确认"
-                        cancelText="取消"
-                        onConfirm={() => removeHost(record.id).catch((error) => message.error(error?.response?.data?.message || '删除主机失败'))}
-                      >
-                        <Button size="small" danger>删除</Button>
-                      </Popconfirm>
-                    ) : null}
+                    <Dropdown
+                      trigger={['click']}
+                      menu={{
+                        items: [
+                          { key: 'test', label: testingHostId === record.id ? '测试中...' : '测试连接', disabled: testingHostId === record.id },
+                          { key: 'resources', label: '资源预览' },
+                          ...(record.type !== 'LOCAL' && !record.builtIn
+                            ? [{ key: 'delete', label: <span className="text-red-500">删除</span> }]
+                            : []),
+                        ],
+                        onClick: ({ key }) => {
+                          if (key === 'test') {
+                            testConnection(record.id).catch((error) => message.error(error?.response?.data?.message || '测试连接失败'));
+                          }
+                          if (key === 'resources') {
+                            openResourcePage(record.id);
+                          }
+                          if (key === 'delete') {
+                            Modal.confirm({
+                              title: '确认删除这台主机吗？',
+                              okText: '确认',
+                              cancelText: '取消',
+                              okButtonProps: { danger: true },
+                              onOk: () => removeHost(record.id).catch((error) => message.error(error?.response?.data?.message || '删除主机失败')),
+                            });
+                          }
+                        },
+                      }}
+                    >
+                      <Button size="small" loading={testingHostId === record.id} icon={<EllipsisOutlined />} />
+                    </Dropdown>
                   </Space>
                 ),
               },
@@ -522,43 +517,6 @@ export default function HostManagementPage() {
             <Switch checked={form.enabled} checkedChildren="启用" unCheckedChildren="停用" onChange={(checked) => setForm({ ...form, enabled: checked })} />
           </Form.Item>
         </Form>
-      </Modal>
-      <Modal
-        title={resourceSnapshot ? `${resourceSnapshot.hostName} · 资源预览` : '资源预览'}
-        open={resourceModalOpen}
-        width={760}
-        footer={null}
-        onCancel={() => setResourceModalOpen(false)}
-      >
-        {resourceSnapshot ? (
-          <div className="space-y-4">
-            <Descriptions column={2} size="small">
-              <Descriptions.Item label="采集时间">{formatDateTime(resourceSnapshot.collectedAt)}</Descriptions.Item>
-              <Descriptions.Item label="系统类型">{resourceSnapshot.osType || '-'}</Descriptions.Item>
-              <Descriptions.Item label="工作空间">{resourceSnapshot.workspaceRoot || '-'}</Descriptions.Item>
-              <Descriptions.Item label="CPU 核数">{resourceSnapshot.cpuCores ?? '-'}</Descriptions.Item>
-              <Descriptions.Item label="CPU 使用率">{resourceSnapshot.cpuUsagePercent ?? '-'}%</Descriptions.Item>
-              <Descriptions.Item label="1 分钟负载">{resourceSnapshot.loadAverage ?? '-'}</Descriptions.Item>
-              <Descriptions.Item label="内存">{resourceSnapshot.memoryUsedMb ?? '-'} MB / {resourceSnapshot.memoryTotalMb ?? '-'} MB</Descriptions.Item>
-              <Descriptions.Item label="磁盘">{resourceSnapshot.diskUsedGb ?? '-'} GB / {resourceSnapshot.diskTotalGb ?? '-'} GB</Descriptions.Item>
-            </Descriptions>
-            <div>
-              <div className="mb-2 text-sm font-medium text-slate-700">CPU 使用率</div>
-              <Progress percent={resourceSnapshot.cpuUsagePercent ?? 0} strokeColor="#f59e0b" />
-            </div>
-            <div>
-              <div className="mb-2 text-sm font-medium text-slate-700">内存使用率</div>
-              <Progress percent={resourceSnapshot.memoryUsagePercent ?? 0} strokeColor="#2563eb" />
-            </div>
-            <div>
-              <div className="mb-2 text-sm font-medium text-slate-700">磁盘使用率</div>
-              <Progress percent={resourceSnapshot.diskUsagePercent ?? 0} strokeColor="#16a34a" />
-            </div>
-            <Card size="small" title="预览文本">
-              <pre className="table-code-preview">{resourceSnapshot.preview || '暂无资源预览文本。'}</pre>
-            </Card>
-          </div>
-        ) : null}
       </Modal>
     </>
   );

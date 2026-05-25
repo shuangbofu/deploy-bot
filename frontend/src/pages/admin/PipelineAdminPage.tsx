@@ -1467,7 +1467,7 @@ const selectedTemplateVariables = useMemo(
               {
                 title: '描述',
                 dataIndex: 'description',
-                width: 320,
+                width: 280,
                 render: (value) => value ? (
                   <div className="py-1 text-sm leading-6 whitespace-normal break-words text-slate-600 line-clamp-2" title={value}>
                     {value}
@@ -1496,44 +1496,47 @@ const selectedTemplateVariables = useMemo(
               { title: '默认分支', dataIndex: 'defaultBranch', width: 120 },
               {
                 title: '变量',
-                width: 360,
+                width: 520,
+                onCell: () => ({ style: { overflow: 'hidden' } }),
                 render: (_, row) => (
+                  <div className="w-full overflow-hidden">
                     <Space wrap>
                       {row.parsedTemplateVariables.length === 0 ? <span className="text-slate-400">无</span> : null}
-                    {sortByPhase(row.parsedTemplateVariables).map((item) => (
-                      <Tag
-                        key={item.name}
-                        className={`app-phase-tag ${phaseClassName(item.phase)} !border-0 !pl-0 !py-0`}
-                      >
-                        <span
-                          className={`app-phase-tag__label ${phaseLabelClassName(item.phase)} mr-1.5 inline-flex items-center rounded-md px-2 py-1 text-xs font-normal text-white`}
+                      {sortByPhase(row.parsedTemplateVariables).map((item) => (
+                        <Tag
+                          key={item.name}
+                          className={`app-phase-tag max-w-full ${phaseClassName(item.phase)} !border-0 !pl-0 !py-0`}
                         >
-                          <span>[{PHASE_LABEL_MAP[item.phase || 'shared'] || '共用'}]</span>
-                          <span className="ml-1">{item.label || item.name}</span>
-                        </span>
-                        <button
-                          type="button"
-                          className="cursor-pointer rounded-sm bg-transparent px-1 py-0 text-slate-700 transition-colors hover:text-slate-900"
-                          onClick={async () => {
-                            const value = row.parsedVariables[item.name] || '-';
-                            try {
-                              await copyText(value);
-                              message.success(`已复制：${value}`);
-                            } catch {
-                              message.error('复制失败');
-                            }
-                          }}
-                        >
-                          {row.parsedVariables[item.name] || '-'}
-                        </button>
-                      </Tag>
-                    ))}
-                  </Space>
+                          <span
+                            className={`app-phase-tag__label ${phaseLabelClassName(item.phase)} mr-1.5 inline-flex items-center rounded-md px-2 py-1 text-xs font-normal text-white`}
+                          >
+                            <span>[{PHASE_LABEL_MAP[item.phase || 'shared'] || '共用'}]</span>
+                            <span className="ml-1">{item.label || item.name}</span>
+                          </span>
+                          <button
+                            type="button"
+                            className="cursor-pointer rounded-sm bg-transparent px-1 py-0 text-slate-700 transition-colors hover:text-slate-900"
+                            onClick={async () => {
+                              const value = row.parsedVariables[item.name] || '-';
+                              try {
+                                await copyText(value);
+                                message.success(`已复制：${value}`);
+                              } catch {
+                                message.error('复制失败');
+                              }
+                            }}
+                          >
+                            {row.parsedVariables[item.name] || '-'}
+                          </button>
+                        </Tag>
+                      ))}
+                    </Space>
+                  </div>
                 ),
               },
               {
                 title: '环境版本',
-                width: 320,
+                width: 260,
                 render: (_, row) => {
                   const items = [
                     row.javaEnvironment ? `构建组件 ${row.javaEnvironment.type}：${row.javaEnvironment.name}` : null,
