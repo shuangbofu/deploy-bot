@@ -22,7 +22,17 @@ const emptyFilters: PipelineHistoryFilters = {
  * 单条流水线的历史记录页。
  * 与全局部署记录不同，这里只关心当前选中的流水线。
  */
-export default function UserPipelineHistoryPage() {
+type UserPipelineHistoryPageProps = {
+  basePath?: string;
+  deploymentDetailBasePath?: string;
+  listScope?: 'mine' | 'all';
+};
+
+export default function UserPipelineHistoryPage({
+  basePath = '/user/pipelines',
+  deploymentDetailBasePath = '/user/deployments',
+  listScope = 'mine',
+}: UserPipelineHistoryPageProps) {
   const { pipelineId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -42,7 +52,8 @@ export default function UserPipelineHistoryPage() {
   const loadDeployments = async () => {
     setLoading(true);
     try {
-      const result = await deploymentsApi.listMinePage({
+      const listPage = listScope === 'all' ? deploymentsApi.listPage : deploymentsApi.listMinePage;
+      const result = await listPage({
         page: pagination.current,
         pageSize: pagination.pageSize,
         triggeredBy: filters.triggeredBy || undefined,
@@ -84,7 +95,7 @@ export default function UserPipelineHistoryPage() {
         title={title}
         description="查看当前流水线的部署历史和部署结果。"
         extra={[
-          <Button key="back" onClick={() => navigate('/user/pipelines')}>返回流水线大厅</Button>,
+          <Button key="back" onClick={() => navigate(basePath)}>返回流水线大厅</Button>,
           <Button key="refresh" type="primary" onClick={() => loadDeployments().catch(() => message.error('刷新失败'))}>刷新</Button>,
         ]}
       />
@@ -184,7 +195,7 @@ export default function UserPipelineHistoryPage() {
                     <Button
                       size="small"
                       type="primary"
-                      onClick={() => navigate(`/user/deployments/${row.id}`, {
+                      onClick={() => navigate(`${deploymentDetailBasePath}/${row.id}`, {
                         state: { from: location.pathname, backLabel: '返回部署记录' },
                       })}
                     >
@@ -198,7 +209,7 @@ export default function UserPipelineHistoryPage() {
                         cancelText="取消"
                         onConfirm={() => deploymentsApi.rollback(row.id).then((response) => {
                           message.success('回滚任务已创建');
-                          navigate(`/user/deployments/${response.id}`, {
+                          navigate(`${deploymentDetailBasePath}/${response.id}`, {
                             state: { from: location.pathname, backLabel: '返回部署记录' },
                           });
                         }).catch(() => message.error('创建回滚任务失败'))}

@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Steps, Table, Tag, message } from 'antd';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { deploymentPluginsApi } from '../../api/deploymentPlugins';
 import { hostsApi } from '../../api/hosts';
 import { notificationsApi } from '../../api/notifications';
@@ -140,6 +140,60 @@ const parseVariablesSchema = (content: unknown): TemplateVariableDefinition[] =>
   }
 };
 
+const TEMPLATE_VARIABLE_PATTERN = /\{\{\s*([a-zA-Z_][\w.-]*)\s*}}/g;
+
+const inferVariablesFromScript = (
+  content: string | undefined | null,
+  phase: 'build' | 'deploy',
+  variables: Map<string, TemplateVariableDefinition>,
+  plugin?: DeploymentPluginDefinitionSummary | null,
+) => {
+  if (!content) {
+    return;
+  }
+  const pluginVariableMap = new Map((plugin?.variableDefinitions || []).map((item) => [item.key, item]));
+  Array.from(content.matchAll(TEMPLATE_VARIABLE_PATTERN)).forEach((match) => {
+    const name = match[1];
+    if (!name || variables.has(name)) {
+      return;
+    }
+    const definition = pluginVariableMap.get(name);
+    variables.set(name, {
+      name,
+      label: definition?.label || name,
+      required: definition?.required ?? true,
+      pipelineInput: true,
+      placeholder: definition?.defaultValue,
+      phase,
+      mutationRuleIds: definition?.mutationRuleIds,
+      binding: definition?.binding,
+    });
+  });
+};
+
+const resolveTemplateVariables = (
+  template: PipelineTemplateOption | undefined,
+  plugin?: DeploymentPluginDefinitionSummary | null,
+) => {
+  const parsed = parseVariablesSchema(template?.variablesSchema);
+  if (parsed.length || !template || template.source !== 'builtin') {
+    return parsed;
+  }
+  const variables = new Map<string, TemplateVariableDefinition>();
+  inferVariablesFromScript(template.buildScriptContent, 'build', variables, plugin);
+  inferVariablesFromScript(template.deployScriptContent, 'deploy', variables, plugin);
+  return Array.from(variables.values());
+};
+
+const retainMatchedTemplateVariables = (
+  values: Record<string, string>,
+  template: PipelineTemplateOption | undefined,
+  plugin?: DeploymentPluginDefinitionSummary | null,
+) => {
+  const names = new Set(resolveTemplateVariables(template, plugin).map((item) => item.name));
+  return Object.fromEntries(Object.entries(values || {}).filter(([name]) => names.has(name)));
+};
+
 const normalizeVariables = (content: unknown): Record<string, string> => {
   if (!content) {
     return {};
@@ -161,9 +215,14 @@ const stripContextVariables = (values: Record<string, string>) => {
   return next;
 };
 
-const hasPipelineVariableValue = (values: Record<string, string>, name?: string) => {
-  return Boolean(name && Object.prototype.hasOwnProperty.call(values, name));
-};
+const renderTemplateOptionLabel = (item: PipelineTemplateOption) => (
+  <div className="pipeline-template-option">
+    <span className="pipeline-template-option__name">{item.name}</span>
+    <span className={`pipeline-template-option__tag ${item.source === 'builtin' ? 'pipeline-template-option__tag--builtin' : ''}`}>
+      {item.source === 'builtin' ? '默认模板' : '自定义模板'}
+    </span>
+  </div>
+);
 
 interface PipelineTemplateOption {
   optionId: number;
@@ -174,6 +233,8 @@ interface PipelineTemplateOption {
   templateId?: number;
   builtinTemplateKey?: string;
   variablesSchema?: string | TemplateVariableDefinition[];
+  buildScriptContent?: string | null;
+  deployScriptContent?: string | null;
   monitorProcess?: boolean;
 }
 
@@ -244,6 +305,20 @@ const buildRuntimeFieldConfigs = [
   },
 ] as const;
 
+type SelectOptionValue = string | number;
+type SelectOptionItem = {
+  label: string;
+  value: SelectOptionValue;
+};
+
+const pickSingleOptionValue = (options: SelectOptionItem[]) => (
+  options.length === 1 ? options[0].value : undefined
+);
+
+const includesOptionValue = (options: SelectOptionItem[], value?: SelectOptionValue) => (
+  value != null && options.some((item) => item.value === value)
+);
+
 const getLocalBuildEnvironmentOptions = (
   items: RuntimeEnvironmentSummary[],
   type: RuntimeEnvironmentSummary['type'],
@@ -309,6 +384,7 @@ type PipelinePageMode = 'list' | 'create' | 'edit' | 'view';
 export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePageMode }) {
   const navigate = useNavigate();
   const { pipelineId } = useParams();
+  const [searchParams] = useSearchParams();
   const routePipelineId = pipelineId ? Number(pipelineId) : undefined;
   const tableWrapRef = useRef<HTMLDivElement | null>(null);
   const [projects, setProjects] = useState<PipelineSummary['project'][]>([]);
@@ -337,6 +413,7 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
   const [hostFilter, setHostFilter] = useState<number>();
   const [tagFilter, setTagFilter] = useState<string[]>();
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
+  const workspaceBackPath = searchParams.get('fromTab') === 'manage' ? '/admin/pipelines?tab=manage' : '/admin/pipelines';
 
   const rememberPipelineTableScrollLeft = () => {
     const scrollBody = tableWrapRef.current?.querySelector('.ant-table-body') as HTMLDivElement | null;
@@ -373,6 +450,8 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
       pluginId: item.pluginId || undefined,
       templateId: item.id,
       variablesSchema: item.variablesSchema,
+      buildScriptContent: item.buildScriptContent,
+      deployScriptContent: item.deployScriptContent,
       monitorProcess: item.monitorProcess === true,
     }));
     const builtin = plugins.flatMap((plugin, pluginIndex) => (plugin.builtinTemplates || []).map((item, templateIndex) => ({
@@ -383,6 +462,8 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
       pluginId: plugin.descriptor.pluginId,
       builtinTemplateKey: item.templateKey || undefined,
       variablesSchema: item.variablesSchema || undefined,
+      buildScriptContent: item.buildScriptContent,
+      deployScriptContent: item.deployScriptContent,
       monitorProcess: item.monitorProcess === true,
     })));
     return [...saved, ...builtin];
@@ -404,6 +485,18 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
       setTotal(result.total);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadProjectBranches = async (projectId: number, currentBranch?: string) => {
+    setBranchesLoading(true);
+    try {
+      const branches = await projectsApi.getBranches(projectId, currentBranch);
+      const mergedBranches = mergeBranchOptions(branches, currentBranch);
+      setBranchOptions(mergedBranches);
+      return mergedBranches;
+    } finally {
+      setBranchesLoading(false);
     }
   };
 
@@ -429,16 +522,13 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
     }
 
     let cancelled = false;
-    setBranchesLoading(true);
-    projectsApi.getBranches(form.projectId, form.defaultBranch)
+    loadProjectBranches(form.projectId, form.defaultBranch)
       .then((branches) => {
         if (cancelled) {
           return;
         }
-        const mergedBranches = mergeBranchOptions(branches, form.defaultBranch);
-        setBranchOptions(mergedBranches);
-        if (!form.defaultBranch && mergedBranches.length > 0) {
-          setForm((previous) => ({ ...previous, defaultBranch: mergedBranches[0] }));
+        if (!form.defaultBranch && branches.length > 0) {
+          setForm((previous) => ({ ...previous, defaultBranch: branches[0] }));
         }
       })
       .catch(() => {
@@ -447,11 +537,6 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
           message.error('加载项目分支失败');
         }
       })
-      .finally(() => {
-        if (!cancelled) {
-          setBranchesLoading(false);
-        }
-      });
 
     return () => {
       cancelled = true;
@@ -490,6 +575,10 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
         .then((record) => {
           setEditingId(mode === 'edit' ? record.id : undefined);
           fillFormFromRecord(record);
+          if (record.project?.id) {
+            loadProjectBranches(record.project.id, record.defaultBranch || 'main')
+              .catch(() => message.error('加载项目分支失败'));
+          }
           if (mode === 'edit') {
             setEditingId(record.id);
           }
@@ -500,7 +589,7 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
 
   const openCreate = () => {
     rememberPipelineTableScrollLeft();
-    navigate('/admin/pipelines/new');
+    navigate('/admin/pipelines/new?fromTab=manage');
   };
 
   const fillFormFromRecord = (record: PipelineSummary) => {
@@ -535,7 +624,7 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
 
   const openEdit = (record: PipelineSummary) => {
     rememberPipelineTableScrollLeft();
-    navigate(`/admin/pipelines/${record.id}/edit`);
+    navigate(`/admin/pipelines/${record.id}/edit?fromTab=manage`);
   };
 
   const openDuplicate = (record: PipelineSummary) => {
@@ -696,7 +785,7 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
     if (mode === 'list') {
       await Promise.all([loadMeta(), loadPipelines()]);
     } else {
-      navigate('/admin/pipelines');
+      navigate(workspaceBackPath);
     }
     message.success(editingId ? '流水线已更新' : '流水线已创建');
   };
@@ -723,10 +812,9 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
     [hosts],
   );
 
-  const selectedTemplateVariables = useMemo(
-    () => parseVariablesSchema(selectedTemplate?.variablesSchema)
-      .filter((item) => item.pipelineInput !== false || hasPipelineVariableValue(form.variables, item.name)),
-    [form.variables, selectedTemplate],
+const selectedTemplateVariables = useMemo(
+    () => resolveTemplateVariables(selectedTemplate, selectedPlugin),
+    [selectedPlugin, selectedTemplate],
   );
   const stepItems = useMemo(() => {
     const items = [
@@ -766,12 +854,16 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
     ...item,
     resolvedTemplateOption: templateOptions.find((option) => matchesPipelineTemplateOption(option, item)),
     parsedVariables: normalizeVariables(item.variables),
-    parsedTemplateVariables: parseVariablesSchema(
-      templateOptions.find((option) => matchesPipelineTemplateOption(option, item))?.variablesSchema
-        || item.template?.variablesSchema,
+    parsedTemplateVariables: resolveTemplateVariables(
+      templateOptions.find((option) => matchesPipelineTemplateOption(option, item)),
+      plugins.find((plugin) => plugin.descriptor.pluginId === (
+        templateOptions.find((option) => matchesPipelineTemplateOption(option, item))?.pluginId
+        || item.templatePluginId
+        || item.template?.pluginId
+      )),
     ),
     parsedTags: normalizeTags(item.tags),
-  })), [pipelines, templateOptions]);
+  })), [pipelines, plugins, templateOptions]);
 
   useEffect(() => {
     if (mode !== 'list' || loading) {
@@ -813,6 +905,79 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
     NODE: nodeOptions,
     MAVEN: mavenOptions,
   }), [javaOptions, nodeOptions, mavenOptions]);
+  const mavenSettingsOptions = useMemo(
+    () => mavenSettings
+      .filter((item) => item.enabled)
+      .map((item) => ({ label: item.isDefault ? `${item.name}（默认）` : item.name, value: item.id })),
+    [mavenSettings],
+  );
+
+  useEffect(() => {
+    if (mode !== 'create' && mode !== 'edit') {
+      return;
+    }
+    setForm((previous) => {
+      let next = previous;
+      buildRuntimeFieldConfigs.forEach((item) => {
+        if (!requiredEnvironmentTypes.includes(item.type)) {
+          return;
+        }
+        const options = buildEnvironmentOptionsMap[item.type];
+        const currentValue = previous[item.formKey];
+        if (includesOptionValue(options, currentValue)) {
+          return;
+        }
+        const singleValue = pickSingleOptionValue(options);
+        if (singleValue == null && currentValue == null) {
+          return;
+        }
+        next = {
+          ...next,
+          [item.formKey]: singleValue,
+          ...(item.type === 'MAVEN' ? { mavenSettingsId: undefined } : {}),
+        };
+      });
+      return next;
+    });
+  }, [buildEnvironmentOptionsMap, mode, requiredEnvironmentTypes]);
+
+  useEffect(() => {
+    if (mode !== 'create' && mode !== 'edit' || !requiredRuntimeEnvironmentTypes.includes('JAVA')) {
+      return;
+    }
+    setForm((previous) => {
+      if (includesOptionValue(runtimeJavaOptions, previous.runtimeJavaEnvironmentId)) {
+        return previous;
+      }
+      const singleValue = pickSingleOptionValue(runtimeJavaOptions);
+      if (singleValue == null && previous.runtimeJavaEnvironmentId == null) {
+        return previous;
+      }
+      return {
+        ...previous,
+        runtimeJavaEnvironmentId: singleValue as number | undefined,
+      };
+    });
+  }, [mode, requiredRuntimeEnvironmentTypes, runtimeJavaOptions]);
+
+  useEffect(() => {
+    if (mode !== 'create' && mode !== 'edit' || !requiredEnvironmentTypes.includes('MAVEN') || !form.mavenEnvironmentId) {
+      return;
+    }
+    setForm((previous) => {
+      if (includesOptionValue(mavenSettingsOptions, previous.mavenSettingsId)) {
+        return previous;
+      }
+      const singleValue = pickSingleOptionValue(mavenSettingsOptions);
+      if (singleValue == null && previous.mavenSettingsId == null) {
+        return previous;
+      }
+      return {
+        ...previous,
+        mavenSettingsId: singleValue as number | undefined,
+      };
+    });
+  }, [form.mavenEnvironmentId, mavenSettingsOptions, mode, requiredEnvironmentTypes]);
 
   const renderPluginPipelineField = (field: PluginFormFieldSummary) => {
     const value = form.pluginConfig[field.key] ?? '';
@@ -927,7 +1092,7 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
         <PageHeaderBar
           title="查看流水线"
           description={form.name || '-'}
-          extra={<Button onClick={() => navigate('/admin/pipelines')}>返回</Button>}
+          extra={<Button onClick={() => navigate(workspaceBackPath)}>返回</Button>}
         />
         <div className="app-page-scroll">
           <div className="space-y-4">
@@ -998,7 +1163,7 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
         <PageHeaderBar
           title={mode === 'edit' ? '编辑流水线' : '新建流水线'}
           description="配置项目、模板、环境、运行参数和变量。"
-          extra={<Button onClick={() => navigate('/admin/pipelines')}>返回</Button>}
+          extra={<Button onClick={() => navigate(workspaceBackPath)}>返回</Button>}
         />
         <div className="app-page-scroll">
           <div className="mx-auto flex min-h-[calc(100vh-170px)] max-w-5xl flex-col">
@@ -1026,22 +1191,27 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
                   <Form.Item label="模板" required>
                     <Select
                       value={selectedTemplate?.optionId}
-                      options={templateOptions.map((item) => ({ label: item.name, value: item.optionId }))}
+                      options={templateOptions.map((item) => ({ label: renderTemplateOptionLabel(item), value: item.optionId, title: item.name }))}
+                      optionLabelProp="title"
                       placeholder="请选择部署模板"
-                      onChange={(value) => setForm({
-                        ...form,
-                        templateId: templateOptions.find((item) => item.optionId === value)?.templateId,
-                        templatePluginId: templateOptions.find((item) => item.optionId === value)?.pluginId,
-                        builtinTemplateKey: templateOptions.find((item) => item.optionId === value)?.builtinTemplateKey,
-                        variables: {},
-                        javaEnvironmentId: undefined,
-                        nodeEnvironmentId: undefined,
-                        mavenEnvironmentId: undefined,
-                        mavenSettingsId: undefined,
-                        runtimeJavaEnvironmentId: undefined,
-                        pluginConfig: {},
-                        notificationIds: [],
-                      })}
+                      onChange={(value) => {
+                        const option = templateOptions.find((item) => item.optionId === value);
+                        const optionPlugin = plugins.find((item) => item.descriptor.pluginId === option?.pluginId) || null;
+                        setForm({
+                          ...form,
+                          templateId: option?.templateId,
+                          templatePluginId: option?.pluginId,
+                          builtinTemplateKey: option?.builtinTemplateKey,
+                          variables: retainMatchedTemplateVariables(form.variables, option, optionPlugin),
+                          javaEnvironmentId: undefined,
+                          nodeEnvironmentId: undefined,
+                          mavenEnvironmentId: undefined,
+                          mavenSettingsId: undefined,
+                          runtimeJavaEnvironmentId: undefined,
+                          pluginConfig: {},
+                          notificationIds: [],
+                        });
+                      }}
                     />
                   </Form.Item>
                   <Form.Item label="默认分支" required>
@@ -1065,7 +1235,7 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
                     </Form.Item>
                   ) : null)}
                 </div>
-                {requiredEnvironmentTypes.includes('MAVEN') ? <Form.Item label="构建 Maven Settings"><Select allowClear value={form.mavenSettingsId} options={mavenSettings.filter((item) => item.enabled).map((item) => ({ label: item.isDefault ? `${item.name}（默认）` : item.name, value: item.id }))} onChange={(value) => setForm({ ...form, mavenSettingsId: value })} placeholder={form.mavenEnvironmentId ? '可选。选择后构建时会自动对 mvn 注入 -s settings.xml' : '请先选择 Maven 环境'} disabled={!form.mavenEnvironmentId} /></Form.Item> : null}
+                {requiredEnvironmentTypes.includes('MAVEN') ? <Form.Item label="构建 Maven Settings"><Select allowClear value={form.mavenSettingsId} options={mavenSettingsOptions} onChange={(value) => setForm({ ...form, mavenSettingsId: value })} placeholder={form.mavenEnvironmentId ? '可选。选择后构建时会自动对 mvn 注入 -s settings.xml' : '请先选择 Maven 环境'} disabled={!form.mavenEnvironmentId} /></Form.Item> : null}
               </Form>
             </Card> : null}
             {currentStepKey === 'target' ? <Card title="目标主机" className="app-card">
@@ -1100,7 +1270,7 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
             </Card> : null}
             </div>
             <div className="sticky bottom-0 z-20 flex justify-end gap-2 border-t border-slate-200/70 px-4 py-3 backdrop-blur-sm">
-              <Button onClick={() => navigate('/admin/pipelines')}>取消</Button>
+              <Button onClick={() => navigate(workspaceBackPath)}>取消</Button>
               {currentStep > 0 ? <Button onClick={() => setCurrentStep((value) => value - 1)}>上一步</Button> : null}
               {currentStep < stepItems.length - 1 ? <Button onClick={() => setCurrentStep((value) => value + 1)}>下一步</Button> : null}
               <Button type="primary" onClick={() => savePipeline().catch(() => undefined)}>{mode === 'edit' ? '保存' : '创建'}</Button>
@@ -1125,7 +1295,7 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
       />
       <div className="app-page-scroll">
       <Card className="app-card" ref={tableWrapRef}>
-        <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-5">
+        <div className="app-filter-grid">
           <Input
             value={keyword}
             placeholder="搜索流水线名称 / 描述 / 默认分支"
@@ -1351,7 +1521,7 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
                   <Space>
                     <Button size="small" onClick={() => {
                       rememberPipelineTableScrollLeft();
-                      navigate(`/admin/pipelines/${record.id}`);
+                      navigate(`/admin/pipelines/${record.id}?fromTab=manage`);
                     }}>查看</Button>
                     <Button size="small" onClick={() => openEdit(record)}>编辑</Button>
                     <Button size="small" onClick={() => openDuplicate(record)}>复制</Button>

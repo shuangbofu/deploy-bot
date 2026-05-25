@@ -81,24 +81,22 @@ public class DashboardService {
     }
 
     public DashboardAnalytics buildAnalytics(DashboardQuery query) {
-        AuthenticatedUser currentUser = requireCurrentUser();
-        boolean admin = currentUser.isAdmin();
         DashboardRange range = resolveRange(query);
-        List<DeploymentEntity> deployments = loadDeployments(currentUser, admin, range.startTime())
+        List<DeploymentEntity> deployments = deploymentRepository.findByCreatedAtGreaterThanEqualOrderByCreatedAtDesc(range.startTime())
                 .stream()
                 .filter(deployment -> deployment.getCreatedAt() != null && deployment.getCreatedAt().isBefore(range.endTime()))
                 .filter(deployment -> matchesQuery(deployment, query))
                 .toList();
 
         return new DashboardAnalytics(
-                buildMetricCards(deployments, admin),
+                buildMetricCards(deployments),
                 buildAnalyticsTrend(deployments, range),
                 buildStatusDistribution(deployments),
                 buildRanking(deployments, this::resolveProjectName, "未归属项目", 8),
                 buildRanking(deployments, this::resolvePipelineName, "未命名流水线", 8),
                 buildRanking(deployments, this::resolveTriggeredByName, "未知触发人", 8),
                 buildRanking(deployments, this::resolveTemplateType, "未记录类型", 8),
-                admin ? buildRanking(deployments, this::resolveHostName, "本机", 8) : List.of(),
+                buildRanking(deployments, this::resolveHostName, "本机", 8),
                 buildRecentPoints(deployments),
                 buildDurationDistribution(deployments)
         );
@@ -261,7 +259,7 @@ public class DashboardService {
         return true;
     }
 
-    private List<DashboardMetricCard> buildMetricCards(List<DeploymentEntity> deployments, boolean admin) {
+    private List<DashboardMetricCard> buildMetricCards(List<DeploymentEntity> deployments) {
         long total = deployments.size();
         long success = countStatus(deployments, DeploymentStatus.SUCCESS);
         long failed = countStatus(deployments, DeploymentStatus.FAILED);
@@ -283,12 +281,10 @@ public class DashboardService {
         metrics.add(new DashboardMetricCard("avgDuration", "平均耗时", formatDuration(avgSeconds), null, "已结束部署"));
         metrics.add(new DashboardMetricCard("running", "进行中", String.valueOf(running), "个", "等待或运行"));
         metrics.add(new DashboardMetricCard("stopped", "已停止", String.valueOf(stopped), "次", "人工停止"));
-        if (admin) {
-            long activePipelines = deployments.stream().map(this::resolvePipelineName).filter(Objects::nonNull).distinct().count();
-            long activeProjects = deployments.stream().map(this::resolveProjectName).filter(Objects::nonNull).distinct().count();
-            metrics.add(new DashboardMetricCard("activePipelines", "活跃流水线", String.valueOf(activePipelines), "条", "有部署记录"));
-            metrics.add(new DashboardMetricCard("activeProjects", "活跃项目", String.valueOf(activeProjects), "个", "有部署记录"));
-        }
+        long activePipelines = deployments.stream().map(this::resolvePipelineName).filter(Objects::nonNull).distinct().count();
+        long activeProjects = deployments.stream().map(this::resolveProjectName).filter(Objects::nonNull).distinct().count();
+        metrics.add(new DashboardMetricCard("activePipelines", "活跃流水线", String.valueOf(activePipelines), "条", "有部署记录"));
+        metrics.add(new DashboardMetricCard("activeProjects", "活跃项目", String.valueOf(activeProjects), "个", "有部署记录"));
         return metrics;
     }
 

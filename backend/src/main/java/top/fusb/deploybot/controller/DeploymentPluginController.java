@@ -6,7 +6,6 @@ import org.springframework.web.bind.annotation.RestController;
 import top.fusb.deploybot.dto.ShellVariableSummary;
 import top.fusb.deploybot.plugin.api.deployment.definition.DeploymentPluginDefinition;
 import top.fusb.deploybot.plugin.runtime.DeploymentPluginRuntime;
-import top.fusb.deploybot.security.AdminOnly;
 import lombok.RequiredArgsConstructor;
 import top.fusb.deploybot.service.ShellVariableService;
 
@@ -15,7 +14,6 @@ import java.util.List;
 /**
  * 提供部署类型插件查询接口。
  */
-@AdminOnly
 @RestController
 @RequestMapping("/api/deployment-plugins")
 @RequiredArgsConstructor

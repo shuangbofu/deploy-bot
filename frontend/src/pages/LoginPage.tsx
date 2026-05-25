@@ -35,7 +35,7 @@ export default function LoginPage() {
     try {
       const user = await login(values);
       const redirectTo = resolveCallback();
-      if (redirectTo) {
+      if (redirectTo && redirectTo.startsWith(user.role === 'ADMIN' ? '/admin' : '/user')) {
         navigate(redirectTo, { replace: true });
         return;
       }

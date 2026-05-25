@@ -27,7 +27,13 @@ export default function PortalLayoutShell({ title, menuItems, selectedKey, actio
     }
     return {
       ...item,
-      label: item.shortLabel || item.label,
+      icon: null,
+      label: (
+        <span className="portal-side-nav-collapsed-item">
+          {item.icon}
+          <span>{item.shortLabel || item.label}</span>
+        </span>
+      ),
     };
   });
 
@@ -61,7 +67,7 @@ export default function PortalLayoutShell({ title, menuItems, selectedKey, actio
   if (isSideMode) {
     return (
       <Layout className={`portal-shell portal-shell--side ${sideCollapsed ? 'portal-shell--side-collapsed' : ''} min-h-screen bg-app`}>
-        <Layout.Sider width={sideCollapsed ? 68 : 236} className="portal-sider">
+        <Layout.Sider width={sideCollapsed ? 88 : 236} className="portal-sider">
           <div className="portal-sider-brand">{brand}</div>
           <Button
             type="text"
@@ -71,13 +77,11 @@ export default function PortalLayoutShell({ title, menuItems, selectedKey, actio
             title={sideCollapsed ? '展开菜单' : '折叠菜单'}
           />
           {menu}
+          <div className="portal-sider-actions">{actions}</div>
         </Layout.Sider>
         <Layout className="min-h-screen bg-transparent">
-          <Layout.Header className="app-header app-header--side px-6">
-            <div className="min-w-0 flex-1">{children}</div>
-            {actions}
-          </Layout.Header>
           <Layout.Content className="app-content app-content--side">
+            {children}
             <div className="app-page">
               <Outlet />
             </div>

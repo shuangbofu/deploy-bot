@@ -40,7 +40,19 @@ function renderEnabledStatus(enabled: boolean) {
   );
 }
 
-export default function NotificationAdminPage() {
+type NotificationAdminPageProps = {
+  embedded?: boolean;
+  defaultActiveKey?: 'configurations' | 'records';
+  showConfigurations?: boolean;
+  showRecords?: boolean;
+};
+
+export default function NotificationAdminPage({
+  embedded = false,
+  defaultActiveKey = 'configurations',
+  showConfigurations = true,
+  showRecords = true,
+}: NotificationAdminPageProps) {
   const [templates, setTemplates] = useState<NotificationTemplateSummary[]>([]);
   const [webhookConfigs, setWebhookConfigs] = useState<NotificationWebhookConfigSummary[]>([]);
   const [notifications, setNotifications] = useState<NotificationChannelSummary[]>([]);
@@ -96,14 +108,18 @@ export default function NotificationAdminPage() {
   };
 
   useEffect(() => {
-    loadTemplates().catch(() => message.error('加载通知模板失败'));
-    loadWebhookConfigs().catch(() => message.error('加载 Webhook 配置失败'));
-    loadNotifications().catch(() => message.error('加载通知配置失败'));
-  }, []);
+    if (showConfigurations) {
+      loadTemplates().catch(() => message.error('加载通知模板失败'));
+      loadWebhookConfigs().catch(() => message.error('加载 Webhook 配置失败'));
+      loadNotifications().catch(() => message.error('加载通知配置失败'));
+    }
+  }, [showConfigurations]);
 
   useEffect(() => {
-    loadRecords().catch(() => message.error('加载通知记录失败'));
-  }, [recordPagination.current, recordPagination.pageSize, recordChannelTypeFilter, recordEventTypeFilter]);
+    if (showRecords) {
+      loadRecords().catch(() => message.error('加载通知记录失败'));
+    }
+  }, [showRecords, recordPagination.current, recordPagination.pageSize, recordChannelTypeFilter, recordEventTypeFilter]);
 
   const filteredNotifications = useMemo(() => notifications.filter((item) => {
     const normalizedKeyword = channelKeyword.trim().toLowerCase();
@@ -176,34 +192,18 @@ export default function NotificationAdminPage() {
     [templates, channelForm.templateId],
   );
 
-  return (
-    <>
-      <PageHeaderBar
-        title="通知"
-        description="管理通知配置，以及每次发送的成功或失败记录。Webhook 配置和通知模板请到系统设置里维护。"
-        extra={(
-          <Button
-            onClick={() => {
-              loadTemplates().catch(() => message.error('加载通知模板失败'));
-              loadWebhookConfigs().catch(() => message.error('加载 Webhook 配置失败'));
-              loadNotifications().catch(() => message.error('加载通知配置失败'));
-              loadRecords().catch(() => message.error('加载通知记录失败'));
-            }}
-          >
-            刷新
-          </Button>
-        )}
-      />
-      <div className="app-page-scroll">
-        <Card className="app-card">
+  const content = (
+    <Card className="app-card">
           <Tabs
+            defaultActiveKey={showConfigurations ? defaultActiveKey : 'records'}
             items={[
+              ...(showConfigurations ? [
               {
                 key: 'configurations',
                 label: '通知配置',
                 children: (
                   <>
-                    <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-5">
+                    <div className="app-filter-grid">
             <Input value={channelKeyword} placeholder="搜索名称 / 描述 / Webhook 配置 / 类型" onChange={(event) => setChannelKeyword(event.target.value)} />
             <Select
               allowClear
@@ -277,12 +277,13 @@ export default function NotificationAdminPage() {
                   </>
                 ),
               },
-              {
+              ] : []),
+              ...(showRecords ? [{
                 key: 'records',
                 label: '通知记录',
                 children: (
                   <>
-                    <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                    <div className="app-filter-grid">
             <Select
               allowClear
               value={recordChannelTypeFilter}
@@ -357,11 +358,37 @@ export default function NotificationAdminPage() {
                     />
                   </>
                 ),
-              },
+              }] : []),
             ]}
           />
-        </Card>
-      </div>
+    </Card>
+  );
+
+  return (
+    <>
+      {embedded ? content : (
+        <>
+          <PageHeaderBar
+            title="通知"
+            description="管理通知配置，以及每次发送的成功或失败记录。Webhook 配置和通知模板请到系统设置里维护。"
+            extra={(
+              <Button
+                onClick={() => {
+                  loadTemplates().catch(() => message.error('加载通知模板失败'));
+                  loadWebhookConfigs().catch(() => message.error('加载 Webhook 配置失败'));
+                  loadNotifications().catch(() => message.error('加载通知配置失败'));
+                  loadRecords().catch(() => message.error('加载通知记录失败'));
+                }}
+              >
+                刷新
+              </Button>
+            )}
+          />
+          <div className="app-page-scroll">
+            {content}
+          </div>
+        </>
+      )}
 
       <Modal
         open={channelModalOpen}

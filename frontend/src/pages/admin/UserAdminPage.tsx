@@ -124,7 +124,7 @@ export default function UserAdminPage() {
       />
       <div className="app-page-scroll">
       <Card className="app-card">
-        <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
+        <div className="app-filter-grid">
           <Input
             value={keyword}
             placeholder="搜索用户名 / 显示名称"

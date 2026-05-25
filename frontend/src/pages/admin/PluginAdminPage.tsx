@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Card, Descriptions, Modal, Tag, Tabs, message } from 'antd';
+import { CheckCircle, CirclesFour, FileText, Gear, PlugsConnected, Sparkle } from '@phosphor-icons/react';
 import { useNavigate } from 'react-router-dom';
 import { deploymentPluginsApi } from '../../api/deploymentPlugins';
 import EmptyPane from '../../components/EmptyPane';
@@ -20,6 +21,16 @@ const fieldKindLabelMap: Record<string, string> = {
   TEXT: '文本',
   TEXTAREA: '代码',
 };
+
+// 仅用于卡片视觉区分，不承载插件类型或业务语义。
+const pluginAccentClasses = [
+  'plugin-market-card--emerald',
+  'plugin-market-card--sky',
+  'plugin-market-card--amber',
+  'plugin-market-card--violet',
+  'plugin-market-card--rose',
+  'plugin-market-card--cyan',
+];
 
 function resolveTemplateTypeLabel(templateType?: string | null) {
   return templateType ? templateType.replace(/_/g, ' / ') : '通用';
@@ -88,6 +99,14 @@ function renderVariableTitle(item: { label?: string; name: string }) {
     return `${item.label}（${item.name}）`;
   }
   return item.label || item.name;
+}
+
+function renderRuntimeNames(types?: string[]) {
+  return (types || []).map((item) => getRuntimeEnvironmentTypeLabel(item)).join(' / ') || '无';
+}
+
+function countPluginFields(plugin: DeploymentPluginDefinitionSummary) {
+  return (plugin.pipelineFormSchema?.sections || []).reduce((total, section) => total + section.fields.length, 0);
 }
 
 export default function PluginAdminPage() {
@@ -183,71 +202,103 @@ export default function PluginAdminPage() {
               <EmptyPane description="当前没有发现任何部署类型插件，请先确认插件 starter 或外部插件 jar 是否已被引入。" />
             </Card>
           ) : null}
-          {!loading ? tableData.map((row) => (
+          {!loading ? tableData.map((row, index) => (
             <Card
               key={row.key}
-              className="app-card border-slate-200"
-              bodyStyle={{ padding: 18 }}
+              className={`plugin-market-card ${pluginAccentClasses[index % pluginAccentClasses.length]}`}
+              bodyStyle={{ padding: 0 }}
             >
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex min-w-0 items-start gap-3">
-                  <div className="rounded-2xl bg-slate-100 p-3 text-slate-700">
-                    <PipelineIcon type={row.descriptor.templateTypes?.[0]} />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="truncate text-base font-semibold text-slate-900">
-                        {row.descriptor.displayName}
-                      </div>
-                      <Tag className="app-tag-success !m-0">
-                        已安装
-                      </Tag>
-                      {row.descriptor.builtin ? (
-                        <Tag className="app-tag-system !m-0">
-                          系统插件
-                        </Tag>
-                      ) : null}
-                      {row.descriptor.composite ? (
-                        <Tag className="app-tag-composite !m-0">
-                          复合类型
-                        </Tag>
-                      ) : null}
+              <div className="plugin-market-card__halo" />
+              <div className="relative p-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <div className="plugin-market-card__icon">
+                      <PipelineIcon type={row.descriptor.templateTypes?.[0]} />
                     </div>
-                    <div className="mt-1 text-xs text-slate-500">{row.descriptor.pluginId}</div>
-                  <div className="mt-2 text-sm text-slate-600">{row.descriptor.description || '当前插件未提供额外描述。'}</div>
-                </div>
-              </div>
-                <Tag className="app-tag-muted !m-0">
-                  {row.descriptor.category}
-                </Tag>
-              </div>
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                <div className="rounded-2xl bg-slate-50 px-4 py-3">
-                  <div className="text-xs font-medium text-slate-500">构建运行时</div>
-                  <div className="mt-1 inline-flex items-center whitespace-nowrap rounded-xl bg-white px-3 py-2 text-sm font-semibold text-slate-800">
-                    {(row.runtimeRequirement?.buildRuntimeTypes || []).map((item: string) => getRuntimeEnvironmentTypeLabel(item)).join(' / ') || '无'}
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="truncate text-lg font-semibold text-slate-950 dark:text-slate-50">
+                          {row.descriptor.displayName}
+                        </div>
+                        <span className="plugin-install-badge">
+                          <CheckCircle size={13} weight="fill" />
+                          已安装
+                        </span>
+                      </div>
+                      <div className="mt-1 truncate font-mono text-xs text-slate-500 dark:text-slate-400">{row.descriptor.pluginId}</div>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-2">
+                    <Tag className="app-tag-muted !m-0">{row.descriptor.category}</Tag>
+                    {row.descriptor.builtin ? <Tag className="app-tag-system !m-0">系统插件</Tag> : null}
+                    {row.descriptor.composite ? <Tag className="app-tag-composite !m-0">组合插件</Tag> : null}
                   </div>
                 </div>
-                <div className="rounded-2xl bg-slate-50 px-4 py-3">
-                  <div className="text-xs font-medium text-slate-500">目标运行时</div>
-                  <div className="mt-1 inline-flex items-center whitespace-nowrap rounded-xl bg-white px-3 py-2 text-sm font-semibold text-slate-800">
-                    {(row.runtimeRequirement?.targetRuntimeTypes || []).map((item: string) => getRuntimeEnvironmentTypeLabel(item)).join(' / ') || '无'}
+
+                <div className="mt-4 line-clamp-2 min-h-[44px] text-sm leading-6 text-slate-600 dark:text-slate-300">
+                  {row.descriptor.description || '暂无插件说明。'}
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {(row.descriptor.templateTypes || []).map((item: string) => (
+                    <span key={`${row.key}-${item}`} className="plugin-template-chip">
+                      <PipelineIcon type={item} />
+                      {resolveTemplateTypeLabel(item)}
+                    </span>
+                  ))}
+                  {!row.descriptor.templateTypes?.length ? (
+                    <span className="plugin-template-chip">
+                      <CirclesFour size={14} weight="fill" />
+                      通用
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="plugin-market-card__metrics">
+                  <div className="plugin-market-metric">
+                    <FileText size={16} weight="fill" />
+                    <div>
+                      <div className="plugin-market-metric__value">{row.builtinTemplates?.length || 0}</div>
+                      <div className="plugin-market-metric__label">默认模板</div>
+                    </div>
+                  </div>
+                  <div className="plugin-market-metric">
+                    <Gear size={16} weight="fill" />
+                    <div>
+                      <div className="plugin-market-metric__value">{countPluginFields(row)}</div>
+                      <div className="plugin-market-metric__label">运行配置</div>
+                    </div>
+                  </div>
+                  <div className="plugin-market-metric">
+                    <Sparkle size={16} weight="fill" />
+                    <div>
+                      <div className="plugin-market-metric__value">{row.variableMutationRules?.length || 0}</div>
+                      <div className="plugin-market-metric__label">变量处理</div>
+                    </div>
                   </div>
                 </div>
-                <div className="rounded-2xl bg-slate-50 px-4 py-3">
-                  <div className="text-xs font-medium text-slate-500">适用类型</div>
-                  <div className="mt-1 text-sm font-semibold text-slate-800">
-                    {row.descriptor.templateTypes?.map((item: string) => resolveTemplateTypeLabel(item)).join(' / ') || '通用'}
+
+                <div className="plugin-runtime-panel">
+                  <div className="plugin-runtime-row">
+                    <PlugsConnected size={15} weight="fill" />
+                    <span>构建环境</span>
+                    <strong>{renderRuntimeNames(row.runtimeRequirement?.buildRuntimeTypes)}</strong>
+                  </div>
+                  <div className="plugin-runtime-row">
+                    <PlugsConnected size={15} weight="fill" />
+                    <span>目标环境</span>
+                    <strong>{renderRuntimeNames(row.runtimeRequirement?.targetRuntimeTypes)}</strong>
                   </div>
                 </div>
-              </div>
-              <div className="mt-4 flex justify-end gap-2">
-                <Button size="small" onClick={() => setActivePlugin(row)}>
-                  查看详情
-                </Button>
-                <Button size="small" onClick={() => navigate(`/admin/plugins/${encodeURIComponent(row.descriptor.pluginId)}/templates`)}>
-                  查看模板
-                </Button>
+
+                <div className="mt-5 flex justify-between gap-2 border-t border-slate-200/70 pt-4 dark:border-slate-700/70">
+                  <Button onClick={() => setActivePlugin(row)}>
+                    插件详情
+                  </Button>
+                  <Button type="primary" onClick={() => navigate(`/admin/plugins/${encodeURIComponent(row.descriptor.pluginId)}/templates`)}>
+                    查看模板
+                  </Button>
+                </div>
               </div>
             </Card>
           )) : null}
@@ -262,9 +313,9 @@ export default function PluginAdminPage() {
         destroyOnHidden
       >
         {activePlugin ? (
-          <div className="max-h-[72vh] overflow-y-auto pr-2">
-            <section className="border-b border-slate-100 pb-4">
-              <h3 className="mb-3 text-base font-semibold text-slate-900">基础信息</h3>
+          <div className="plugin-detail-panel max-h-[72vh] overflow-y-auto pr-2">
+            <section className="plugin-detail-section pb-4">
+              <h3 className="plugin-detail-title">基础信息</h3>
               <Descriptions size="small" column={2}>
                 <Descriptions.Item label="插件标识">{activePlugin.descriptor.pluginId}</Descriptions.Item>
                 <Descriptions.Item label="分类">{activePlugin.descriptor.category}</Descriptions.Item>
@@ -276,39 +327,42 @@ export default function PluginAdminPage() {
               </Descriptions>
             </section>
 
-            <section className="border-b border-slate-100 py-4">
-              <h3 className="mb-3 text-base font-semibold text-slate-900">组件环境</h3>
+            <section className="plugin-detail-section py-4">
+              <h3 className="plugin-detail-title">组件环境</h3>
               <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
                 <div>
-                  <div className="mb-1 text-xs text-slate-500">构建环境依赖</div>
-                  <div className="font-medium text-slate-800">
-                    {(activePlugin.runtimeRequirement.buildRuntimeTypes || []).map((item) => getRuntimeEnvironmentTypeLabel(item)).join(' / ') || '无'}
+                  <div className="plugin-detail-label">构建环境依赖</div>
+                  <div className="plugin-detail-value">
+                    {renderRuntimeNames(activePlugin.runtimeRequirement.buildRuntimeTypes)}
                   </div>
                 </div>
                 <div>
-                  <div className="mb-1 text-xs text-slate-500">目标运行依赖</div>
-                  <div className="font-medium text-slate-800">
-                    {(activePlugin.runtimeRequirement.targetRuntimeTypes || []).map((item) => getRuntimeEnvironmentTypeLabel(item)).join(' / ') || '无'}
+                  <div className="plugin-detail-label">目标运行依赖</div>
+                  <div className="plugin-detail-value">
+                    {renderRuntimeNames(activePlugin.runtimeRequirement.targetRuntimeTypes)}
                   </div>
                 </div>
               </div>
             </section>
 
-            <section className="border-b border-slate-100 py-4">
-              <h3 className="mb-3 text-base font-semibold text-slate-900">流水线配置</h3>
+            <section className="plugin-detail-section py-4">
+              <h3 className="plugin-detail-title">运行配置</h3>
               {activePlugin.pipelineFormSchema?.sections?.length ? (
-                <div className="space-y-5">
+                <div className="space-y-4">
                   {activePlugin.pipelineFormSchema.sections.map((section) => (
                     <div key={section.key}>
-                      <div className="mb-1 text-sm font-semibold text-slate-800">{section.title}</div>
+                      <div className="plugin-config-section-title">{section.title}</div>
                       {section.description ? (
-                        <div className="mb-2 text-sm text-slate-500">{section.description}</div>
+                        <div className="plugin-config-section-desc">{section.description}</div>
                       ) : null}
-                      <div className="divide-y divide-slate-100 border-y border-slate-100">
+                      <div className="plugin-config-list">
                         {section.fields.map((row) => (
-                          <div key={`${section.key}-${row.key}`} className="grid grid-cols-1 gap-2 py-3 md:grid-cols-[220px_1fr]">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="text-sm font-medium text-slate-800">{row.label}</span>
+                          <div key={`${section.key}-${row.key}`} className="plugin-config-row">
+                            <div className="plugin-config-row__main">
+                              <span className="plugin-config-row__label">{row.label}</span>
+                              <span className="plugin-config-row__key">{row.key}</span>
+                            </div>
+                            <div className="plugin-config-row__meta">
                               <Tag className={`${row.required ? 'app-tag-required' : 'app-tag-muted'} !m-0`}>
                                 {row.required ? '必填' : '可选'}
                               </Tag>
@@ -318,7 +372,7 @@ export default function PluginAdminPage() {
                                 </Tag>
                               ) : null}
                             </div>
-                            <div className="text-sm leading-6 text-slate-600">
+                            <div className="plugin-config-row__help">
                               {row.helpText || row.placeholder || '-'}
                             </div>
                           </div>
@@ -335,7 +389,7 @@ export default function PluginAdminPage() {
             </section>
 
             <section className="pt-4">
-              <h3 className="mb-3 text-base font-semibold text-slate-900">默认模板</h3>
+              <h3 className="plugin-detail-title">默认模板</h3>
               {builtinTemplates.length ? (
                 <div className="overflow-hidden rounded-lg border border-slate-200">
                   <div className="grid grid-cols-[minmax(180px,1.1fr)_160px_minmax(220px,2fr)_90px_90px] gap-3 border-b border-slate-100 px-3 py-2 text-xs font-medium text-slate-500">

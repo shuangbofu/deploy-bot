@@ -184,7 +184,7 @@ export default function ProjectAdminPage() {
       />
       <div className="app-page-scroll">
       <Card className="app-card">
-        <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div className="app-filter-grid">
           <Input
             value={keyword}
             placeholder="搜索项目名称 / 描述 / Git 地址"

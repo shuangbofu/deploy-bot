@@ -1,11 +1,11 @@
-import { DashboardOutlined, DeploymentUnitOutlined, FolderOpenOutlined, ProfileOutlined, RadarChartOutlined, SettingOutlined, CloudServerOutlined, TeamOutlined, LogoutOutlined, LockOutlined, GithubOutlined, RobotOutlined, NotificationOutlined, AppstoreOutlined } from '@ant-design/icons';
+import { LogoutOutlined, LockOutlined, GithubOutlined, RobotOutlined } from '@ant-design/icons';
 import { Avatar, Button, Dropdown, Space } from 'antd';
 import { useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { resolveBackendAssetUrl } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
-import { resolvePortalSwitchPath } from '../utils/portalSwitch';
 import ChangePasswordModal from './ChangePasswordModal';
+import NavIcon from './NavIcon';
 import PortalLayoutShell from './PortalLayoutShell';
 
 const GITHUB_REPOSITORY_URL = 'https://github.com/shuangbofu/deploy-bot';
@@ -15,16 +15,15 @@ const GITHUB_REPOSITORY_URL = 'https://github.com/shuangbofu/deploy-bot';
  * 这里保持“仪表盘 -> 资源管理 -> 运行记录”的信息架构顺序。
  */
 const menuItems = [
-  { key: '/admin/dashboard', icon: <DashboardOutlined />, label: '仪表盘', shortLabel: '仪表' },
-  { key: '/admin/projects', icon: <FolderOpenOutlined />, label: '项目', shortLabel: '项目' },
-  { key: '/admin/hosts', icon: <CloudServerOutlined />, label: '主机', shortLabel: '主机' },
-  { key: '/admin/plugins', icon: <AppstoreOutlined />, label: '插件', shortLabel: '插件' },
-  { key: '/admin/pipelines', icon: <DeploymentUnitOutlined />, label: '流水线', shortLabel: '流水' },
-  { key: '/admin/deployments', icon: <ProfileOutlined />, label: '部署记录', shortLabel: '记录' },
-  { key: '/admin/services', icon: <RadarChartOutlined />, label: '服务', shortLabel: '服务' },
-  { key: '/admin/notifications', icon: <NotificationOutlined />, label: '通知', shortLabel: '通知' },
-  { key: '/admin/users', icon: <TeamOutlined />, label: '用户', shortLabel: '用户' },
-  { key: '/admin/system-settings', icon: <SettingOutlined />, label: '系统设置', shortLabel: '设置' },
+  { key: '/admin/dashboard', icon: <NavIcon name="dashboard" tone="cyan" />, label: '仪表盘', shortLabel: '仪表' },
+  { key: '/admin/projects', icon: <NavIcon name="project" tone="amber" />, label: '项目', shortLabel: '项目' },
+  { key: '/admin/hosts', icon: <NavIcon name="host" tone="blue" />, label: '主机', shortLabel: '主机' },
+  { key: '/admin/plugins', icon: <NavIcon name="plugin" tone="violet" />, label: '插件', shortLabel: '插件' },
+  { key: '/admin/pipelines', icon: <NavIcon name="pipeline" tone="emerald" />, label: '流水线', shortLabel: '流水' },
+  { key: '/admin/deployments', icon: <NavIcon name="deployment" tone="sky" />, label: '部署记录', shortLabel: '记录' },
+  { key: '/admin/services', icon: <NavIcon name="service" tone="teal" />, label: '服务', shortLabel: '服务' },
+  { key: '/admin/users', icon: <NavIcon name="user" tone="indigo" />, label: '用户', shortLabel: '用户' },
+  { key: '/admin/system-settings', icon: <NavIcon name="settings" tone="slate" />, label: '系统设置', shortLabel: '设置' },
 ];
 
 /**
@@ -36,19 +35,16 @@ export default function AdminLayout() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
-  const switchPath = resolvePortalSwitchPath(location.pathname, 'user');
+  const selectedKey = menuItems.find((item) => location.pathname.startsWith(item.key))?.key || '/admin/dashboard';
 
   return (
     <>
       <PortalLayoutShell
-        title="控制中心"
+        title="部署平台"
         menuItems={menuItems}
-        selectedKey={location.pathname}
+        selectedKey={selectedKey}
         actions={(
         <Space>
-          <Link to={switchPath}>
-            <Button>部署工作台</Button>
-          </Link>
           <Dropdown
             menu={{
               items: [

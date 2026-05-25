@@ -512,7 +512,7 @@ export default function TemplateAdminPage() {
               label: `派生模板（${total}）`,
               children: (
                 <>
-        <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-5">
+        <div className="app-filter-grid">
           <Input
             value={keyword}
             placeholder="搜索模板名称 / 描述"

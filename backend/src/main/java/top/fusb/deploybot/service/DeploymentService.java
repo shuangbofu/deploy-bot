@@ -1368,6 +1368,7 @@ public class DeploymentService {
         Map<String, Object> snapshot = new LinkedHashMap<>();
         snapshot.put("pipelineName", pipeline.getName());
         snapshot.put("projectName", pipeline.getProject() == null ? null : pipeline.getProject().getName());
+        snapshot.put("pluginId", resolvedTemplate.pluginId());
         snapshot.put("templateName", resolvedTemplate.name());
         snapshot.put("templateType", resolvedTemplate.templateType());
         snapshot.put("branch", branch);

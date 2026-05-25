@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Card, DatePicker, Input, Popconfirm, Select, Space, Table, message } from 'antd';
+import { Button, Card, DatePicker, Input, Popconfirm, Select, Space, Table, Tabs, message } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { deploymentsApi } from '../../api/deployments';
 import { pipelinesApi } from '../../api/pipelines';
@@ -12,6 +12,7 @@ import { DEPLOYMENT_STATUS_OPTIONS } from '../../constants/deployment';
 import type { DeploymentRecordFilters, DeploymentSummary } from '../../types/domain';
 import { formatDateTime } from '../../utils/datetime';
 import { formatDeploymentElapsed } from '../../utils/deploymentDuration';
+import NotificationAdminPage from './NotificationAdminPage';
 
 const emptyFilters: DeploymentRecordFilters = {
   projectName: undefined,
@@ -74,16 +75,33 @@ export default function DeploymentRecordsPage() {
     return () => window.clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    if (!deployments.some((item) => item.status && ACTIVE_DEPLOYMENT_STATUSES.includes(item.status))) {
+      return undefined;
+    }
+    const timer = window.setInterval(() => {
+      loadDeployments().catch(() => undefined);
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [deployments, pagination.current, pagination.pageSize, filters]);
+
   return (
     <>
       <PageHeaderBar
         title="部署记录"
-        description="查看全部部署记录，并按项目、流水线、触发人、状态和时间筛选。"
+        description="查看全部部署记录和相关通知发送结果。"
         extra={<Button onClick={() => loadDeployments().catch(() => message.error('刷新部署记录失败'))}>刷新</Button>}
       />
-      <div className="app-page-scroll">
+      <Tabs
+        className="deployment-record-tabs app-fixed-tabs app-soft-tabs"
+        defaultActiveKey="deployments"
+        items={[
+          {
+            key: 'deployments',
+            label: '部署记录',
+            children: (
       <Card className="app-card">
-        <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-5">
+        <div className="app-filter-grid">
           <Select
             showSearch
             optionFilterProp="label"
@@ -170,7 +188,7 @@ export default function DeploymentRecordsPage() {
               { title: '流水线', render: (_, row) => row.pipelineName || row.pipeline?.name || '-' },
               { title: '分支', dataIndex: 'branchName' },
               { title: '触发人', render: (_, record) => record.triggeredByDisplayName || record.triggeredBy || '-' },
-              { title: '状态', render: (_, row) => <StatusTag status={row.status} /> },
+              { title: '状态', render: (_, row) => <StatusTag status={row.status} progress={row.progressPercent} /> },
               { title: '创建时间', render: (_, row) => formatDateTime(row.createdAt) },
               { title: '开始时间', render: (_, row) => formatDateTime(row.startedAt) },
               { title: '结束时间', render: (_, row) => formatDateTime(row.finishedAt) },
@@ -216,7 +234,15 @@ export default function DeploymentRecordsPage() {
           ]}
         />
       </Card>
-      </div>
+            ),
+          },
+          {
+            key: 'notifications',
+            label: '通知记录',
+            children: <NotificationAdminPage embedded defaultActiveKey="records" showConfigurations={false} />,
+          },
+        ]}
+      />
     </>
   );
 }

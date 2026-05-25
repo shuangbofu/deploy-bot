@@ -320,7 +320,7 @@ export default function ServiceManagementPage() {
             服务状态刷新异常：{refreshError}
           </div>
         ) : null}
-        <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
+        <div className="app-filter-grid">
           <Input
             value={keyword}
             placeholder="搜索服务名 / 流水线 / 项目"

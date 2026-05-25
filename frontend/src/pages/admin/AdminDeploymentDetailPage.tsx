@@ -1,12 +1,14 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Button, Card, Col, Collapse, Descriptions, Popconfirm, Progress, Row, Space, message } from 'antd';
+import { Button, Card, Col, Descriptions, Popconfirm, Progress, Row, Space, message } from 'antd';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { deploymentPluginsApi } from '../../api/deploymentPlugins';
 import { deploymentsApi } from '../../api/deployments';
+import DeploymentSnapshotCard from '../../components/DeploymentSnapshotCard';
 import LogViewer from '../../components/LogViewer';
 import PageHeaderBar from '../../components/PageHeaderBar';
 import StatusTag from '../../components/StatusTag';
 import { ACTIVE_DEPLOYMENT_STATUSES } from '../../constants/deployment';
-import type { DeploymentSummary, RuntimeEnvironmentSummary } from '../../types/domain';
+import type { DeploymentPluginDefinitionSummary, DeploymentSummary } from '../../types/domain';
 import { copyText } from '../../utils/clipboard';
 import { getDeploymentProgress, getDeploymentProgressColor, getDeploymentProgressLabel } from '../../utils/deploymentProgress';
 import { formatDeploymentTimeline } from '../../utils/deploymentTimeline';
@@ -24,6 +26,7 @@ export default function AdminDeploymentDetailPage() {
   const [logContent, setLogContent] = useState('');
   const [detailLoading, setDetailLoading] = useState(true);
   const [logLoading, setLogLoading] = useState(true);
+  const [plugins, setPlugins] = useState<DeploymentPluginDefinitionSummary[]>([]);
   const [tick, setTick] = useState(() => Date.now());
   const contentRef = useRef<HTMLDivElement | null>(null);
   const [contentHeight, setContentHeight] = useState<number>();
@@ -60,6 +63,7 @@ export default function AdminDeploymentDetailPage() {
   useEffect(() => {
     loadDeploymentDetail().catch(() => message.error('加载部署详情失败'));
     loadDeploymentLog().catch(() => message.error('加载部署日志失败'));
+    deploymentPluginsApi.list().then(setPlugins).catch(() => setPlugins([]));
   }, [deploymentId]);
 
   useEffect(() => {
@@ -108,72 +112,6 @@ export default function AdminDeploymentDetailPage() {
       return null;
     }
   }, [deployment?.executionSnapshot]);
-  const readSnapshotRuntimeEnvironments = (key: string, fallbackKeys: string[]): RuntimeEnvironmentSummary[] => {
-    const value = executionSnapshot?.[key];
-    if (Array.isArray(value)) {
-      return value.filter((item): item is RuntimeEnvironmentSummary => Boolean(item && typeof item === 'object'));
-    }
-    return fallbackKeys
-      .map((fallbackKey) => executionSnapshot?.[fallbackKey])
-      .filter((item): item is RuntimeEnvironmentSummary => Boolean(item && typeof item === 'object'));
-  };
-  const snapshotVariables = useMemo(() => {
-    const raw = executionSnapshot?.variables;
-    if (Array.isArray(raw)) {
-      return raw.map((item) => {
-        const entry = item as { name?: unknown; label?: unknown; value?: unknown };
-        const name = String(entry.name ?? '-');
-        return {
-          name,
-          label: String(entry.label ?? name),
-          value: String(entry.value ?? '-'),
-        };
-      });
-    }
-    return Object.entries((raw as Record<string, unknown> | undefined) || {}).map(([name, value]) => ({
-      name,
-      label: name,
-      value: String(value ?? '-'),
-    }));
-  }, [executionSnapshot]);
-  const snapshotFields = useMemo(() => {
-    const items: Array<{ label: string; value: string }> = [];
-    const pushField = (label: string, value?: unknown) => {
-      const text = String(value ?? '').trim();
-      if (!text || text === '-') {
-        return;
-      }
-      items.push({ label, value: text });
-    };
-    const envText = (env?: RuntimeEnvironmentSummary | null) => {
-      const name = String(env?.name ?? '').trim();
-      const version = String(env?.version ?? '').trim();
-      return [name, version].filter(Boolean).join(' ');
-    };
-    const pushRuntimeField = (labelPrefix: string, env?: RuntimeEnvironmentSummary | null) => {
-      const type = String(env?.type ?? '').trim();
-      pushField(type ? `${labelPrefix} ${type}` : labelPrefix, envText(env));
-    };
-
-    pushField('模板', executionSnapshot?.templateName);
-    pushField('模板类型', executionSnapshot?.templateType);
-    pushField('目标主机', executionSnapshot?.targetHost);
-    pushField('部署目录', executionSnapshot?.targetDir);
-    pushField('服务名', executionSnapshot?.serviceName);
-    const pluginConfig = executionSnapshot?.pluginConfig;
-    if (pluginConfig && typeof pluginConfig === 'object' && !Array.isArray(pluginConfig)) {
-      Object.entries(pluginConfig).forEach(([key, value]) => pushField(`插件配置 ${key}`, value));
-    }
-    pushField('启动关键字', executionSnapshot?.startupKeyword);
-    pushField('启动超时', executionSnapshot?.startupTimeoutSeconds);
-    readSnapshotRuntimeEnvironments('buildRuntimeEnvironments', ['javaEnvironment', 'nodeEnvironment', 'mavenEnvironment'])
-      .forEach((item) => pushRuntimeField('构建组件', item));
-    readSnapshotRuntimeEnvironments('targetRuntimeEnvironments', ['runtimeJavaEnvironment'])
-      .forEach((item) => pushRuntimeField('运行组件', item));
-
-    return items;
-  }, [executionSnapshot]);
-
   useLayoutEffect(() => {
     if (!contentRef.current) {
       return undefined;
@@ -195,7 +133,7 @@ export default function AdminDeploymentDetailPage() {
       observer.disconnect();
       window.removeEventListener('resize', updateHeight);
     };
-  }, [deployment, snapshotVariables.length]);
+  }, [deployment]);
 
   return (
     <>
@@ -252,15 +190,22 @@ export default function AdminDeploymentDetailPage() {
             <Card
               className="app-card"
               title="部署状态"
-              extra={<StatusTag status={deployment?.status} />}
+              extra={<StatusTag status={deployment?.status} progress={progress} />}
               loading={detailLoading}
             >
-              <Progress
-                percent={progress}
-                status={deployment?.status === 'RUNNING' ? 'active' : undefined}
-                strokeColor={getDeploymentProgressColor(deployment?.status)}
-                format={() => getDeploymentProgressLabel(progress, deployment?.status, deployment?.progressText)}
-              />
+              <div className="deployment-progress-row">
+                <Progress
+                  className="deployment-progress"
+                  percent={progress}
+                  strokeWidth={10}
+                  status={deployment?.status === 'RUNNING' ? 'active' : undefined}
+                  strokeColor={getDeploymentProgressColor(deployment?.status)}
+                  showInfo={false}
+                />
+                <div className="deployment-progress-text">
+                  {getDeploymentProgressLabel(progress, deployment?.status, deployment?.progressText)}
+                </div>
+              </div>
               <Descriptions column={1} size="small" className="mt-4">
                 {renderDescriptionItem('流水线', deployment?.pipelineName || deployment?.pipeline?.name)}
                 {renderDescriptionItem('项目', deployment?.projectName || deployment?.pipeline?.project?.name)}
@@ -280,43 +225,12 @@ export default function AdminDeploymentDetailPage() {
                 {deployment?.status !== 'STOPPED' ? renderDescriptionItem('错误信息', deployment?.errorMessage) : null}
               </Descriptions>
             </Card>
-            <Card className="app-card deployment-detail-snapshot-card" title="部署快照" loading={detailLoading}>
-              <Descriptions column={1} size="small">
-                {snapshotFields.length > 0 ? snapshotFields.map((item) => (
-                  <Descriptions.Item key={item.label} label={item.label}>{item.value}</Descriptions.Item>
-                )) : (
-                  <Descriptions.Item label="快照信息">-</Descriptions.Item>
-                )}
-              </Descriptions>
-              <Collapse
-                className="mt-4 deployment-detail-variables-collapse"
-                ghost
-                items={[
-                  {
-                    key: 'variables',
-                    label: '变量快照',
-                    children: (
-                      <div className="space-y-2">
-                        {snapshotVariables.length > 0 ? snapshotVariables.map((item) => (
-                          <div key={item.name} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                            <div className="flex items-start gap-3 text-sm">
-                              <div className="w-40 shrink-0 font-semibold text-slate-700">{item.label}</div>
-                              <code className="block flex-1 break-all text-[13px] font-medium text-slate-600">
-                                {item.value}
-                              </code>
-                            </div>
-                          </div>
-                        )) : (
-                          <div className="rounded-lg border border-dashed border-slate-200 px-3 py-4 text-sm text-slate-400">
-                            暂无变量快照
-                          </div>
-                        )}
-                      </div>
-                    ),
-                  },
-                ]}
-              />
-            </Card>
+            <DeploymentSnapshotCard
+              loading={detailLoading}
+              executionSnapshot={executionSnapshot}
+              pipelinePluginId={deployment?.pipeline?.templatePluginId || deployment?.pipeline?.template?.pluginId}
+              plugins={plugins}
+            />
           </div>
         </Col>
         <Col className="deployment-detail-col deployment-detail-main-col" xs={24} xl={17} xxl={18} style={contentHeight ? { height: '100%' } : undefined}>
@@ -333,7 +247,10 @@ export default function AdminDeploymentDetailPage() {
               </Space>
             )}
           >
-            <LogViewer content={logContent} />
+            <LogViewer
+              content={logContent}
+              autoScrollAvailable={Boolean(deployment?.status && ACTIVE_DEPLOYMENT_STATUSES.includes(deployment.status))}
+            />
           </Card>
         </Col>
       </Row>

@@ -6,31 +6,60 @@ type LogViewerProps = {
   content: string;
   /** 日志区域最大高度，超出后内部滚动。 */
   maxHeight?: number;
+  /** 日志仍在刷新时才允许暂停自动跟随。 */
+  autoScrollAvailable?: boolean;
 };
 
 /**
  * 日志查看器。
  * 负责高亮命令追踪和错误行，并把页面滚动限制在日志容器内部。
  */
-export default function LogViewer({ content, maxHeight }: LogViewerProps) {
+export default function LogViewer({ content, maxHeight, autoScrollAvailable = false }: LogViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [showBackToTop, setShowBackToTop] = useState(false);
+  const [showBackToBottom, setShowBackToBottom] = useState(false);
+  const [autoScroll, setAutoScroll] = useState(true);
   const lines = (content || '暂无日志输出。').split('\n');
+  const updateScrollButtons = (element: HTMLDivElement) => {
+    const bottomDistance = element.scrollHeight - element.scrollTop - element.clientHeight;
+    setShowBackToTop(element.scrollTop > 120);
+    setShowBackToBottom(bottomDistance > 80);
+  };
 
-  // 日志页默认服务于排查场景，因此首次进入和自动刷新后都直接跟到最底部。
   useLayoutEffect(() => {
     if (!containerRef.current) {
       return;
     }
-    containerRef.current.scrollTop = containerRef.current.scrollHeight;
-    setShowBackToTop(false);
-  }, [content]);
+    if (autoScroll) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    }
+    updateScrollButtons(containerRef.current);
+  }, [autoScroll, content]);
+
+  useLayoutEffect(() => {
+    if (!autoScrollAvailable) {
+      setAutoScroll(true);
+    }
+  }, [autoScrollAvailable]);
 
   const scrollToTop = () => {
     if (!containerRef.current) {
       return;
     }
     containerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  const scrollToBottom = () => {
+    if (!containerRef.current) {
+      return;
+    }
+    containerRef.current.scrollTo({ top: containerRef.current.scrollHeight, behavior: 'smooth' });
+  };
+  const toggleAutoScroll = () => {
+    const nextAutoScroll = !autoScroll;
+    setAutoScroll(nextAutoScroll);
+    if (nextAutoScroll) {
+      window.requestAnimationFrame(() => scrollToBottom());
+    }
   };
 
   return (
@@ -39,7 +68,7 @@ export default function LogViewer({ content, maxHeight }: LogViewerProps) {
         ref={containerRef}
         className="log-viewer"
         style={maxHeight ? { maxHeight } : undefined}
-        onScroll={(event) => setShowBackToTop(event.currentTarget.scrollTop > 120)}
+        onScroll={(event) => updateScrollButtons(event.currentTarget)}
       >
         {lines.map((line, index) => {
           const lowerLine = line.toLowerCase();
@@ -64,15 +93,19 @@ export default function LogViewer({ content, maxHeight }: LogViewerProps) {
           );
         })}
       </div>
-      {showBackToTop ? (
-        <Button
-          className="log-viewer-top-button"
-          size="small"
-          onClick={scrollToTop}
-        >
-          回到顶部
-        </Button>
-      ) : null}
+      <div className="log-viewer-actions">
+        {showBackToTop ? (
+          <Button size="small" onClick={scrollToTop}>回到顶部</Button>
+        ) : null}
+        {showBackToBottom ? (
+          <Button size="small" onClick={scrollToBottom}>回到底部</Button>
+        ) : null}
+        {autoScrollAvailable ? (
+          <Button size="small" onClick={toggleAutoScroll}>
+            {autoScroll ? '暂停滚动' : '恢复滚动'}
+          </Button>
+        ) : null}
+      </div>
     </div>
   );
 }

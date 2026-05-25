@@ -1,5 +1,5 @@
 import { AppstoreOutlined, DeploymentUnitOutlined, ProfileOutlined, ThunderboltOutlined } from '@ant-design/icons';
-import { Card, DatePicker, Segmented, Select, Space, Tabs } from 'antd';
+import { DatePicker, Segmented, Select, Space, Tabs } from 'antd';
 import type { EChartsOption } from 'echarts';
 import { useMemo, useState } from 'react';
 import PageHeaderBar from './PageHeaderBar';
@@ -18,6 +18,30 @@ interface DashboardConsoleProps {
 }
 
 const { RangePicker } = DatePicker;
+
+function DashboardSkeleton() {
+  return (
+    <>
+      <div className="dashboard-metric-grid">
+        {Array.from({ length: 8 }).map((_, index) => (
+          <div key={index} className="dashboard-metric-skeleton">
+            <div className="dashboard-skeleton-line dashboard-skeleton-line--short" />
+            <div className="dashboard-skeleton-line dashboard-skeleton-line--value" />
+            <div className="dashboard-skeleton-line" />
+          </div>
+        ))}
+      </div>
+      <div className="dashboard-chart-grid dashboard-chart-grid--main">
+        <div className="dashboard-chart-skeleton dashboard-chart-skeleton--wide" />
+        <div className="dashboard-chart-skeleton" />
+      </div>
+      <div className="dashboard-chart-grid dashboard-chart-grid--main">
+        <div className="dashboard-chart-skeleton" />
+        <div className="dashboard-chart-skeleton dashboard-chart-skeleton--bars" />
+      </div>
+    </>
+  );
+}
 
 const RANGE_OPTIONS = [
   { label: '今天', value: 'today' },
@@ -315,6 +339,23 @@ export default function DashboardConsole({
     }],
   }), [data.recentDeployments, isDark]);
 
+  const overviewCharts = useMemo(() => (
+    <>
+      <div className="dashboard-chart-grid dashboard-chart-grid--main">
+        <DashboardChartCard title="部署趋势" description="按时间粒度统计部署总数、成功、失败和运行中" loading={loading} empty={data.trend.length === 0} height={340} option={trendOption} />
+        <DashboardChartCard title="状态分布" description="当前筛选范围内的部署状态占比" loading={loading} empty={data.statusDistribution.length === 0} height={340} option={statusOption} />
+      </div>
+      <div className="dashboard-chart-grid dashboard-chart-grid--main">
+        <DashboardChartCard title="最近部署分布" description="以时间和流水线展示最近部署，点大小表示耗时" loading={loading} empty={data.recentDeployments.length === 0} height={340} option={recentOption} />
+        <DashboardChartCard title="部署耗时分布" description="按执行耗时区间统计，玫瑰图更容易看出耗时集中区间" loading={loading} empty={data.durationDistribution.length === 0} height={340} option={roseOption('部署次数', data.durationDistribution, isDark)} />
+      </div>
+      <div className="dashboard-chart-grid dashboard-chart-grid--main">
+        <DashboardChartCard title="流水线热度" description="最近范围内使用最频繁的流水线" loading={loading} empty={data.pipelineRanking.length === 0} height={340} option={polarRankingOption('流水线热度', data.pipelineRanking, isDark)} />
+        <DashboardChartCard title="项目部署排行" loading={loading} empty={data.projectRanking.length === 0} height={340} option={rankingOption('项目部署', data.projectRanking, isDark)} />
+      </div>
+    </>
+  ), [data.durationDistribution, data.pipelineRanking.length, data.projectRanking.length, data.recentDeployments.length, data.statusDistribution.length, data.trend.length, isDark, loading, recentOption, statusOption, trendOption]);
+
   return (
     <>
       <PageHeaderBar
@@ -347,9 +388,13 @@ export default function DashboardConsole({
         )}
       />
       <div className="app-page-scroll">
+        {loading && !analytics ? (
+          <DashboardSkeleton />
+        ) : (
+          <>
         <div className="dashboard-metric-grid">
           {data.metrics.map((item, index) => (
-            <Card key={item.key} className="app-card dashboard-metric-card" loading={loading}>
+            <div key={item.key} className="app-card dashboard-metric-card">
               <div className="dashboard-metric-icon">
                 {index % 4 === 0 ? <DeploymentUnitOutlined /> : index % 4 === 1 ? <ThunderboltOutlined /> : index % 4 === 2 ? <ProfileOutlined /> : <AppstoreOutlined />}
               </div>
@@ -358,33 +403,19 @@ export default function DashboardConsole({
                 {item.value}<span>{item.suffix || ''}</span>
               </div>
               {item.trendLabel ? <div className="dashboard-metric-help">{item.trendLabel}</div> : null}
-            </Card>
+            </div>
           ))}
         </div>
 
-        <Tabs
+        {isAdmin ? (
+          <Tabs
           className="dashboard-chart-tabs"
           defaultActiveKey="overview"
           items={[
             {
               key: 'overview',
-              label: '常用看板',
-              children: (
-                <>
-                  <div className="dashboard-chart-grid dashboard-chart-grid--main">
-                    <DashboardChartCard title="部署趋势" description="按时间粒度统计部署总数、成功、失败和运行中" loading={loading} empty={data.trend.length === 0} height={340} option={trendOption} />
-                    <DashboardChartCard title="状态分布" description="当前筛选范围内的部署状态占比" loading={loading} empty={data.statusDistribution.length === 0} height={340} option={statusOption} />
-                  </div>
-                  <div className="dashboard-chart-grid dashboard-chart-grid--main">
-                    <DashboardChartCard title="最近部署分布" description="以时间和流水线展示最近部署，点大小表示耗时" loading={loading} empty={data.recentDeployments.length === 0} height={340} option={recentOption} />
-                    <DashboardChartCard title="部署耗时分布" description="按执行耗时区间统计，玫瑰图更容易看出耗时集中区间" loading={loading} empty={data.durationDistribution.length === 0} height={340} option={roseOption('部署次数', data.durationDistribution, isDark)} />
-                  </div>
-                  <div className="dashboard-chart-grid dashboard-chart-grid--main">
-                    <DashboardChartCard title="流水线热度" description="最近范围内使用最频繁的流水线" loading={loading} empty={data.pipelineRanking.length === 0} height={340} option={polarRankingOption('流水线热度', data.pipelineRanking, isDark)} />
-                    <DashboardChartCard title="项目部署排行" loading={loading} empty={data.projectRanking.length === 0} height={340} option={rankingOption('项目部署', data.projectRanking, isDark)} />
-                  </div>
-                </>
-              ),
+              label: '部署概览',
+              children: overviewCharts,
             },
             {
               key: 'dimensions',
@@ -418,7 +449,14 @@ export default function DashboardConsole({
               ),
             },
           ]}
-        />
+          />
+        ) : (
+          <div className="dashboard-overview-direct">
+            {overviewCharts}
+          </div>
+        )}
+          </>
+        )}
       </div>
     </>
   );

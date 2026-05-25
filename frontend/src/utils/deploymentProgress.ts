@@ -30,7 +30,11 @@ export function getDeploymentProgressLabel(
   progressText?: string | null,
 ) {
   if (progressText && progressText.trim()) {
-    return progressText.trim().replace(/（(?:失败|已停止)）$/u, '');
+    const normalized = progressText.trim().replace(/（(?:失败|已停止)）$/u, '');
+    if (normalized.includes('启动')) {
+      return '等待启动';
+    }
+    return normalized;
   }
   if (status === 'RUNNING') {
     return '部署中';
@@ -62,6 +66,15 @@ function buildRunningProgressGradient() {
 }
 
 const RUNNING_PROGRESS_GRADIENT = buildRunningProgressGradient();
+
+export function getRunningProgressSolidColor(progress?: number | null) {
+  const normalized = Math.max(0, Math.min(100, typeof progress === 'number' ? progress : 0)) / 100;
+  return rgbToHex(
+    interpolateChannel(RUNNING_PROGRESS_START[0], RUNNING_PROGRESS_END[0], normalized),
+    interpolateChannel(RUNNING_PROGRESS_START[1], RUNNING_PROGRESS_END[1], normalized),
+    interpolateChannel(RUNNING_PROGRESS_START[2], RUNNING_PROGRESS_END[2], normalized),
+  );
+}
 
 /**
  * 进度条颜色与状态点颜色保持同一套映射，避免出现“状态已失败但进度还是蓝色”的割裂感。

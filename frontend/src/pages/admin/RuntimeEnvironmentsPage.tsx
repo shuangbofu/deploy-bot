@@ -637,7 +637,7 @@ export default function RuntimeEnvironmentsPage() {
               <Form.Item label="描述">
                 <Input value={mavenSettingsForm.description} onChange={(event) => setMavenSettingsForm({ ...mavenSettingsForm, description: event.target.value })} placeholder="可选。说明这份 settings.xml 用于哪个仓库或环境。" />
               </Form.Item>
-              <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div className="app-filter-grid">
                 <Form.Item label="启用">
                   <Switch checked={mavenSettingsForm.enabled} checkedChildren="启用" unCheckedChildren="停用" onChange={(checked) => setMavenSettingsForm({ ...mavenSettingsForm, enabled: checked })} />
                 </Form.Item>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Button, Card, Descriptions, Form, Input, Modal, Popconfirm, Progress, Select, Space, Switch, Table, message } from 'antd';
+import { CaretDown, CaretRight } from '@phosphor-icons/react';
 import { useNavigate } from 'react-router-dom';
 import { hostsApi } from '../../api/hosts';
 import { runtimeEnvironmentsApi } from '../../api/runtimeEnvironments';
@@ -86,35 +87,52 @@ function renderNoWrapText(value?: string) {
   );
 }
 
-function renderRuntimeEnvironments(items: RuntimeEnvironmentSummary[]) {
-  if (items.length === 0) {
-    return '-';
-  }
+function groupRuntimeEnvironments(items: RuntimeEnvironmentSummary[]) {
   const groupedItems = items.reduce<Record<string, RuntimeEnvironmentSummary[]>>((groups, item) => {
     const key = item.type || 'OTHER';
     groups[key] = [...(groups[key] || []), item];
     return groups;
   }, {});
-  const orderedTypes = sortRuntimeEnvironmentTypes(Object.keys(groupedItems));
+  const orderedTypes = sortRuntimeEnvironmentTypes(Object.keys(groupedItems))
+    .filter((type) => groupedItems[type]?.length);
+  return { groupedItems, orderedTypes };
+}
+
+function renderRuntimeEnvironmentSummary(items: RuntimeEnvironmentSummary[]) {
+  if (items.length === 0) {
+    return '-';
+  }
+  const { groupedItems, orderedTypes } = groupRuntimeEnvironments(items);
   return (
-    <div className="space-y-1">
-      {orderedTypes
-        .filter((type) => groupedItems[type]?.length)
-        .map((type) => (
-          <div key={type}>
-            <div className="mb-0.5 text-[11px] font-semibold text-slate-500">
-              {getRuntimeEnvironmentTypeLabel(type)} · {groupedItems[type].length} 个版本
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {groupedItems[type].map((item) => (
-                <span key={item.id} className="text-xs text-slate-700">
-                  <span className="font-medium text-slate-900">{item.name}</span>
-                  {item.version ? <span className="ml-1 text-slate-500">{item.version}</span> : null}
-                </span>
-              ))}
-            </div>
+    <div className="host-runtime-summary">
+      {orderedTypes.map((type) => (
+        <span key={type}>
+          {getRuntimeEnvironmentTypeLabel(type)} {groupedItems[type].length}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function renderRuntimeEnvironmentDetails(items: RuntimeEnvironmentSummary[]) {
+  const { groupedItems, orderedTypes } = groupRuntimeEnvironments(items);
+  return (
+    <div className="host-runtime-detail">
+      {orderedTypes.map((type) => (
+        <div key={type} className="host-runtime-detail__group">
+          <div className="host-runtime-detail__title">
+            {getRuntimeEnvironmentTypeLabel(type)} · {groupedItems[type].length} 个版本
           </div>
-        ))}
+          <div className="host-runtime-detail__items">
+            {groupedItems[type].map((item) => (
+              <span key={item.id}>
+                <strong>{item.name}</strong>
+                {item.version ? <em>{item.version}</em> : null}
+              </span>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -137,10 +155,19 @@ export default function HostManagementPage() {
   const [typeFilter, setTypeFilter] = useState<HostType>();
   const [enabledFilter, setEnabledFilter] = useState<string>();
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
+  const [expandedRuntimeHostIds, setExpandedRuntimeHostIds] = useState<number[]>([]);
   const editingHost = hosts.find((item) => item.id === editingId);
   const currentHostTypeOptions = editingHost?.type === 'LOCAL'
     ? [{ label: '本机', value: 'LOCAL' as HostType }, ...hostTypeOptions]
     : hostTypeOptions;
+
+  const toggleRuntimeExpanded = (hostId: number) => {
+    setExpandedRuntimeHostIds((previous) => (
+      previous.includes(hostId)
+        ? previous.filter((item) => item !== hostId)
+        : [...previous, hostId]
+    ));
+  };
 
   const loadHosts = async () => {
     setLoading(true);
@@ -278,7 +305,7 @@ export default function HostManagementPage() {
       />
       <div className="app-page-scroll">
       <Card className="app-card">
-        <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
+        <div className="app-filter-grid">
           <Input
             value={keyword}
             placeholder="搜索主机名称 / 地址 / 工作空间"
@@ -356,7 +383,23 @@ export default function HostManagementPage() {
                 width: 320,
                 render: (_, row) => {
                   const items = environments.filter((item) => item.host?.id === row.id);
-                  return renderRuntimeEnvironments(items);
+                  if (items.length === 0) {
+                    return '-';
+                  }
+                  const expanded = expandedRuntimeHostIds.includes(row.id);
+                  return (
+                    <div className="host-runtime-cell">
+                      <button
+                        type="button"
+                        className="host-runtime-toggle"
+                        onClick={() => toggleRuntimeExpanded(row.id)}
+                      >
+                        {expanded ? <CaretDown weight="fill" /> : <CaretRight weight="fill" />}
+                        {renderRuntimeEnvironmentSummary(items)}
+                      </button>
+                      {expanded ? renderRuntimeEnvironmentDetails(items) : null}
+                    </div>
+                  );
                 },
               },
               { title: '状态', render: (_, row) => renderEnabledStatus(row.enabled !== false), width: 100 },

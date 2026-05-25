@@ -1,11 +1,11 @@
-import { DashboardOutlined, ProfileOutlined, DeploymentUnitOutlined, LogoutOutlined, LockOutlined, GithubOutlined, RobotOutlined, BellOutlined, SettingOutlined } from '@ant-design/icons';
+import { LogoutOutlined, LockOutlined, GithubOutlined, RobotOutlined } from '@ant-design/icons';
 import { Avatar, Button, Dropdown, Space } from 'antd';
 import { useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { resolveBackendAssetUrl } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
-import { resolvePortalSwitchPath } from '../utils/portalSwitch';
 import ChangePasswordModal from './ChangePasswordModal';
+import NavIcon from './NavIcon';
 import PortalLayoutShell from './PortalLayoutShell';
 
 const GITHUB_REPOSITORY_URL = 'https://github.com/shuangbofu/deploy-bot';
@@ -14,11 +14,10 @@ const GITHUB_REPOSITORY_URL = 'https://github.com/shuangbofu/deploy-bot';
  * 用户端菜单只保留用户真实需要的三个入口，避免出现配置感。
  */
 const menuItems = [
-  { key: '/user/dashboard', icon: <DashboardOutlined />, label: '仪表盘', shortLabel: '仪表' },
-  { key: '/user/pipelines', icon: <DeploymentUnitOutlined />, label: '流水线大厅', shortLabel: '大厅' },
-  { key: '/user/deployments', icon: <ProfileOutlined />, label: '部署记录', shortLabel: '记录' },
-  { key: '/user/notification-records', icon: <BellOutlined />, label: '通知记录', shortLabel: '通知' },
-  { key: '/user/system-settings', icon: <SettingOutlined />, label: '系统设置', shortLabel: '设置' },
+  { key: '/user/dashboard', icon: <NavIcon name="dashboard" tone="cyan" />, label: '仪表盘', shortLabel: '仪表' },
+  { key: '/user/pipelines', icon: <NavIcon name="pipeline" tone="emerald" />, label: '流水线大厅', shortLabel: '大厅' },
+  { key: '/user/deployments', icon: <NavIcon name="deployment" tone="sky" />, label: '部署记录', shortLabel: '记录' },
+  { key: '/user/system-settings', icon: <NavIcon name="settings" tone="slate" />, label: '系统设置', shortLabel: '设置' },
 ];
 
 /**
@@ -28,10 +27,9 @@ const menuItems = [
 export default function UserLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, isAdmin, logout } = useAuth();
+  const { user, logout } = useAuth();
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const selectedKey = menuItems.find((item) => location.pathname.startsWith(item.key))?.key || '/user/dashboard';
-  const switchPath = resolvePortalSwitchPath(location.pathname, 'admin');
 
   return (
     <>
@@ -41,11 +39,6 @@ export default function UserLayout() {
         selectedKey={selectedKey}
         actions={(
         <Space>
-          {isAdmin ? (
-            <Link to={switchPath}>
-              <Button>控制中心</Button>
-            </Link>
-          ) : null}
           <Dropdown
             menu={{
               items: [

@@ -14,9 +14,11 @@ import type {
 import EmptyPane from '../../components/EmptyPane';
 import PageHeaderBar from '../../components/PageHeaderBar';
 import { getNotificationChannelTypeLabel, notificationTemplateVariableOptions } from '../../constants/notification';
+import { usePipelineHallPreferences } from '../../hooks/usePipelineHallPreferences';
 import { useAppTheme } from '../../theme/AppThemeProvider';
 import { useLayoutMode } from '../../theme/LayoutModeProvider';
 import { copyText } from '../../utils/clipboard';
+import NotificationAdminPage from './NotificationAdminPage';
 
 const emptySettings: SystemSettingsPayload = {
   gitExecutable: 'git',
@@ -141,7 +143,19 @@ type Props = {
 export default function SystemSettingsPage({ scope = 'admin' }: Props) {
   const adminScope = scope === 'admin';
   const { mode: themeMode, followSystem, autoDarkAtNight, setMode: setThemeMode, setFollowSystem, setAutoDarkAtNight } = useAppTheme();
-  const { mode: layoutMode, setMode: setLayoutMode } = useLayoutMode();
+  const { mode: layoutMode, menuIconStyle, setMode: setLayoutMode, setMenuIconStyle } = useLayoutMode();
+  const {
+    autoOpenDeploymentDetail,
+    setAutoOpenDeploymentDetail,
+    pinActivePipelines,
+    setPinActivePipelines,
+    stopConfirmationEnabled,
+    setStopConfirmationEnabled,
+    showRunningServices,
+    setShowRunningServices,
+    hideStoppedServices,
+    setHideStoppedServices,
+  } = usePipelineHallPreferences();
   const [form, setForm] = useState<SystemSettingsPayload>(emptySettings);
   const [saving, setSaving] = useState(false);
   const [previewTitle, setPreviewTitle] = useState('');
@@ -352,9 +366,8 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
         description={adminScope ? '集中维护界面偏好、平台基础能力和通知相关配置。' : '设置自己的界面显示偏好。'}
         extra={adminScope ? <Button type="primary" loading={saving} onClick={() => saveSettings().catch(() => message.error('保存系统设置失败'))}>保存设置</Button> : null}
       />
-      <div className="app-page-scroll">
-        <Tabs
-          className="system-settings-tabs"
+      <Tabs
+          className="system-settings-tabs app-fixed-tabs app-soft-tabs"
           items={[
             {
               key: 'appearance',
@@ -382,6 +395,30 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
                       >
                         <span className="settings-choice__title">左侧菜单</span>
                         <span className="settings-choice__description">导航层级更稳定，适合管理端常驻操作。</span>
+                      </button>
+                    </div>
+                  </Card>
+                  <Card className="app-card">
+                    <div className="mb-4">
+                      <div className="text-base font-semibold text-slate-800">菜单图标</div>
+                      <div className="mt-1 text-sm text-slate-500">在双色和实心两种菜单图标风格之间切换。</div>
+                    </div>
+                    <div className="settings-choice-grid">
+                      <button
+                        type="button"
+                        className={`settings-choice ${menuIconStyle === 'duotone' ? 'settings-choice--active' : ''}`}
+                        onClick={() => setMenuIconStyle('duotone')}
+                      >
+                        <span className="settings-choice__title">双色图标</span>
+                        <span className="settings-choice__description">有层次但不厚重，适合默认菜单。</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`settings-choice ${menuIconStyle === 'fill' ? 'settings-choice--active' : ''}`}
+                        onClick={() => setMenuIconStyle('fill')}
+                      >
+                        <span className="settings-choice__title">实心图标</span>
+                        <span className="settings-choice__description">更明确、更醒目，折叠菜单下识别更快。</span>
                       </button>
                     </div>
                   </Card>
@@ -429,6 +466,104 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
                           onChange={setAutoDarkAtNight}
                         />
                       </div>
+                    </div>
+                  </Card>
+                  <Card className="app-card">
+                    <div className="mb-4">
+                      <div className="text-base font-semibold text-slate-800">流水线大厅</div>
+                      <div className="mt-1 text-sm text-slate-500">调整大厅里的部署跳转、列表排序和服务条带。</div>
+                    </div>
+                    <div className="settings-toggle-list">
+                      <button
+                        type="button"
+                        className="settings-toggle-row"
+                        onClick={() => setAutoOpenDeploymentDetail((previous) => !previous)}
+                      >
+                        <span>
+                          <span className="settings-toggle-row__title">部署开始后自动进入详情</span>
+                          <span className="settings-toggle-row__description">触发部署后直接打开部署详情。</span>
+                        </span>
+                        <Switch
+                          checked={autoOpenDeploymentDetail}
+                          onChange={setAutoOpenDeploymentDetail}
+                          onClick={(_, event) => event?.stopPropagation()}
+                        />
+                      </button>
+                      <button
+                        type="button"
+                        className="settings-toggle-row"
+                        onClick={() => setPinActivePipelines((previous) => !previous)}
+                      >
+                        <span>
+                          <span className="settings-toggle-row__title">执行中流水线置顶</span>
+                          <span className="settings-toggle-row__description">部署中的流水线优先排在列表前面。</span>
+                        </span>
+                        <Switch
+                          checked={pinActivePipelines}
+                          onChange={setPinActivePipelines}
+                          onClick={(_, event) => event?.stopPropagation()}
+                        />
+                      </button>
+                      <button
+                        type="button"
+                        className="settings-toggle-row"
+                        onClick={() => {
+                          setShowRunningServices((previous) => {
+                            const next = !previous;
+                            if (!next) {
+                              setHideStoppedServices(true);
+                            }
+                            return next;
+                          });
+                        }}
+                      >
+                        <span>
+                          <span className="settings-toggle-row__title">显示运行中的服务</span>
+                          <span className="settings-toggle-row__description">在大厅顶部展示服务状态条带。</span>
+                        </span>
+                        <Switch
+                          checked={showRunningServices}
+                          onChange={(checked) => {
+                            setShowRunningServices(checked);
+                            if (!checked) {
+                              setHideStoppedServices(true);
+                            }
+                          }}
+                          onClick={(_, event) => event?.stopPropagation()}
+                        />
+                      </button>
+                      {showRunningServices ? (
+                        <button
+                          type="button"
+                          className="settings-toggle-row"
+                          onClick={() => setHideStoppedServices((previous) => !previous)}
+                        >
+                          <span>
+                            <span className="settings-toggle-row__title">隐藏已停止服务</span>
+                            <span className="settings-toggle-row__description">服务条带只保留仍在运行的服务。</span>
+                          </span>
+                          <Switch
+                            checked={hideStoppedServices}
+                            onChange={setHideStoppedServices}
+                            onClick={(_, event) => event?.stopPropagation()}
+                          />
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="settings-toggle-row"
+                        onClick={() => setStopConfirmationEnabled((previous) => !previous)}
+                      >
+                        <span>
+                          <span className="settings-toggle-row__title">停止部署二次确认</span>
+                          <span className="settings-toggle-row__description">点击停止前先弹出确认。</span>
+                        </span>
+                        <Switch
+                          checked={stopConfirmationEnabled}
+                          onChange={setStopConfirmationEnabled}
+                          onClick={(_, event) => event?.stopPropagation()}
+                        />
+                      </button>
                     </div>
                   </Card>
                 </div>
@@ -659,8 +794,9 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
           <section className="space-y-4">
             <div className="px-1">
               <div className="text-lg font-semibold text-slate-900">通知</div>
-              <div className="mt-1 text-sm text-slate-500">维护可复用的 Webhook 配置和通知模板，通知配置页直接引用这里的基础配置。</div>
+              <div className="mt-1 text-sm text-slate-500">维护通知配置、Webhook 和通知模板，流水线绑定通知配置后会按部署事件发送消息。</div>
             </div>
+            <NotificationAdminPage embedded showRecords={false} />
             <Card className="app-card">
               <Tabs
                 items={[
@@ -875,7 +1011,6 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
       </Modal>
       </>
       ) : null}
-      </div>
     </>
   );
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Card, Col, DatePicker, Input, Popconfirm, Row, Select, Space, Table, message } from 'antd';
+import { Button, Card, Col, DatePicker, Input, Popconfirm, Row, Select, Space, Table, Tabs, message } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { deploymentsApi } from '../../api/deployments';
 import EmptyPane from '../../components/EmptyPane';
@@ -10,6 +10,7 @@ import { DEPLOYMENT_STATUS_OPTIONS } from '../../constants/deployment';
 import type { DeploymentRecordFilters, DeploymentSummary } from '../../types/domain';
 import { formatDateTime } from '../../utils/datetime';
 import { formatDeploymentElapsed } from '../../utils/deploymentDuration';
+import UserNotificationRecordsPage from './UserNotificationRecordsPage';
 
 const emptyFilters: DeploymentRecordFilters = {
   projectName: undefined,
@@ -72,14 +73,31 @@ export default function UserDeploymentRecordsPage() {
     return () => window.clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    if (!deployments.some((item) => item.status && ACTIVE_DEPLOYMENT_STATUSES.includes(item.status))) {
+      return undefined;
+    }
+    const timer = window.setInterval(() => {
+      loadDeployments().catch(() => undefined);
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [deployments, pagination.current, pagination.pageSize, filters]);
+
   return (
     <>
       <PageHeaderBar
         title="部署记录"
-        description="查看全部部署记录，并按项目、流水线、状态等条件筛选。"
+        description="查看全部部署记录和相关通知发送结果。"
         extra={<Button onClick={() => loadDeployments().catch(() => message.error('刷新部署记录失败'))}>刷新</Button>}
       />
-      <div className="app-page-scroll">
+      <Tabs
+        className="deployment-record-tabs app-fixed-tabs app-soft-tabs"
+        defaultActiveKey="deployments"
+        items={[
+          {
+            key: 'deployments',
+            label: '部署记录',
+            children: (
       <Card className="app-card">
         <Row gutter={[12, 12]} className="mb-4">
           <Col xs={24} md={12} lg={5}>
@@ -182,7 +200,7 @@ export default function UserDeploymentRecordsPage() {
               { title: '流水线', render: (_, row) => row.pipelineName || row.pipeline?.name || '-' },
               { title: '分支', dataIndex: 'branchName' },
               { title: '触发人', render: (_, record) => record.triggeredByDisplayName || record.triggeredBy || '-' },
-              { title: '状态', render: (_, row) => <StatusTag status={row.status} /> },
+              { title: '状态', render: (_, row) => <StatusTag status={row.status} progress={row.progressPercent} /> },
               { title: '创建时间', render: (_, row) => formatDateTime(row.createdAt) },
               { title: '开始时间', render: (_, row) => formatDateTime(row.startedAt) },
               { title: '结束时间', render: (_, row) => formatDateTime(row.finishedAt) },
@@ -236,7 +254,15 @@ export default function UserDeploymentRecordsPage() {
           ]}
         />
       </Card>
-      </div>
+            ),
+          },
+          {
+            key: 'notifications',
+            label: '通知记录',
+            children: <UserNotificationRecordsPage embedded />,
+          },
+        ]}
+      />
     </>
   );
 }

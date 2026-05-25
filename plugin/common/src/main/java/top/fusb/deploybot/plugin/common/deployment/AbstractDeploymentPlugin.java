@@ -279,9 +279,7 @@ public abstract class AbstractDeploymentPlugin implements DeploymentPlugin {
                     existing != null && existing.required() != null
                             ? existing.required()
                             : (definition != null && definition.required()),
-                    existing != null && existing.pipelineInput() != null
-                            ? existing.pipelineInput()
-                            : (definition == null ? Boolean.TRUE : definition.pipelineInput()),
+                    Boolean.TRUE,
                     TextKit.isNotBlank(existing == null ? null : existing.phase())
                             ? existing.phase()
                             : phase,

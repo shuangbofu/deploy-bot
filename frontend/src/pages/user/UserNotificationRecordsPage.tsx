@@ -11,7 +11,11 @@ const eventTypeOptions = [
   { label: '结束通知', value: 'DEPLOYMENT_FINISHED' },
 ] as const;
 
-export default function UserNotificationRecordsPage() {
+type UserNotificationRecordsPageProps = {
+  embedded?: boolean;
+};
+
+export default function UserNotificationRecordsPage({ embedded = false }: UserNotificationRecordsPageProps) {
   const [records, setRecords] = useState<NotificationDeliveryRecordSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [channelTypeFilter, setChannelTypeFilter] = useState<'FEISHU' | undefined>(undefined);
@@ -39,16 +43,9 @@ export default function UserNotificationRecordsPage() {
     loadRecords().catch(() => message.error('加载通知记录失败'));
   }, [pagination.current, pagination.pageSize, channelTypeFilter, eventTypeFilter]);
 
-  return (
-    <>
-      <PageHeaderBar
-        title="通知记录"
-        description="查看当前账号相关部署的通知发送结果。"
-        extra={<Button onClick={() => loadRecords().catch(() => message.error('加载通知记录失败'))}>刷新</Button>}
-      />
-      <div className="app-page-scroll">
-        <Card className="app-card">
-          <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+  const content = (
+    <Card className="app-card">
+          <div className="app-filter-grid">
             <Select
               allowClear
               value={channelTypeFilter}
@@ -122,7 +119,22 @@ export default function UserNotificationRecordsPage() {
               },
             ]}
           />
-        </Card>
+    </Card>
+  );
+
+  if (embedded) {
+    return content;
+  }
+
+  return (
+    <>
+      <PageHeaderBar
+        title="通知记录"
+        description="查看当前账号相关部署的通知发送结果。"
+        extra={<Button onClick={() => loadRecords().catch(() => message.error('加载通知记录失败'))}>刷新</Button>}
+      />
+      <div className="app-page-scroll">
+        {content}
       </div>
     </>
   );

@@ -1,4 +1,4 @@
-import { Empty, Spin } from 'antd';
+import { Spin } from 'antd';
 import type { EChartsOption } from 'echarts';
 import ReactECharts from 'echarts-for-react';
 import { useAppTheme } from '../theme/AppThemeProvider';
@@ -35,7 +35,16 @@ export default function DashboardChartCard({
       <Spin spinning={loading}>
         {empty ? (
           <div className="dashboard-chart-empty" style={{ height }}>
-            <Empty description="暂无图表数据" />
+            <div className="dashboard-chart-empty-state">
+              <div className="dashboard-chart-empty-state__visual">
+                <span />
+                <span />
+                <span />
+                <span />
+              </div>
+              <div className="dashboard-chart-empty-state__title">暂无图表数据</div>
+              <div className="dashboard-chart-empty-state__hint">换个时间范围或筛选条件再看看</div>
+            </div>
           </div>
         ) : (
           <ReactECharts

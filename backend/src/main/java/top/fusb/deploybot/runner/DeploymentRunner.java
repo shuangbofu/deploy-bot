@@ -745,6 +745,7 @@ public class DeploymentRunner {
         }
         Long monitoredPid = waitForMonitoredPid(deployment, targetHost, deploymentId, logFile);
         if (monitoredPid == null) {
+            observeStartupLogWithoutPid(deployment, targetHost, logFile);
             try {
                 appendSystemLog(logFile, "服务检测超时，未能获取到可接管的进程 PID。");
             } catch (Exception ignored) {
@@ -767,6 +768,41 @@ public class DeploymentRunner {
             return ServiceVerificationResult.failed();
         }
         return ServiceVerificationResult.managed(verifiedPid);
+    }
+
+    private void observeStartupLogWithoutPid(DeploymentEntity deployment, HostEntity targetHost, Path logFile) {
+        StartupLogCursor logCursor = initializeStartupLogCursor(deployment);
+        if (logCursor == null) {
+            return;
+        }
+        long startedAt = System.currentTimeMillis();
+        long deadline = startedAt + Math.min(resolveStartupTimeoutMillis(deployment), 10_000L);
+        int attempt = 0;
+        try {
+            appendSystemLog(logFile, "未检测到可接管 PID，继续读取启动日志以辅助定位错误。");
+        } catch (Exception ignored) {
+        }
+        while (System.currentTimeMillis() <= deadline) {
+            if (isStopRequested(deployment.getId())) {
+                return;
+            }
+            attempt++;
+            StartupLogReadResult logReadResult = readRuntimeLogDelta(logCursor, targetHost);
+            logCursor = logReadResult.cursor();
+            appendRuntimeLogDelta(logFile, logReadResult.content());
+            if (!TextKit.isBlank(logReadResult.content())) {
+                log.info("部署 {} 无 PID 日志观察第 {} 次读取到运行日志，长度={}。", deployment.getId(), attempt, logReadResult.content().length());
+            }
+            if (System.currentTimeMillis() >= deadline) {
+                break;
+            }
+            try {
+                Thread.sleep(MONITOR_INTERVAL_MILLIS);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
     }
 
     private Long waitForMonitoredPid(DeploymentEntity deployment, HostEntity targetHost, Long deploymentId, Path logFile) {
