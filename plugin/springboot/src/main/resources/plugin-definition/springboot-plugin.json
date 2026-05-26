@@ -30,7 +30,7 @@
             "helpText": "追加到 java 命令后的 JVM 参数。",
             "options": [],
             "binding": {
-              "scope": "PIPELINE_VARIABLE",
+              "scope": "PLUGIN_CONFIG",
               "key": "javaOpts"
             }
           },
@@ -43,7 +43,7 @@
             "helpText": "追加到 java 命令后的 -D 参数。",
             "options": [],
             "binding": {
-              "scope": "PIPELINE_VARIABLE",
+              "scope": "PLUGIN_CONFIG",
               "key": "javaSystemProperties"
             }
           },
@@ -69,7 +69,7 @@
             "helpText": "追加到 Jar 后面的应用启动参数。",
             "options": [],
             "binding": {
-              "scope": "PIPELINE_VARIABLE",
+              "scope": "PLUGIN_CONFIG",
               "key": "applicationArgs"
             }
           },

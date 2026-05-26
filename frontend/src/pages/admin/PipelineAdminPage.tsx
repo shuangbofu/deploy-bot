@@ -216,6 +216,25 @@ const stripContextVariables = (values: Record<string, string>) => {
   return next;
 };
 
+const removePluginConfigVariables = (
+  variables: Record<string, string>,
+  plugin: DeploymentPluginDefinitionSummary | null,
+) => {
+  if (!plugin?.pipelineFormSchema?.sections?.length) {
+    return variables;
+  }
+  const next = { ...variables };
+  plugin.pipelineFormSchema.sections.forEach((section) => {
+    section.fields.forEach((field) => {
+      if (field.binding?.scope === 'PLUGIN_CONFIG') {
+        delete next[field.binding.key];
+        delete next[field.key];
+      }
+    });
+  });
+  return next;
+};
+
 const renderTemplateOptionLabel = (item: PipelineTemplateOption) => (
   <div className="pipeline-template-option">
     <span className="pipeline-template-option__name">{item.name}</span>
@@ -763,7 +782,10 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
       message.error(`请填写变量：${missingVariable.label || missingVariable.name}`);
       return;
     }
-    const payloadVariables = stripContextVariables(form.variables || {});
+    const payloadVariables = removePluginConfigVariables(
+      stripContextVariables(form.variables || {}),
+      selectedPlugin,
+    );
     const payload: PipelinePayload = {
       name: form.name,
       description: form.description,
