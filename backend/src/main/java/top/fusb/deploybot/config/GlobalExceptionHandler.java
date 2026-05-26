@@ -9,8 +9,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -18,7 +18,10 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import java.util.NoSuchElementException;
 import java.util.stream.Collectors;
 
-@RestControllerAdvice
+@RestControllerAdvice(basePackages = {
+        "top.fusb.deploybot.controller",
+        "top.fusb.deploybot.notification.controller"
+})
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
@@ -34,12 +37,12 @@ public class GlobalExceptionHandler {
                 ex.getMessage(),
                 ex
         );
-        return ResponseEntity.ok(Result.failure(
+        return jsonFailure(
                 ex.getErrorCode().getCode(),
                 ex.getErrorCode().getDefaultMessage(),
                 ex.getErrorSubCode().getSubCode(),
                 ex.getMessage()
-        ));
+        );
     }
 
     @ExceptionHandler(JsonKit.JsonException.class)
@@ -58,12 +61,12 @@ public class GlobalExceptionHandler {
                 ex.getMessage(),
                 ex
         );
-        return ResponseEntity.ok(Result.failure(
+        return jsonFailure(
                 subCode.getErrorCode().getCode(),
                 subCode.getErrorCode().getDefaultMessage(),
                 subCode.getSubCode(),
                 subCode.getMessage()
-        ));
+        );
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -78,23 +81,23 @@ public class GlobalExceptionHandler {
             message = "请求参数校验失败";
         }
         log.warn("API validation error on {} {}: {}", request.getMethod(), request.getRequestURI(), message, ex);
-        return ResponseEntity.ok(Result.failure(
+        return jsonFailure(
                 ErrorCode.VALIDATION_ERROR.getCode(),
                 ErrorCode.VALIDATION_ERROR.getDefaultMessage(),
                 "VAL-000",
                 message
-        ));
+        );
     }
 
     @ExceptionHandler(NoSuchElementException.class)
     public ResponseEntity<Result<Void>> handleNotFound(NoSuchElementException ex, HttpServletRequest request) {
         log.warn("API resource not found on {} {}: {}", request.getMethod(), request.getRequestURI(), ex.getMessage(), ex);
-        return ResponseEntity.ok(Result.failure(
+        return jsonFailure(
                 ErrorCode.RESOURCE_NOT_FOUND.getCode(),
                 ErrorCode.RESOURCE_NOT_FOUND.getDefaultMessage(),
                 "RES-000",
                 "请求的资源不存在。"
-        ));
+        );
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)
@@ -105,22 +108,28 @@ public class GlobalExceptionHandler {
             userMessage = "提交内容过长，已超出字段限制，请检查部署变量、脚本或快照内容。";
         }
         log.warn("API data integrity error on {} {}: {}", request.getMethod(), request.getRequestURI(), ex.getMessage(), ex);
-        return ResponseEntity.ok(Result.failure(
+        return jsonFailure(
                 ErrorCode.DATA_INTEGRITY_ERROR.getCode(),
                 ErrorCode.DATA_INTEGRITY_ERROR.getDefaultMessage(),
                 "DATA-000",
                 userMessage
-        ));
+        );
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Result<Void>> handleUnexpected(Exception ex, HttpServletRequest request) {
         log.error("API unexpected error on {} {}", request.getMethod(), request.getRequestURI(), ex);
-        return ResponseEntity.ok(Result.failure(
+        return jsonFailure(
                 ErrorCode.INTERNAL_ERROR.getCode(),
                 ErrorCode.INTERNAL_ERROR.getDefaultMessage(),
                 "SYS-000",
                 "系统内部异常，请查看服务日志。"
-        ));
+        );
+    }
+
+    private ResponseEntity<Result<Void>> jsonFailure(String code, String message, String subCode, String subMessage) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Result.failure(code, message, subCode, subMessage));
     }
 }

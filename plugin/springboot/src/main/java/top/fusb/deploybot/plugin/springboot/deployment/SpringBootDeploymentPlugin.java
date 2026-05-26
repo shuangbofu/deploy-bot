@@ -279,6 +279,7 @@ public class SpringBootDeploymentPlugin extends AbstractManagedServiceDeployment
         String startCommand = ShellKit.joinCommandFragments(
                 "nohup",
                 javaCommand,
+                "< /dev/null",
                 "> " + ShellKit.singleQuote(runtimeLogPath),
                 "2>&1 &"
         );

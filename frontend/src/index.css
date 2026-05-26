@@ -4253,13 +4253,13 @@ body {
   background: transparent !important;
 }
 
-@media (min-width: 1200px) {
+@media (min-width: 768px) {
   .deployment-detail-main-col {
     padding-left: 16px;
   }
 }
 
-@media (max-width: 1199px) {
+@media (max-width: 767px) {
   .deployment-detail-main-col {
     padding-top: 16px;
   }
@@ -4314,16 +4314,27 @@ body {
   min-height: 0;
 }
 
-.deployment-inspection-card > .ant-card-body {
+.deployment-inspection-card.ant-card {
   display: flex;
   min-height: 0;
   flex-direction: column;
-  overflow: auto;
+  overflow: hidden;
+}
+
+.deployment-inspection-card > .ant-card-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
   padding-top: 12px !important;
 }
 
 .deployment-inspection-tabs {
+  display: flex;
   min-height: 0;
+  flex: 1;
+  flex-direction: column;
 }
 
 .deployment-inspection-tabs > .ant-tabs-nav {
@@ -4344,6 +4355,30 @@ body {
 
 .deployment-inspection-tabs .ant-tabs-nav-list {
   gap: 3px;
+}
+
+.deployment-inspection-tabs > .ant-tabs-content-holder {
+  min-height: 0;
+  flex: 1;
+}
+
+.deployment-inspection-tabs > .ant-tabs-content-holder > .ant-tabs-content,
+.deployment-inspection-tabs > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane {
+  min-height: 0;
+  height: 100%;
+}
+
+.deployment-inspection-tabs > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane-active {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.deployment-inspection-pane {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  padding-right: 2px;
 }
 
 .deployment-inspection-tabs .ant-tabs-tab-btn {

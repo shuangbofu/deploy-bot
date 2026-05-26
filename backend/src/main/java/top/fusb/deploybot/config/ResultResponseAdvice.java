@@ -13,7 +13,10 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice;
 /**
  * 统一把控制器返回值包装为 Result，避免每个接口手动包一层。
  */
-@RestControllerAdvice(basePackages = "top.fusb.deploybot.controller")
+@RestControllerAdvice(basePackages = {
+        "top.fusb.deploybot.controller",
+        "top.fusb.deploybot.notification.controller"
+})
 public class ResultResponseAdvice implements ResponseBodyAdvice<Object> {
 
     @Override
@@ -33,9 +36,22 @@ public class ResultResponseAdvice implements ResponseBodyAdvice<Object> {
         if (body instanceof Result<?>) {
             return body;
         }
-        if (selectedConverterType == StringHttpMessageConverter.class) {
+        if (!isApiRequest(request) || !isJsonResponse(selectedContentType) || selectedConverterType == StringHttpMessageConverter.class) {
             return body;
         }
         return Result.success(body);
+    }
+
+    private boolean isApiRequest(ServerHttpRequest request) {
+        String path = request.getURI().getPath();
+        return path != null && path.startsWith("/api/");
+    }
+
+    private boolean isJsonResponse(MediaType selectedContentType) {
+        if (selectedContentType == null) {
+            return false;
+        }
+        return MediaType.APPLICATION_JSON.includes(selectedContentType)
+                || selectedContentType.getSubtype().endsWith("+json");
     }
 }

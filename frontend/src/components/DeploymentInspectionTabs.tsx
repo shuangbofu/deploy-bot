@@ -30,25 +30,29 @@ export default function DeploymentInspectionTabs({
             key: 'snapshot',
             label: '部署快照',
             children: (
-              <DeploymentSnapshotCard
-                embedded
-                loading={false}
-                executionSnapshot={executionSnapshot}
-                pipelinePluginId={pipelinePluginId}
-                plugins={plugins}
-              />
+              <div className="deployment-inspection-pane">
+                <DeploymentSnapshotCard
+                  embedded
+                  loading={false}
+                  executionSnapshot={executionSnapshot}
+                  pipelinePluginId={pipelinePluginId}
+                  plugins={plugins}
+                />
+              </div>
             ),
           },
           {
             key: 'diff',
             label: '部署差异',
             children: (
-              <DeploymentGitDiffCard
-                embedded
-                loading={false}
-                commitSha={commitSha}
-                gitDiffSnapshot={gitDiffSnapshot}
-              />
+              <div className="deployment-inspection-pane">
+                <DeploymentGitDiffCard
+                  embedded
+                  loading={false}
+                  commitSha={commitSha}
+                  gitDiffSnapshot={gitDiffSnapshot}
+                />
+              </div>
             ),
           },
         ]}

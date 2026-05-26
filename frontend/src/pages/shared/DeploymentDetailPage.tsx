@@ -163,7 +163,7 @@ export default function DeploymentDetailPage({ scope }: Props) {
     }
     const element = contentRef.current;
     const updateHeight = () => {
-      if (window.innerWidth < 1200) {
+      if (window.innerWidth < 768) {
         setContentHeight(undefined);
         return;
       }
@@ -232,7 +232,7 @@ export default function DeploymentDetailPage({ scope }: Props) {
       />
       <div ref={contentRef} className="deployment-detail-content" style={contentHeight ? { height: contentHeight } : undefined}>
         <Row className="deployment-detail-grid" gutter={[0, 0]} style={contentHeight ? { height: '100%' } : undefined}>
-          <Col className="deployment-detail-col deployment-detail-sidebar-col" xs={24} xl={5} xxl={4} style={contentHeight ? { height: '100%' } : undefined}>
+          <Col className="deployment-detail-col deployment-detail-sidebar-col" xs={24} md={8} xl={6} xxl={5} style={contentHeight ? { height: '100%' } : undefined}>
             <div className="deployment-detail-sidebar" style={contentHeight ? { height: '100%' } : undefined}>
               <Card
                 className="app-card"
@@ -288,7 +288,7 @@ export default function DeploymentDetailPage({ scope }: Props) {
               />
             </div>
           </Col>
-          <Col className="deployment-detail-col deployment-detail-main-col" xs={24} xl={19} xxl={20} style={contentHeight ? { height: '100%' } : undefined}>
+          <Col className="deployment-detail-col deployment-detail-main-col" xs={24} md={16} xl={18} xxl={19} style={contentHeight ? { height: '100%' } : undefined}>
             <Card
               className="app-card deployment-detail-log-card"
               style={contentHeight ? { height: '100%' } : undefined}

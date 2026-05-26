@@ -413,6 +413,7 @@ public class DeploymentService {
         deployVariables.put("workspaceRoot", deployWorkspaceRoot.toAbsolutePath().normalize().toString());
         applyDeployRuntimeEnvironmentVariables(deployVariables, pipeline);
         applyPluginVariableAssembly(pipeline, deployVariables, PluginVariableAssemblyPhase.DEPLOY, null);
+        putManagedStartScriptPath(deployVariables, entity.getId());
 
         String buildTemplate = resolveBuildScriptTemplate(pipeline);
         String deployTemplate = resolveDeployScriptTemplate(pipeline);
@@ -769,6 +770,20 @@ public class DeploymentService {
                 : root);
     }
 
+    private void putManagedStartScriptPath(Map<String, String> variables, Long deploymentId) {
+        if (variables == null || deploymentId == null || TextKit.isBlank(variables.get("START_COMMAND"))) {
+            return;
+        }
+        String targetDir = TextKit.trimToNull(variables.get("targetDir"));
+        if (targetDir == null) {
+            targetDir = TextKit.trimToNull(variables.get("TARGET_DIR"));
+        }
+        if (targetDir == null) {
+            return;
+        }
+        variables.put("MANAGED_START_SCRIPT", Path.of(targetDir).resolve(".deploybot-start-" + deploymentId + ".sh").toString());
+    }
+
     private String resolveMavenSettingsFilePath(PipelineEntity pipeline, Path workspaceRoot, Long deploymentId) {
         if (pipeline == null || pipeline.getMavenSettings() == null || workspaceRoot == null || deploymentId == null) {
             return null;
@@ -804,7 +819,8 @@ public class DeploymentService {
         if (result == null || result.variables() == null || result.variables().isEmpty()) {
             return;
         }
-        variables.clear();
+        // 插件变量装配只应该改写自己关心的变量，不能把宿主已注入的运行环境变量整包清空。
+        // 否则发布阶段会丢失 JAVA_HOME / *_BIN_PATH / *_ACTIVATION_SCRIPT，导致远端环境前导脚本失效。
         variables.putAll(result.variables());
         if (result.notes() != null) {
             result.notes().stream()
@@ -1053,6 +1069,7 @@ public class DeploymentService {
         deployVariables.put("workspaceRoot", deployWorkspaceRoot.toAbsolutePath().normalize().toString());
         applyDeployRuntimeEnvironmentVariables(deployVariables, pipeline);
         applyPluginVariableAssembly(pipeline, deployVariables, PluginVariableAssemblyPhase.DEPLOY, null);
+        putManagedStartScriptPath(deployVariables, entity.getId());
 
         String deployTemplate = resolveDeployScriptTemplate(pipeline);
         String renderedDeployScript = deployTemplate == null ? null : renderDeploymentScriptTemplate(deployTemplate, deployVariables);

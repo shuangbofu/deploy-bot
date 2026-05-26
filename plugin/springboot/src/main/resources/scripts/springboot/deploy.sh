@@ -16,11 +16,10 @@ else
 fi
 
 # [步骤 4/4] 启动新进程
-cd "$TARGET_DIR"
-if [ -z "$START_COMMAND" ]; then
-  echo "启动命令未生成，请检查插件运行配置。" >&2
+if [ -z "$MANAGED_START_SCRIPT" ]; then
+  echo "托管进程启动脚本未生成，请检查插件运行配置。" >&2
   exit 1
 fi
-eval "$START_COMMAND"
+bash "$MANAGED_START_SCRIPT"
 
 # [完成] Spring Boot 应用部署完成

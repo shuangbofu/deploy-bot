@@ -22,9 +22,11 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
@@ -157,39 +159,43 @@ public class HostService {
         }
 
         Path tempDir = Files.createTempDirectory("deploybot-host-test-");
-        List<String> command = buildSshCommand(host, tempDir, 8);
-        log.info("Executing host connectivity check for {} with command {}.", host.getName(), command);
-        String workspace = host.getWorkspaceRoot() == null || host.getWorkspaceRoot().isBlank() ? "/tmp/deploy-bot/workspace" : host.getWorkspaceRoot().trim();
-        String script = """
-                set -e
-                printf '__DEPLOYBOT_BEGIN__1\\n'
-                if ! mkdir -p "%s"; then printf '__DEPLOYBOT_ERROR__WORKSPACE_CREATE_FAILED\\n'; exit 11; fi
-                if ! test -w "%s"; then printf '__DEPLOYBOT_ERROR__WORKSPACE_NOT_WRITABLE\\n'; exit 12; fi
-                printf '__DEPLOYBOT_USER__%%s\\n' "$(whoami)"
-                printf '__DEPLOYBOT_HOST__%%s\\n' "$(hostname)"
-                """.formatted(workspace.replace("\"", "\\\""), workspace.replace("\"", "\\\""));
-        ProcessBuilder processBuilder = ProcessKit.mergedBuilder(command);
-        ProcessKit.ProcessResult connectionResult = ProcessKit.runAndCaptureWithStdin(processBuilder, script, java.time.Duration.ofSeconds(8));
-        String output = connectionResult.output();
-        int exitCode = connectionResult.exitCode();
-        String remoteUser = extractValue(output, "__DEPLOYBOT_USER__");
-        String remoteHost = extractValue(output, "__DEPLOYBOT_HOST__");
-        if (exitCode != 0 || remoteUser == null || remoteHost == null) {
-            log.warn("Host connectivity check failed for {} with exit code {}.", host.getName(), exitCode);
-            String message = output.isBlank()
-                    ? "连接失败"
-                    : output.trim();
-            if (output.contains("__DEPLOYBOT_ERROR__WORKSPACE_CREATE_FAILED")) {
-                message = "远程连接已建立，但创建工作空间目录失败。请检查主机工作空间路径和目录权限。";
-            } else if (output.contains("__DEPLOYBOT_ERROR__WORKSPACE_NOT_WRITABLE")) {
-                message = "远程连接已建立，但工作空间目录不可写。请检查主机工作空间权限。";
-            } else if ((remoteUser == null || remoteHost == null) && exitCode == 0) {
-                message = "远程连接已建立，但未能完成平台校验脚本。请检查远程 shell 初始化脚本或工作空间权限。";
+        try {
+            List<String> command = buildSshCommand(host, tempDir, 8);
+            log.info("Executing host connectivity check for {} with command {}.", host.getName(), command);
+            String workspace = host.getWorkspaceRoot() == null || host.getWorkspaceRoot().isBlank() ? "/tmp/deploy-bot/workspace" : host.getWorkspaceRoot().trim();
+            String script = """
+                    set -e
+                    printf '__DEPLOYBOT_BEGIN__1\\n'
+                    if ! mkdir -p "%s"; then printf '__DEPLOYBOT_ERROR__WORKSPACE_CREATE_FAILED\\n'; exit 11; fi
+                    if ! test -w "%s"; then printf '__DEPLOYBOT_ERROR__WORKSPACE_NOT_WRITABLE\\n'; exit 12; fi
+                    printf '__DEPLOYBOT_USER__%%s\\n' "$(whoami)"
+                    printf '__DEPLOYBOT_HOST__%%s\\n' "$(hostname)"
+                    """.formatted(workspace.replace("\"", "\\\""), workspace.replace("\"", "\\\""));
+            ProcessBuilder processBuilder = ProcessKit.mergedBuilder(command);
+            ProcessKit.ProcessResult connectionResult = ProcessKit.runAndCaptureWithStdin(processBuilder, script, java.time.Duration.ofSeconds(8));
+            String output = connectionResult.output();
+            int exitCode = connectionResult.exitCode();
+            String remoteUser = extractValue(output, "__DEPLOYBOT_USER__");
+            String remoteHost = extractValue(output, "__DEPLOYBOT_HOST__");
+            if (exitCode != 0 || remoteUser == null || remoteHost == null) {
+                log.warn("Host connectivity check failed for {} with exit code {}.", host.getName(), exitCode);
+                String message = output.isBlank()
+                        ? "连接失败"
+                        : output.trim();
+                if (output.contains("__DEPLOYBOT_ERROR__WORKSPACE_CREATE_FAILED")) {
+                    message = "远程连接已建立，但创建工作空间目录失败。请检查主机工作空间路径和目录权限。";
+                } else if (output.contains("__DEPLOYBOT_ERROR__WORKSPACE_NOT_WRITABLE")) {
+                    message = "远程连接已建立，但工作空间目录不可写。请检查主机工作空间权限。";
+                } else if ((remoteUser == null || remoteHost == null) && exitCode == 0) {
+                    message = "远程连接已建立，但未能完成平台校验脚本。请检查远程 shell 初始化脚本或工作空间权限。";
+                }
+                return new HostConnectionTestResult(false, message, null, null, workspace);
             }
-            return new HostConnectionTestResult(false, message, null, null, workspace);
+            log.info("Host connectivity check succeeded for {}. remoteUser={}, remoteHost={}", host.getName(), remoteUser, remoteHost);
+            return new HostConnectionTestResult(true, "连接成功", remoteUser, remoteHost, workspace);
+        } finally {
+            deleteRecursively(tempDir);
         }
-        log.info("Host connectivity check succeeded for {}. remoteUser={}, remoteHost={}", host.getName(), remoteUser, remoteHost);
-        return new HostConnectionTestResult(true, "连接成功", remoteUser, remoteHost, workspace);
     }
 
     public String executeRemoteScript(Long id, String script, int timeoutSeconds) throws Exception {
@@ -199,27 +205,31 @@ public class HostService {
         }
 
         Path tempDir = Files.createTempDirectory("deploybot-host-exec-");
-        List<String> command = buildSshCommand(host, tempDir, timeoutSeconds);
-        log.info("Executing remote script on host {} with timeout {}s.", host.getName(), timeoutSeconds);
-        ProcessKit.ProcessResult result = ProcessKit.runAndCaptureWithStdin(
-                ProcessKit.mergedBuilder(command),
-                script,
-                java.time.Duration.ofSeconds(Math.max(1, timeoutSeconds))
-        );
-        if (result.timedOut()) {
-            log.warn("主机 {} 的远程脚本执行超时，timeout={}s。", host.getName(), timeoutSeconds);
-            throw new BusinessException(ErrorSubCode.REMOTE_EXECUTION_FAILED, "远程命令执行超时。");
+        try {
+            List<String> command = buildSshCommand(host, tempDir, timeoutSeconds);
+            log.info("Executing remote script on host {} with timeout {}s.", host.getName(), timeoutSeconds);
+            ProcessKit.ProcessResult result = ProcessKit.runAndCaptureWithStdin(
+                    ProcessKit.mergedBuilder(command),
+                    script,
+                    java.time.Duration.ofSeconds(Math.max(1, timeoutSeconds))
+            );
+            if (result.timedOut()) {
+                log.warn("主机 {} 的远程脚本执行超时，timeout={}s。", host.getName(), timeoutSeconds);
+                throw new BusinessException(ErrorSubCode.REMOTE_EXECUTION_FAILED, "远程命令执行超时。");
+            }
+            if (result.exitCode() != 0) {
+                log.warn("主机 {} 的远程脚本执行失败，退出码={}。", host.getName(), result.exitCode());
+                throw new BusinessException(ErrorSubCode.REMOTE_EXECUTION_FAILED, result.output().isBlank() ? null : result.output().trim());
+            }
+            log.info(
+                    "主机 {} 的远程脚本执行成功，输出预览={}",
+                    host.getName(),
+                    previewOutput(result.output())
+            );
+            return result.output();
+        } finally {
+            deleteRecursively(tempDir);
         }
-        if (result.exitCode() != 0) {
-            log.warn("主机 {} 的远程脚本执行失败，退出码={}。", host.getName(), result.exitCode());
-            throw new BusinessException(ErrorSubCode.REMOTE_EXECUTION_FAILED, result.output().isBlank() ? null : result.output().trim());
-        }
-        log.info(
-                "主机 {} 的远程脚本执行成功，输出预览={}",
-                host.getName(),
-                previewOutput(result.output())
-        );
-        return result.output();
     }
 
     /**
@@ -234,16 +244,36 @@ public class HostService {
         String output;
         if (host.getType() == HostType.LOCAL) {
             Path tempDir = Files.createTempDirectory("deploybot-host-resource-");
-            ProcessBuilder processBuilder = ProcessKit.bash(script).directory(tempDir.toFile());
-            ProcessKit.ProcessResult result = ProcessKit.runAndCapture(processBuilder);
-            output = result.output();
-            if (result.exitCode() != 0) {
-                throw new BusinessException(ErrorSubCode.LOCAL_RESOURCE_PREVIEW_FAILED, output.isBlank() ? null : output);
+            try {
+                ProcessBuilder processBuilder = ProcessKit.bash(script).directory(tempDir.toFile());
+                ProcessKit.ProcessResult result = ProcessKit.runAndCapture(processBuilder);
+                output = result.output();
+                if (result.exitCode() != 0) {
+                    throw new BusinessException(ErrorSubCode.LOCAL_RESOURCE_PREVIEW_FAILED, output.isBlank() ? null : output);
+                }
+            } finally {
+                deleteRecursively(tempDir);
             }
         } else {
             output = executeRemoteScript(id, script, 10);
         }
         return mapResourceSnapshot(host, workspace, output);
+    }
+
+    private void deleteRecursively(Path path) {
+        if (path == null || !Files.exists(path)) {
+            return;
+        }
+        try (var stream = Files.walk(path)) {
+            stream.sorted(Comparator.reverseOrder())
+                    .forEach(item -> {
+                        try {
+                            Files.deleteIfExists(item);
+                        } catch (IOException ignored) {
+                        }
+                    });
+        } catch (IOException ignored) {
+        }
     }
 
     private List<String> buildSshCommand(HostEntity host, Path sshDir, int timeoutSeconds) throws Exception {

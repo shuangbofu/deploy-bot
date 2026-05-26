@@ -42,6 +42,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -94,6 +95,7 @@ public class DeploymentRunner {
     public void runAsync(Long deploymentId) {
         Path logFile = null;
         boolean deployStageExecuted = false;
+        StartupLogCursor startupLogCursor = null;
         try {
             // 1. 读取部署与主机上下文，准备运行时目录。
             DeploymentEntity deployment = deploymentRepository.findById(deploymentId)
@@ -185,11 +187,13 @@ public class DeploymentRunner {
                 appendSystemLog(logFile, "本机构建完成，开始发布阶段。");
                 log.info("部署 {} 发布阶段开始。", deploymentId);
                 deployStageExecuted = true;
+                startupLogCursor = initializeStartupLogCursor(deployment, targetHost);
                 if (targetHost != null && targetHost.getType() == HostType.SSH) {
                     Path remoteArtifactDir = deployWorkspaceRoot.resolve(ARTIFACT_DIR).resolve("deploy-" + deploymentId).toAbsolutePath().normalize();
                     prepareRemoteExecutionDirectories(targetHost, remoteArtifactDir, sshDir, logFile, deploymentId);
                     syncArtifactsToRemote(targetHost, artifactsDir, remoteArtifactDir, sshDir, logFile, deploymentId);
                     log.info("部署 {} 构建产物同步完成。目标主机='{}'，远端产物目录='{}'。", deploymentId, targetHost.getHostname(), remoteArtifactDir);
+                    prepareManagedStartScriptIfPresent(deployment, targetHost, sshDir, logFile, deploymentId);
                     exitCode = runProcess(
                             buildRemoteDeployProcessBuilder(targetHost, sshDir),
                             deployment.getRenderedDeployScript(),
@@ -197,6 +201,7 @@ public class DeploymentRunner {
                             deploymentId
                     );
                 } else {
+                    prepareManagedStartScriptIfPresent(deployment, targetHost, sshDir, logFile, deploymentId);
                     exitCode = runProcess(
                         buildLocalDeployProcessBuilder(buildWorkspaceRoot, deployScriptFile),
                         null,
@@ -236,7 +241,7 @@ public class DeploymentRunner {
                             deploymentId,
                             deployment.getPipeline().getStartupTimeoutSeconds()
                     );
-                    ServiceVerificationResult verificationResult = verifyMonitoredProcess(deployment, targetHost, deploymentId, logFile);
+                    ServiceVerificationResult verificationResult = verifyMonitoredProcess(deployment, targetHost, deploymentId, logFile, startupLogCursor);
                     deployment = refreshDeploymentState(deployment);
                     deployment.setFinishedAt(finishedAt);
                     if (isStopRequested(deploymentId) || deployment.getStatus() == DeploymentStatus.STOPPED) {
@@ -794,7 +799,13 @@ public class DeploymentRunner {
         }
     }
 
-    private ServiceVerificationResult verifyMonitoredProcess(DeploymentEntity deployment, HostEntity targetHost, Long deploymentId, Path logFile) {
+    private ServiceVerificationResult verifyMonitoredProcess(
+            DeploymentEntity deployment,
+            HostEntity targetHost,
+            Long deploymentId,
+            Path logFile,
+            StartupLogCursor startupLogCursor
+    ) {
         DeploymentPluginPlan servicePlan = deploymentPluginBridgeService.resolveEffectiveServicePlan(deployment);
         if (servicePlan != null && !servicePlan.processLocatorEnabled() && !servicePlan.startupJudgeEnabled()) {
             try {
@@ -814,7 +825,7 @@ public class DeploymentRunner {
         }
         Long monitoredPid = waitForMonitoredPid(deployment, targetHost, deploymentId, logFile);
         if (monitoredPid == null) {
-            observeStartupLogWithoutPid(deployment, targetHost, logFile);
+            observeStartupLogWithoutPid(deployment, targetHost, logFile, startupLogCursor);
             try {
                 appendSystemLog(logFile, "服务检测超时，未能获取到可接管的进程 PID。");
             } catch (Exception ignored) {
@@ -832,15 +843,15 @@ public class DeploymentRunner {
             log.info("部署 {} 当前插件计划 '{}' 未声明启动判定能力，确认 PID={} 后跳过启动观察。", deploymentId, servicePlan.pluginId(), monitoredPid);
             return ServiceVerificationResult.managed(monitoredPid);
         }
-        Long verifiedPid = observeStartupWindow(deployment, targetHost, monitoredPid, logFile);
+        Long verifiedPid = observeStartupWindow(deployment, targetHost, monitoredPid, logFile, startupLogCursor);
         if (verifiedPid == null) {
             return ServiceVerificationResult.failed();
         }
         return ServiceVerificationResult.managed(verifiedPid);
     }
 
-    private void observeStartupLogWithoutPid(DeploymentEntity deployment, HostEntity targetHost, Path logFile) {
-        StartupLogCursor logCursor = initializeStartupLogCursor(deployment);
+    private void observeStartupLogWithoutPid(DeploymentEntity deployment, HostEntity targetHost, Path logFile, StartupLogCursor startupLogCursor) {
+        StartupLogCursor logCursor = startupLogCursor == null ? initializeStartupLogCursor(deployment, targetHost) : startupLogCursor;
         if (logCursor == null) {
             return;
         }
@@ -942,12 +953,18 @@ public class DeploymentRunner {
         return plan.processLocatorPluginId();
     }
 
-    private Long observeStartupWindow(DeploymentEntity deployment, HostEntity targetHost, Long monitoredPid, Path logFile) {
+    private Long observeStartupWindow(
+            DeploymentEntity deployment,
+            HostEntity targetHost,
+            Long monitoredPid,
+            Path logFile,
+            StartupLogCursor startupLogCursor
+    ) {
         long startedAt = System.currentTimeMillis();
         long configuredTimeoutMillis = resolveStartupTimeoutMillis(deployment);
         int attempt = 0;
         StringBuilder startupOutputBuffer = new StringBuilder();
-        StartupLogCursor logCursor = initializeStartupLogCursor(deployment);
+        StartupLogCursor logCursor = startupLogCursor == null ? initializeStartupLogCursor(deployment, targetHost) : startupLogCursor;
         StartupJudgeResult startupJudge = deploymentPluginBridgeService.resolveStartupJudge(
                 deployment,
                 monitoredPid,
@@ -1126,6 +1143,14 @@ public class DeploymentRunner {
             return null;
         }
         return new StartupLogCursor(runtimeLogPath, 0L);
+    }
+
+    private StartupLogCursor initializeStartupLogCursor(DeploymentEntity deployment, HostEntity targetHost) {
+        StartupLogCursor cursor = initializeStartupLogCursor(deployment);
+        if (cursor == null) {
+            return null;
+        }
+        return readRuntimeLogDelta(cursor, targetHost).cursor();
     }
 
     private StartupLogReadResult readRuntimeLogDelta(StartupLogCursor cursor, HostEntity targetHost) {
@@ -1368,6 +1393,148 @@ public class DeploymentRunner {
         } catch (Exception ex) {
             log.warn("部署 {} 异常收尾时清理运行进程失败：{}", deployment == null ? null : deployment.getId(), ex.getMessage());
         }
+    }
+
+    private void prepareManagedStartScriptIfPresent(
+            DeploymentEntity deployment,
+            HostEntity targetHost,
+            Path sshDir,
+            Path logFile,
+            Long deploymentId
+    ) throws Exception {
+        String startCommand = managedStartCommand(deployment);
+        if (TextKit.isBlank(startCommand)) {
+            return;
+        }
+        String startScript = buildManagedStartScript(deployment, startCommand);
+        String startScriptPath = managedStartScriptPath(deployment);
+        if (TextKit.isBlank(startScriptPath)) {
+            throw new BusinessException(ErrorSubCode.DEPLOYMENT_MONITORED_PROCESS_NOT_RUNNING, "托管进程启动脚本路径生成失败。");
+        }
+        appendSystemLog(logFile, "准备托管进程启动脚本：" + startScriptPath);
+        if (targetHost != null && targetHost.getType() == HostType.SSH) {
+            writeRemoteManagedStartScript(targetHost, sshDir, logFile, deploymentId, startScriptPath, startScript);
+            return;
+        }
+        writeLocalManagedStartScript(startScriptPath, startScript);
+        log.info("部署 {} 托管进程启动脚本已写入本机：{}。", deploymentId, startScriptPath);
+    }
+
+    private String managedStartCommand(DeploymentEntity deployment) {
+        if (deployment == null || deployment.getVariables() == null) {
+            return null;
+        }
+        String command = deployment.getVariables().get("START_COMMAND");
+        if (TextKit.isBlank(command)) {
+            command = deployment.getVariables().get("startCommand");
+        }
+        return TextKit.trimToNull(command);
+    }
+
+    private String buildManagedStartScript(DeploymentEntity deployment, String startCommand) {
+        Map<String, String> variables = deployment.getVariables() == null ? Map.of() : deployment.getVariables();
+        String targetDir = managedStartTargetDir(deployment);
+        StringBuilder script = new StringBuilder();
+        script.append("#!/usr/bin/env bash\n");
+        script.append("set -e\n");
+        appendManagedStartEnvironment(script, variables);
+        script.append("cd ").append(ShellKit.singleQuote(targetDir)).append("\n");
+        script.append(startCommand).append("\n");
+        return script.toString();
+    }
+
+    private String managedStartScriptPath(DeploymentEntity deployment) {
+        Map<String, String> variables = deployment == null || deployment.getVariables() == null ? Map.of() : deployment.getVariables();
+        String configuredPath = TextKit.trimToNull(variables.get("MANAGED_START_SCRIPT"));
+        if (configuredPath != null) {
+            return configuredPath;
+        }
+        String targetDir = managedStartTargetDir(deployment);
+        if (TextKit.isBlank(targetDir)) {
+            return null;
+        }
+        String deploymentId = deployment == null || deployment.getId() == null ? "unknown" : deployment.getId().toString();
+        return targetDir + "/.deploybot-start-" + deploymentId + ".sh";
+    }
+
+    private String managedStartTargetDir(DeploymentEntity deployment) {
+        Map<String, String> variables = deployment == null || deployment.getVariables() == null ? Map.of() : deployment.getVariables();
+        String targetDir = TextKit.trimToNull(variables.get("TARGET_DIR"));
+        if (targetDir == null) {
+            targetDir = TextKit.trimToNull(variables.get("targetDir"));
+        }
+        return targetDir == null ? "." : targetDir;
+    }
+
+    private void writeLocalManagedStartScript(String startScriptPath, String startScript) throws IOException {
+        Path path = Path.of(startScriptPath);
+        if (path.getParent() != null) {
+            Files.createDirectories(path.getParent());
+        }
+        Files.writeString(path, startScript, StandardCharsets.UTF_8);
+        path.toFile().setExecutable(true);
+    }
+
+    private void writeRemoteManagedStartScript(
+            HostEntity targetHost,
+            Path sshDir,
+            Path logFile,
+            Long deploymentId,
+            String startScriptPath,
+            String startScript
+    ) throws Exception {
+        String script = """
+                set -e
+                START_SCRIPT=%s
+                mkdir -p "$(dirname "$START_SCRIPT")"
+                cat > "$START_SCRIPT" <<'__DEPLOYBOT_MANAGED_START__'
+                %s
+                __DEPLOYBOT_MANAGED_START__
+                chmod 700 "$START_SCRIPT"
+                """.formatted(ShellKit.singleQuote(startScriptPath), startScript.stripTrailing());
+        int exitCode = runProcess(
+                ProcessKit.mergedBuilder(buildSshCommand(targetHost, sshDir)),
+                script,
+                logFile,
+                deploymentId
+        );
+        if (exitCode != 0) {
+            throw new BusinessException(ErrorSubCode.REMOTE_DIRECTORY_PREPARE_FAILED, "托管进程启动脚本写入失败。");
+        }
+        log.info("部署 {} 托管进程启动脚本已写入远端：{}。", deploymentId, startScriptPath);
+    }
+
+    private void appendManagedStartEnvironment(StringBuilder script, Map<String, String> variables) {
+        StringBuilder pathBuilder = new StringBuilder();
+        variables.entrySet().stream()
+                .filter(entry -> entry.getKey() != null && entry.getKey().matches("[A-Z0-9_]+"))
+                .filter(entry -> TextKit.isNotBlank(entry.getValue()))
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> {
+                    if (entry.getKey().endsWith("_BIN_PATH")) {
+                        pathBuilder.append(entry.getValue()).append(":");
+                    }
+                    if (!"START_COMMAND".equals(entry.getKey())) {
+                        script.append("export ")
+                                .append(entry.getKey())
+                                .append("=")
+                                .append(ShellKit.singleQuote(entry.getValue()))
+                                .append("\n");
+                    }
+                });
+        if (pathBuilder.length() > 0) {
+            script.append("export PATH=")
+                    .append(ShellKit.singleQuote(pathBuilder.toString()))
+                    .append("$PATH\n");
+        }
+        variables.keySet().stream()
+                .filter(key -> key != null && key.endsWith("_ACTIVATION_SCRIPT"))
+                .sorted(Comparator.naturalOrder())
+                .forEach(key -> script.append("if [ -n \"${")
+                        .append(key)
+                        .append(":-}\" ]; then eval \"$")
+                        .append(key)
+                        .append("\"; fi\n"));
     }
 
     private void syncArtifactsToRemote(
