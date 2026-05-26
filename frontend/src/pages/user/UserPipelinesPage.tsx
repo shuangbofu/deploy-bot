@@ -6,6 +6,7 @@ import { Button, Card, Dropdown, Input, Modal, Popconfirm, Progress, Segmented, 
 import { useNavigate } from 'react-router-dom';
 import { deploymentsApi } from '../../api/deployments';
 import { pipelinesApi } from '../../api/pipelines';
+import type { DeploymentPrecheckMissingItem } from '../../api/types';
 import EmptyPane from '../../components/EmptyPane';
 import HallSwitchIcon from '../../components/HallSwitchIcon';
 import PageHeaderBar from '../../components/PageHeaderBar';
@@ -22,6 +23,36 @@ import { formatDurationSince } from '../../utils/duration';
 import { getStableTagColor, getStableTagDarkColor, sortTagNames } from '../../utils/tagColors';
 
 type HallView = PipelineHallFilterMode;
+
+const DEPLOYMENT_PRECHECK_LABEL: Record<string, string> = {
+  PIPELINE: '流水线',
+  PROJECT: '项目',
+  TEMPLATE: '模板',
+  TARGET_HOST: '目标主机',
+  TARGET_DIR: '部署目录',
+  DEFAULT_BRANCH: '默认分支',
+  RUNNING_DEPLOYMENT: '当前流水线已有运行中的部署',
+};
+
+const deploymentPrecheckItemLabel = (item: DeploymentPrecheckMissingItem) => {
+  if (item.code === 'BUILD_RUNTIME_ENVIRONMENT') {
+    return `本机构建 ${item.label || item.name || ''} 环境`.trim();
+  }
+  if (item.code === 'TARGET_RUNTIME_ENVIRONMENT') {
+    return `目标主机运行 ${item.label || item.name || ''} 环境`.trim();
+  }
+  if (item.code === 'TEMPLATE_VARIABLE') {
+    return item.label || item.name || '模板变量';
+  }
+  return DEPLOYMENT_PRECHECK_LABEL[item.code] || item.label || item.name || item.code;
+};
+
+const deploymentPrecheckMessage = (missingItems?: DeploymentPrecheckMissingItem[]) => {
+  if (!missingItems?.length) {
+    return '部署前检查未通过';
+  }
+  return `部署前检查未通过：${missingItems.map(deploymentPrecheckItemLabel).join('、')}`;
+};
 
 const stableTagStyle = (tag: string): CSSProperties => ({
   '--app-tag-bg': getStableTagColor(tag),
@@ -517,7 +548,7 @@ export default function UserPipelinesPage({
     try {
       const precheck = await deploymentsApi.precheck(payload);
       if (!precheck.passed) {
-        message.error(precheck.message || '部署前检查未通过');
+        message.error(deploymentPrecheckMessage(precheck.missingItems));
         return;
       }
       const deployment = await deploymentsApi.create(payload);
@@ -819,7 +850,13 @@ export default function UserPipelinesPage({
                                     trailColor="#d9e2f1"
                                   />
                                   <div className="deployment-progress-text">
-                                    {getDeploymentProgressLabel(item.latestProgressPercent ?? 0, item.latestStatus, item.latestProgressText)}
+                                    {getDeploymentProgressLabel(
+                                      item.latestProgressPercent ?? 0,
+                                      item.latestStatus,
+                                      item.latestProgressStage,
+                                      item.latestProgressCurrent,
+                                      item.latestProgressTotal,
+                                    )}
                                   </div>
                                 </div>
                               </div>
@@ -971,8 +1008,14 @@ export default function UserPipelinesPage({
                       title: '最近状态',
                       width: 190,
                       render: (_, row) => {
-                        const showProgressText = row.latestStatus === 'RUNNING' && row.latestProgressText;
-                        const progressText = getDeploymentProgressLabel(row.latestProgressPercent ?? 0, row.latestStatus, row.latestProgressText);
+                        const showProgressText = row.latestStatus === 'RUNNING' && row.latestProgressStage;
+                        const progressText = getDeploymentProgressLabel(
+                          row.latestProgressPercent ?? 0,
+                          row.latestStatus,
+                          row.latestProgressStage,
+                          row.latestProgressCurrent,
+                          row.latestProgressTotal,
+                        );
                         return (
                           <div className="space-y-1">
                             <div>

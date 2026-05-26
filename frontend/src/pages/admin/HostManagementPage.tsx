@@ -58,6 +58,19 @@ const emptyHost: HostFormState = {
   enabled: true,
 };
 
+const HOST_CONNECTION_RESULT_LABEL: Record<string, string> = {
+  SUCCESS: '连接成功',
+  LOCAL_WORKSPACE_READY: '本机工作空间可用',
+  CONNECTION_FAILED: '连接失败',
+  WORKSPACE_CREATE_FAILED: '远程连接已建立，但创建工作空间目录失败。请检查主机工作空间路径和目录权限。',
+  WORKSPACE_NOT_WRITABLE: '远程连接已建立，但工作空间目录不可写。请检查主机工作空间权限。',
+  VERIFY_SCRIPT_FAILED: '远程连接已建立，但未能完成平台校验脚本。请检查远程 shell 初始化脚本或工作空间权限。',
+};
+
+const hostConnectionResultLabel = (resultCode?: string) => (
+  resultCode ? HOST_CONNECTION_RESULT_LABEL[resultCode] || resultCode : '连接失败'
+);
+
 function renderEnabledStatusDot(enabled: boolean) {
   return (
     <span className="inline-flex items-center" title={enabled ? '启用' : '停用'}>
@@ -242,7 +255,7 @@ export default function HostManagementPage() {
           title: '连接成功',
           content: (
             <div className="space-y-2 text-sm text-slate-700">
-              <div>说明：{result.message}</div>
+              <div>说明：{hostConnectionResultLabel(result.resultCode)}</div>
               <div>远程用户：{result.remoteUser || '-'}</div>
               <div>远程主机：{result.remoteHost || '-'}</div>
               <div>工作空间：{result.workspaceRoot || '-'}</div>
@@ -254,7 +267,8 @@ export default function HostManagementPage() {
           title: '连接失败',
           content: (
             <div className="space-y-2 text-sm text-slate-700">
-              <div>{result.message || '连接失败'}</div>
+              <div>{hostConnectionResultLabel(result.resultCode)}</div>
+              {result.detail ? <pre className="max-h-64 overflow-auto rounded-xl bg-slate-950 p-3 text-xs leading-5 text-slate-100">{result.detail}</pre> : null}
             </div>
           ),
         });

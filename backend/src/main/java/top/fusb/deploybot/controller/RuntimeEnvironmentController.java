@@ -68,7 +68,7 @@ public class RuntimeEnvironmentController {
     @PostMapping("/install")
     public RuntimeEnvironmentInstallAccepted install(@Valid @RequestBody RuntimeEnvironmentInstallRequest request) {
         String taskId = service.startInstallPreset(request);
-        return new RuntimeEnvironmentInstallAccepted(true, "预置环境已开始后台下载安装。", taskId);
+        return new RuntimeEnvironmentInstallAccepted(true, "ACCEPTED", taskId);
     }
 
     /**

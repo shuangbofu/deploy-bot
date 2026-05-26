@@ -212,8 +212,13 @@ export interface DeploymentPayload {
 
 export interface DeploymentPrecheckResult {
   passed: boolean;
-  missingItems: string[];
-  message: string;
+  missingItems: DeploymentPrecheckMissingItem[];
+}
+
+export interface DeploymentPrecheckMissingItem {
+  code: string;
+  name?: string | null;
+  label?: string | null;
 }
 
 /**
@@ -260,7 +265,7 @@ export interface RuntimeEnvironmentInstallPayload {
 
 export interface RuntimeEnvironmentInstallAccepted {
   accepted: boolean;
-  message: string;
+  resultCode: string;
   taskId: string;
 }
 

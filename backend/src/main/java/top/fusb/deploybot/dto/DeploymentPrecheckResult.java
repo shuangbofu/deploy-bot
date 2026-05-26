@@ -7,7 +7,6 @@ import java.util.List;
  */
 public record DeploymentPrecheckResult(
         boolean passed,
-        List<String> missingItems,
-        String message
+        List<DeploymentPrecheckMissingItem> missingItems
 ) {
 }

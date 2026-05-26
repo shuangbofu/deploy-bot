@@ -6,8 +6,10 @@ package top.fusb.deploybot.dto;
 public record HostConnectionTestResult(
         /** SSH 测试是否成功。 */
         boolean success,
-        /** 测试结果说明。 */
-        String message,
+        /** 测试结果码，前端据此渲染提示文案。 */
+        String resultCode,
+        /** 命令输出或诊断明细。 */
+        String detail,
         /** 远程返回的登录用户。 */
         String remoteUser,
         /** 远程返回的主机名。 */

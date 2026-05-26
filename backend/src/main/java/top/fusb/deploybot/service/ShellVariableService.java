@@ -50,6 +50,10 @@ public class ShellVariableService {
             context("WORKSPACE_ROOT", "当前阶段工作根目录。", "ALL", "workspaceRoot"),
             context("ARTIFACT_DIR", "本次构建或发布产物目录。", "ALL", "artifactDir"),
             context("SOURCE_ARTIFACT_PATH", "回滚时的历史产物目录；普通部署为空。", "DEPLOY", "sourceArtifactPath"),
+            plugin("RUNTIME_CONFIG_YAML_BASE64", "插件根据运行配置生成的 application.yml Base64 内容。", "DEPLOY"),
+            plugin("RUNTIME_CONFIG_FILE_PATH", "平台为本次部署生成的运行配置文件路径。", "DEPLOY"),
+            plugin("START_COMMAND", "插件生成的最终启动命令，平台会写入托管启动脚本。", "DEPLOY"),
+            plugin("MANAGED_START_SCRIPT", "平台根据启动命令生成的托管启动脚本路径，模板发布脚本可直接执行。", "DEPLOY"),
             runtime("<TYPE>_HOME", "流水线选择的组件 Home 路径，例如 JAVA_HOME、NODE_HOME。", "ALL"),
             runtime("<TYPE>_BIN_PATH", "流水线选择的组件 Bin 路径，例如 JAVA_BIN_PATH、NODE_BIN_PATH。", "ALL")
     );
@@ -92,6 +96,10 @@ public class ShellVariableService {
 
     private static ShellVariableSummary runtime(String key, String description, String stage) {
         return new ShellVariableSummary(key, "$" + key, description, stage, "RUNTIME", null);
+    }
+
+    private static ShellVariableSummary plugin(String key, String description, String stage) {
+        return new ShellVariableSummary(key, "$" + key, description, stage, "PLUGIN", null);
     }
 
 }

@@ -4,6 +4,12 @@ import type { DeploymentStatus, DeploymentSummary } from '../types/domain';
 const RUNNING_PROGRESS_START = [253, 224, 71] as const;
 const RUNNING_PROGRESS_END = [22, 163, 74] as const;
 const RUNNING_PROGRESS_STOPS = 6;
+const PROGRESS_STAGE_LABEL: Record<string, string> = {
+  BUILD: '构建',
+  DEPLOY: '发布',
+  STARTUP: '启动',
+  ROLLBACK: '回滚',
+};
 
 /**
  * 优先使用后端计算好的进度，避免前端重复推导构建/发布阶段细节。
@@ -27,19 +33,31 @@ export function getDeploymentProgress(deployment?: DeploymentSummary | null) {
 export function getDeploymentProgressLabel(
   progress: number,
   status?: DeploymentStatus | null,
-  progressText?: string | null,
+  progressStage?: string | null,
+  progressCurrent?: number | null,
+  progressTotal?: number | null,
 ) {
-  if (progressText && progressText.trim()) {
-    const normalized = progressText.trim().replace(/（(?:失败|已停止)）$/u, '');
-    if (normalized.includes('启动')) {
-      return '等待启动';
-    }
-    return normalized;
+  if (status === 'RUNNING' && progressStage === 'STARTUP') {
+    return '等待启动';
+  }
+  const stageLabel = getProgressStageLabel(progressStage);
+  if (stageLabel && typeof progressCurrent === 'number' && typeof progressTotal === 'number' && progressTotal > 0) {
+    return `${stageLabel} ${progressCurrent}/${progressTotal}`;
+  }
+  if (status === 'RUNNING' && progressStage === 'DEPLOY') {
+    return '准备发布';
+  }
+  if (status === 'RUNNING' && progressStage === 'BUILD') {
+    return '准备构建';
   }
   if (status === 'RUNNING') {
     return '部署中';
   }
   return `${progress}%`;
+}
+
+function getProgressStageLabel(progressStage?: string | null) {
+  return progressStage ? PROGRESS_STAGE_LABEL[progressStage] || null : null;
 }
 
 function interpolateChannel(start: number, end: number, ratio: number) {

@@ -82,6 +82,11 @@ const DASHBOARD_CATEGORY_META: Record<string, { label: string }> = {
   deployments: { label: '部署次数' },
   status: { label: '状态' },
   UNKNOWN: { label: '未知' },
+  UNKNOWN_PROJECT: { label: '未归属项目' },
+  UNKNOWN_PIPELINE: { label: '未命名流水线' },
+  UNKNOWN_TRIGGER: { label: '未知触发人' },
+  UNKNOWN_TEMPLATE_TYPE: { label: '未记录类型' },
+  LOCAL_HOST: { label: '本机' },
   lt60: { label: '1 分钟内' },
   '1to5m': { label: '1-5 分钟' },
   '5to15m': { label: '5-15 分钟' },
@@ -132,7 +137,7 @@ function statusLabel(status?: string | null) {
   return DEPLOYMENT_STATUS_META[status as DeploymentStatus]?.label || DASHBOARD_CATEGORY_META.UNKNOWN.label;
 }
 
-function chartPointLabel(item: { key: string; label: string }) {
+function chartPointLabel(item: { key: string; label?: string | null }) {
   return DASHBOARD_CATEGORY_META[item.key]?.label
     || DEPLOYMENT_STATUS_META[item.key as DeploymentStatus]?.label
     || item.label;
@@ -142,6 +147,40 @@ function categoryLabel(category: string) {
   return DASHBOARD_CATEGORY_META[category]?.label
     || DEPLOYMENT_STATUS_META[category as DeploymentStatus]?.label
     || category;
+}
+
+function formatTrendTimeLabel(key?: string | null) {
+  if (!key) {
+    return '-';
+  }
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:00$/.test(key)) {
+    return key.slice(-5);
+  }
+  if (/^\d{4}-\d{2}$/.test(key)) {
+    return key.replace('-', '/');
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(key)) {
+    const date = new Date(`${key}T00:00:00`);
+    if (!Number.isNaN(date.getTime())) {
+      return `${date.getMonth() + 1}/${date.getDate()}`;
+    }
+  }
+  return key;
+}
+
+function formatRecentTimeLabel(value?: string | null) {
+  if (!value) {
+    return '-';
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hour = String(date.getHours()).padStart(2, '0');
+  const minute = String(date.getMinutes()).padStart(2, '0');
+  return `${month}-${day} ${hour}:${minute}`;
 }
 
 function formatSeconds(secondsValue: string) {
@@ -414,7 +453,8 @@ export default function DashboardConsole({
     })), [resources]);
 
   const trendOption = useMemo<EChartsOption>(() => {
-    const labels = Array.from(new Set(data.trend.map((item) => item.label)));
+    const keys = Array.from(new Set(data.trend.map((item) => item.key)));
+    const labels = keys.map(formatTrendTimeLabel);
     const categories = Array.from(new Set(data.trend.map((item) => item.category)));
     return {
       ...baseChartOption(isDark),
@@ -428,7 +468,7 @@ export default function DashboardConsole({
         lineStyle: { width: category === 'total' ? 3 : 2, color: statusColor(categoryLabel(category), isDark) },
         itemStyle: { color: statusColor(categoryLabel(category), isDark) },
         areaStyle: { opacity: category === 'total' ? 0.18 : 0.08 },
-        data: labels.map((label) => data.trend.find((item) => item.label === label && item.category === category)?.value || 0),
+        data: keys.map((key) => data.trend.find((item) => item.key === key && item.category === category)?.value || 0),
       })),
     };
   }, [data.trend, isDark]);
@@ -457,18 +497,23 @@ export default function DashboardConsole({
       formatter: (params: any) => {
         const item = data.recentDeployments[params.dataIndex];
         if (!item) return '';
-        return `${item.time}<br/>${item.pipelineName || '-'}<br/>${item.projectName || '-'}<br/>耗时 ${item.durationSeconds || 0} 秒`;
+        return `${formatRecentTimeLabel(item.time)}<br/>${item.pipelineName || chartPointLabel({ key: item.axisKey, label: item.axisKey })}<br/>${item.projectName || '-'}<br/>耗时 ${item.durationSeconds || 0} 秒`;
       },
     },
     grid: { top: 24, right: 24, bottom: 42, left: 110 },
-    xAxis: { type: 'category', data: data.recentDeployments.map((item) => item.time) },
-    yAxis: { type: 'category', data: Array.from(new Set(data.recentDeployments.map((item) => item.axisName))) },
+    xAxis: { type: 'category', data: data.recentDeployments.map((item) => formatRecentTimeLabel(item.time)) },
+    yAxis: { type: 'category', data: Array.from(new Set(data.recentDeployments.map((item) => item.pipelineName || chartPointLabel({ key: item.axisKey, label: item.axisKey })))) },
     series: [{
       name: '最近部署',
       type: 'scatter',
       symbolSize: (value: any) => Math.max(8, Math.min(24, Number(value?.[2] || 0) / 20 + 8)),
       data: data.recentDeployments.map((item) => ({
-        value: [item.time, item.axisName, item.durationSeconds || 1, item.status],
+        value: [
+          formatRecentTimeLabel(item.time),
+          item.pipelineName || chartPointLabel({ key: item.axisKey, label: item.axisKey }),
+          item.durationSeconds || 1,
+          item.status,
+        ],
         itemStyle: { color: statusColor(statusLabel(item.status), isDark) },
       })),
     }],

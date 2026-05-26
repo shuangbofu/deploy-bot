@@ -25,10 +25,7 @@ export default function ShellVariableHint({
     if (!['ALL', currentStage].includes(item.stage)) {
       return false;
     }
-    if (item.source !== 'PLUGIN') {
-      return true;
-    }
-    return extractVariableNames(item.expression).some((variableName) => usedVariables.has(variableName));
+    return true;
   });
   return (
     <Collapse

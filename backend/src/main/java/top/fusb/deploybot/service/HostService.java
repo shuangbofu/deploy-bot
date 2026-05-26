@@ -151,7 +151,8 @@ public class HostService {
             log.info("Local host {} workspace {} is available.", host.getName(), workspace);
             return new HostConnectionTestResult(
                     true,
-                    "本机工作空间可用",
+                    "LOCAL_WORKSPACE_READY",
+                    null,
                     System.getProperty("user.name"),
                     "localhost",
                     workspace
@@ -179,20 +180,22 @@ public class HostService {
             String remoteHost = extractValue(output, "__DEPLOYBOT_HOST__");
             if (exitCode != 0 || remoteUser == null || remoteHost == null) {
                 log.warn("Host connectivity check failed for {} with exit code {}.", host.getName(), exitCode);
-                String message = output.isBlank()
-                        ? "连接失败"
-                        : output.trim();
+                String resultCode = "CONNECTION_FAILED";
+                String detail = output.isBlank() ? null : output.trim();
                 if (output.contains("__DEPLOYBOT_ERROR__WORKSPACE_CREATE_FAILED")) {
-                    message = "远程连接已建立，但创建工作空间目录失败。请检查主机工作空间路径和目录权限。";
+                    resultCode = "WORKSPACE_CREATE_FAILED";
+                    detail = null;
                 } else if (output.contains("__DEPLOYBOT_ERROR__WORKSPACE_NOT_WRITABLE")) {
-                    message = "远程连接已建立，但工作空间目录不可写。请检查主机工作空间权限。";
+                    resultCode = "WORKSPACE_NOT_WRITABLE";
+                    detail = null;
                 } else if ((remoteUser == null || remoteHost == null) && exitCode == 0) {
-                    message = "远程连接已建立，但未能完成平台校验脚本。请检查远程 shell 初始化脚本或工作空间权限。";
+                    resultCode = "VERIFY_SCRIPT_FAILED";
+                    detail = null;
                 }
-                return new HostConnectionTestResult(false, message, null, null, workspace);
+                return new HostConnectionTestResult(false, resultCode, detail, null, null, workspace);
             }
             log.info("Host connectivity check succeeded for {}. remoteUser={}, remoteHost={}", host.getName(), remoteUser, remoteHost);
-            return new HostConnectionTestResult(true, "连接成功", remoteUser, remoteHost, workspace);
+            return new HostConnectionTestResult(true, "SUCCESS", null, remoteUser, remoteHost, workspace);
         } finally {
             deleteRecursively(tempDir);
         }

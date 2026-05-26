@@ -82,8 +82,8 @@ export interface ProjectSummary {
 export interface ProjectConnectionTestResult {
   /** 测试是否成功。 */
   success: boolean;
-  /** 测试说明。 */
-  message: string;
+  /** 测试结果码。 */
+  resultCode: string;
   /** 实际使用的 Git 地址。 */
   gitUrl: string;
   /** 实际使用的认证方式。 */
@@ -369,7 +369,9 @@ export interface PipelineHallSummary {
   latestStartedAt?: string | null;
   latestFinishedAt?: string | null;
   latestProgressPercent?: number | null;
-  latestProgressText?: string | null;
+  latestProgressStage?: string | null;
+  latestProgressCurrent?: number | null;
+  latestProgressTotal?: number | null;
   version?: number | null;
   favorited?: boolean | null;
 }
@@ -477,10 +479,12 @@ export interface DeploymentSummary {
   errorMessage?: string | null;
   /** 后端计算好的进度百分比。 */
   progressPercent?: number | null;
-  /** 后端计算好的进度文案，例如“构建 2/4”。 */
-  progressText?: string | null;
   /** 当前阶段，例如 BUILD / DEPLOY / ROLLBACK。 */
   progressStage?: string | null;
+  /** 当前阶段内的步骤序号。 */
+  progressCurrent?: number | null;
+  /** 当前阶段内的步骤总数。 */
+  progressTotal?: number | null;
   /** 关联流水线。 */
   pipeline?: PipelineSummary | null;
   /** 本次部署保留下来的构建产物目录，可用于重新发布同一版本。 */
@@ -544,8 +548,10 @@ export interface ServicePidHistorySummary {
 export interface HostConnectionTestResult {
   /** 测试是否成功。 */
   success: boolean;
-  /** 测试结果说明。 */
-  message?: string;
+  /** 测试结果码。 */
+  resultCode: string;
+  /** 命令输出或诊断明细。 */
+  detail?: string | null;
   /** 远程返回的实际登录用户。 */
   remoteUser?: string;
   /** 远程主机名。 */
@@ -594,7 +600,7 @@ export interface DashboardMetricCard {
 
 export interface DashboardChartPoint {
   key: string;
-  label: string;
+  label?: string | null;
   category: string;
   value: number;
   extra?: string | null;
@@ -602,8 +608,8 @@ export interface DashboardChartPoint {
 
 export interface DashboardRecentPoint {
   id: number;
-  time: string;
-  axisName: string;
+  time?: string | null;
+  axisKey: string;
   pipelineName?: string | null;
   projectName?: string | null;
   status?: DeploymentStatus | null;

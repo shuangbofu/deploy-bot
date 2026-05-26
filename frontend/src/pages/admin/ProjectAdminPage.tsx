@@ -15,6 +15,11 @@ const emptyProject: ProjectPayload = {
   gitPassword: '',
 };
 
+const PROJECT_CONNECTION_RESULT_LABEL: Record<string, string> = {
+  SUCCESS: 'Git 仓库连通性测试成功。',
+  SUCCESS_WITH_REFS: 'Git 仓库连通性测试成功，已获取到远端引用。',
+};
+
 export default function ProjectAdminPage() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [total, setTotal] = useState(0);
@@ -146,7 +151,7 @@ export default function ProjectAdminPage() {
           <div className="space-y-3">
             <div>认证方式：{result.gitAuthType}</div>
             <div>仓库地址：{result.gitUrl}</div>
-            <div>{result.message}</div>
+            <div>{PROJECT_CONNECTION_RESULT_LABEL[result.resultCode] || 'Git 仓库连通性测试成功。'}</div>
             {result.output ? (
               <pre className="max-h-72 overflow-auto rounded-xl bg-slate-950 p-4 text-xs leading-6 text-slate-100">
                 {result.output}

@@ -143,10 +143,9 @@ public class ProjectService {
                     throw new BusinessException(ErrorSubCode.PROJECT_GIT_CONNECTIVITY_FAILED, summarizedOutput);
                 }
 
-                String message = summarizedOutput.isBlank() ? "Git 仓库连通性测试成功。" : "Git 仓库连通性测试成功。已获取到远端引用。";
                 return new ProjectConnectionTestResult(
                         true,
-                        message,
+                        summarizedOutput.isBlank() ? "SUCCESS" : "SUCCESS_WITH_REFS",
                         processConfig.gitUrl(),
                         project.getGitAuthType().name(),
                         summarizedOutput

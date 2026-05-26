@@ -16,7 +16,6 @@ import top.fusb.deploybot.security.AuthenticatedUser;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -60,11 +59,11 @@ public class DashboardService {
                 buildMetricCards(deployments),
                 buildAnalyticsTrend(deployments, range),
                 buildStatusDistribution(deployments),
-                buildRanking(deployments, this::resolveProjectName, "未归属项目", 8),
-                buildRanking(deployments, this::resolvePipelineName, "未命名流水线", 8),
-                buildRanking(deployments, this::resolveTriggeredByName, "未知触发人", 8),
-                buildRanking(deployments, this::resolveTemplateType, "未记录类型", 8),
-                buildRanking(deployments, this::resolveHostName, "本机", 8),
+                buildRanking(deployments, this::resolveProjectName, "UNKNOWN_PROJECT", 8),
+                buildRanking(deployments, this::resolvePipelineName, "UNKNOWN_PIPELINE", 8),
+                buildRanking(deployments, this::resolveTriggeredByName, "UNKNOWN_TRIGGER", 8),
+                buildRanking(deployments, this::resolveTemplateType, "UNKNOWN_TEMPLATE_TYPE", 8),
+                buildRanking(deployments, this::resolveHostName, "LOCAL_HOST", 8),
                 buildRecentPoints(deployments),
                 buildDurationDistribution(deployments)
         );
@@ -170,7 +169,7 @@ public class DashboardService {
         }
         List<DashboardChartPoint> result = new ArrayList<>();
         buckets.forEach((key, values) -> values.forEach((category, value) ->
-                result.add(new DashboardChartPoint(key, trendLabel(key, range.granularity()), category, value))));
+                result.add(new DashboardChartPoint(key, null, category, value))));
         return result;
     }
 
@@ -203,26 +202,25 @@ public class DashboardService {
                 .toList();
     }
 
-    private List<DashboardChartPoint> buildRanking(List<DeploymentEntity> deployments, Function<DeploymentEntity, String> resolver, String emptyLabel, int limit) {
+    private List<DashboardChartPoint> buildRanking(List<DeploymentEntity> deployments, Function<DeploymentEntity, String> resolver, String emptyKey, int limit) {
         return deployments.stream()
-                .collect(Collectors.groupingBy(item -> valueOrDefault(resolver.apply(item), emptyLabel), Collectors.counting()))
+                .collect(Collectors.groupingBy(item -> rankingKey(resolver.apply(item), emptyKey), Collectors.counting()))
                 .entrySet()
                 .stream()
                 .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
                 .limit(limit)
-                .map(entry -> new DashboardChartPoint(entry.getKey(), entry.getKey(), "deployments", entry.getValue()))
+                .map(entry -> new DashboardChartPoint(entry.getKey(), rankingLabel(entry.getKey(), emptyKey), "deployments", entry.getValue()))
                 .toList();
     }
 
     private List<DashboardRecentPoint> buildRecentPoints(List<DeploymentEntity> deployments) {
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MM-dd HH:mm");
         return deployments.stream()
                 .sorted(Comparator.comparing(DeploymentEntity::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
                 .limit(30)
                 .map(deployment -> new DashboardRecentPoint(
                         deployment.getId(),
-                        deployment.getCreatedAt() == null ? "-" : deployment.getCreatedAt().format(formatter),
-                        valueOrDefault(resolvePipelineName(deployment), "未命名流水线"),
+                        deployment.getCreatedAt() == null ? null : deployment.getCreatedAt().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
+                        rankingKey(resolvePipelineName(deployment), "UNKNOWN_PIPELINE"),
                         resolvePipelineName(deployment),
                         resolveProjectName(deployment),
                         deployment.getStatus(),
@@ -277,20 +275,6 @@ public class DashboardService {
             case MONTH -> normalized.format(DateTimeFormatter.ofPattern("yyyy-MM"));
             default -> normalized.toLocalDate().toString();
         };
-    }
-
-    private String trendLabel(String key, DashboardGranularity granularity) {
-        if (granularity == DashboardGranularity.HOUR) {
-            return key.substring(Math.max(0, key.length() - 5));
-        }
-        if (granularity == DashboardGranularity.MONTH) {
-            return key.replace("-", "/");
-        }
-        LocalDate date = LocalDate.parse(key);
-        if (granularity == DashboardGranularity.WEEK) {
-            return date.getMonthValue() + "/" + date.getDayOfMonth() + " 周";
-        }
-        return date.getMonthValue() + "/" + date.getDayOfMonth();
     }
 
     private LocalDateTime truncateTime(LocalDateTime time, DashboardGranularity granularity) {
@@ -354,8 +338,12 @@ public class DashboardService {
         return deployment.getPipeline().getTargetHost().getName();
     }
 
-    private String valueOrDefault(String value, String defaultValue) {
-        return hasText(value) ? value : defaultValue;
+    private String rankingKey(String value, String emptyKey) {
+        return hasText(value) ? value : emptyKey;
+    }
+
+    private String rankingLabel(String key, String emptyKey) {
+        return emptyKey.equals(key) ? null : key;
     }
 
     private boolean hasText(String value) {

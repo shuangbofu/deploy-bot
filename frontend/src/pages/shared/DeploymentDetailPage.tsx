@@ -250,7 +250,13 @@ export default function DeploymentDetailPage({ scope }: Props) {
                     showInfo={false}
                   />
                   <div className="deployment-progress-text">
-                    {getDeploymentProgressLabel(progress, deployment?.status, deployment?.progressText)}
+                    {getDeploymentProgressLabel(
+                      progress,
+                      deployment?.status,
+                      deployment?.progressStage,
+                      deployment?.progressCurrent,
+                      deployment?.progressTotal,
+                    )}
                   </div>
                 </div>
                 <Descriptions column={1} size="small" className="mt-4">

@@ -65,6 +65,10 @@ const emptyMavenSettings: MavenSettingsFormState = {
   isDefault: false,
 };
 
+const INSTALL_ACCEPTED_RESULT_LABEL: Record<string, string> = {
+  ACCEPTED: '预置环境已开始后台下载安装',
+};
+
 const parseEnvironmentVariables = (content: unknown): EnvironmentVariableItem[] => {
   if (!content) {
     return [];
@@ -372,7 +376,7 @@ export default function RuntimeEnvironmentsPage() {
       });
       setPresetModalOpen(false);
       await loadEnvironments();
-      message.success(result.message || '预置环境已开始后台下载安装');
+      message.success(INSTALL_ACCEPTED_RESULT_LABEL[result.resultCode] || '预置环境已开始后台下载安装');
     } finally {
       setInstallingPresetId(undefined);
     }

@@ -4,6 +4,7 @@ import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import top.fusb.deploybot.dto.DeploymentRequest;
 import top.fusb.deploybot.dto.DeploymentPrecheckResult;
+import top.fusb.deploybot.dto.DeploymentPrecheckMissingItem;
 import top.fusb.deploybot.dto.DeploymentFilterOptions;
 import top.fusb.deploybot.dto.DeploymentListSummary;
 import top.fusb.deploybot.dto.PageResult;
@@ -556,51 +557,47 @@ public class DeploymentService {
     public DeploymentPrecheckResult precheck(DeploymentRequest request) {
         PipelineEntity pipeline = pipelineRepository.findById(request.pipelineId())
                 .orElseThrow(() -> new BusinessException(ErrorSubCode.PIPELINE_NOT_FOUND));
-        List<String> missingItems = collectPipelineMissingItems(pipeline);
+        List<DeploymentPrecheckMissingItem> missingItems = collectPipelineMissingItems(pipeline);
         boolean hasRunning = !deploymentRepository.findByPipelineIdAndStatusInOrderByCreatedAtDesc(
                 pipeline.getId(),
                 List.of(DeploymentStatus.PENDING, DeploymentStatus.RUNNING)
         ).isEmpty();
         if (hasRunning && !Boolean.TRUE.equals(request.replaceRunning())) {
-            missingItems.add("当前流水线已有运行中的部署");
+            missingItems.add(new DeploymentPrecheckMissingItem("RUNNING_DEPLOYMENT", null, null));
         }
-        return new DeploymentPrecheckResult(
-                missingItems.isEmpty(),
-                missingItems,
-                missingItems.isEmpty() ? "部署前检查通过。" : "部署前检查未通过：" + String.join("、", missingItems)
-        );
+        return new DeploymentPrecheckResult(missingItems.isEmpty(), missingItems);
     }
 
     private void validatePipelineReadyForDeployment(PipelineEntity pipeline) {
-        List<String> missingItems = collectPipelineMissingItems(pipeline);
+        List<DeploymentPrecheckMissingItem> missingItems = collectPipelineMissingItems(pipeline);
         if (!missingItems.isEmpty()) {
             throw new BusinessException(
                     ErrorSubCode.PIPELINE_CONFIG_INCOMPLETE,
-                    "流水线配置不完整，请先补充：" + String.join("、", missingItems)
+                    "流水线配置不完整，请先补充：" + missingItems.stream().map(DeploymentPrecheckMissingItem::code).collect(java.util.stream.Collectors.joining("、"))
             );
         }
     }
 
-    private List<String> collectPipelineMissingItems(PipelineEntity pipeline) {
-        List<String> missingItems = new ArrayList<>();
+    private List<DeploymentPrecheckMissingItem> collectPipelineMissingItems(PipelineEntity pipeline) {
+        List<DeploymentPrecheckMissingItem> missingItems = new ArrayList<>();
         if (pipeline == null) {
-            missingItems.add("流水线");
+            missingItems.add(new DeploymentPrecheckMissingItem("PIPELINE", null, null));
         } else {
             if (pipeline.getProject() == null) {
-                missingItems.add("项目");
+                missingItems.add(new DeploymentPrecheckMissingItem("PROJECT", null, null));
             }
             PipelineTemplateResolverService.ResolvedPipelineTemplate resolvedTemplate = pipelineTemplateResolverService.resolve(pipeline);
             if (resolvedTemplate == null) {
-                missingItems.add("模板");
+                missingItems.add(new DeploymentPrecheckMissingItem("TEMPLATE", null, null));
             }
             if (pipeline.getTargetHost() == null) {
-                missingItems.add("目标主机");
+                missingItems.add(new DeploymentPrecheckMissingItem("TARGET_HOST", null, null));
             }
             if (TextKit.isBlank(pipeline.getTargetDir())) {
-                missingItems.add("部署目录");
+                missingItems.add(new DeploymentPrecheckMissingItem("TARGET_DIR", null, null));
             }
             if (TextKit.isBlank(pipeline.getDefaultBranch())) {
-                missingItems.add("默认分支");
+                missingItems.add(new DeploymentPrecheckMissingItem("DEFAULT_BRANCH", null, null));
             }
             validateRequiredRuntimeEnvironments(pipeline, missingItems);
             if (resolvedTemplate != null) {
@@ -610,20 +607,20 @@ public class DeploymentService {
         return missingItems;
     }
 
-    private void validateRequiredRuntimeEnvironments(PipelineEntity pipeline, List<String> missingItems) {
+    private void validateRequiredRuntimeEnvironments(PipelineEntity pipeline, List<DeploymentPrecheckMissingItem> missingItems) {
         Set<String> buildTypes = requiredRuntimeTypeSet(pipeline, true);
         BUILD_RUNTIME_BINDINGS.stream()
                 .filter(binding -> buildTypes.contains(binding.prefix()))
                 .filter(binding -> binding.environment(pipeline) == null)
-                .forEach(binding -> missingItems.add("本机构建 " + binding.label() + " 环境"));
+                .forEach(binding -> missingItems.add(new DeploymentPrecheckMissingItem("BUILD_RUNTIME_ENVIRONMENT", binding.prefix(), binding.label())));
         Set<String> targetTypes = requiredRuntimeTypeSet(pipeline, false);
         DEPLOY_RUNTIME_BINDINGS.stream()
                 .filter(binding -> targetTypes.contains(binding.prefix()))
                 .filter(binding -> binding.environment(pipeline) == null)
-                .forEach(binding -> missingItems.add("目标主机运行 " + binding.label() + " 环境"));
+                .forEach(binding -> missingItems.add(new DeploymentPrecheckMissingItem("TARGET_RUNTIME_ENVIRONMENT", binding.prefix(), binding.label())));
     }
 
-    private void validateRequiredTemplateVariables(PipelineEntity pipeline, String variablesSchema, List<String> missingItems) {
+    private void validateRequiredTemplateVariables(PipelineEntity pipeline, String variablesSchema, List<DeploymentPrecheckMissingItem> missingItems) {
         Map<String, String> variables = pipeline.getVariables() == null ? Map.of() : pipeline.getVariables();
         for (TemplateVariableSchemaItem item : TemplateVariableSchemaKit.read(variablesSchema)) {
             if (item == null || !Boolean.TRUE.equals(item.required()) || Boolean.FALSE.equals(item.pipelineInput())) {
@@ -634,7 +631,7 @@ public class DeploymentService {
                 continue;
             }
             if (TextKit.isBlank(variables.get(name))) {
-                missingItems.add(TextKit.isNotBlank(item.label()) ? item.label() : name);
+                missingItems.add(new DeploymentPrecheckMissingItem("TEMPLATE_VARIABLE", name, TextKit.trimToNull(item.label())));
             }
         }
     }

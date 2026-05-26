@@ -128,7 +128,9 @@ public class PipelineService {
                             latestDeployment == null ? null : latestDeployment.getStartedAt(),
                             latestDeployment == null ? null : latestDeployment.getFinishedAt(),
                             latestDeployment == null ? null : latestDeployment.getProgressPercent(),
-                            latestDeployment == null ? null : latestDeployment.getProgressText(),
+                            latestDeployment == null ? null : latestDeployment.getProgressStage(),
+                            latestDeployment == null ? null : latestDeployment.getProgressCurrent(),
+                            latestDeployment == null ? null : latestDeployment.getProgressTotal(),
                             latestDeployment == null ? pipeline.getId() : latestDeployment.getId(),
                             favoritePipelineIds.contains(pipeline.getId())
                     );

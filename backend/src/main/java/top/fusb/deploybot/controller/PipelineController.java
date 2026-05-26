@@ -101,7 +101,9 @@ public class PipelineController {
                         String.valueOf(item.latestDeploymentId()),
                         String.valueOf(item.latestStatus()),
                         String.valueOf(item.latestProgressPercent()),
-                        String.valueOf(item.latestProgressText()),
+                        String.valueOf(item.latestProgressStage()),
+                        String.valueOf(item.latestProgressCurrent()),
+                        String.valueOf(item.latestProgressTotal()),
                         String.valueOf(item.latestFinishedAt()),
                         String.valueOf(item.favorited())
                 ))
