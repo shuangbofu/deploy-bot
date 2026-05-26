@@ -3,6 +3,7 @@ import { forwardRef, useImperativeHandle, useLayoutEffect, useMemo, useRef, useS
 export type LogAnchor = {
   index: number;
   label: string;
+  level: 'normal' | 'error';
 };
 
 type LogViewerProps = {
@@ -53,15 +54,18 @@ const normalizeTerminalLogLines = (content: string) => {
   return lines;
 };
 
+const ERROR_LINE_PATTERN = /(error|failed|fatal|exception|denied|refused|timed out|BUILD FAILURE|npm ERR|认证失败|失败|报错|错误)/i;
+
 const buildLogAnchors = (lines: string[]) => lines
-  .map((line, index) => ({ line, index }))
-  .filter(({ line }) => /^\[步骤\s*\d+\/\d+]/.test(line)
+  .map((line, index) => ({ line, index, isError: ERROR_LINE_PATTERN.test(line) }))
+  .filter(({ line, isError }) => /^\[步骤\s*\d+\/\d+]/.test(line)
     || /^\[完成]/.test(line)
     || /^\[系统].*(构建完成|发布阶段|部署失败|启动观察未通过|服务检测超时)/.test(line)
-    || /(BUILD FAILURE|npm ERR|ERROR|Exception|失败|错误)/.test(line))
+    || isError)
   .slice(-18)
-  .map(({ line, index }) => ({
+  .map(({ line, index, isError }) => ({
     index,
+    level: isError ? 'error' as const : 'normal' as const,
     label: line.replace(/^\[系统]\s*\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\s*/, '[系统] ').slice(0, 34),
   }));
 
@@ -167,7 +171,7 @@ const LogViewer = forwardRef<LogViewerHandle, LogViewerProps>(function LogViewer
           const isSystemLine = line.startsWith('[系统]');
           const isCommandLine = /^\+{1,3}\s/.test(line);
           // 这里优先照顾运维排查体验，对常见错误关键词做红色高亮。
-          const isErrorLine = /(error|failed|fatal|exception|denied|refused|timed out|认证失败|失败|报错|错误)/.test(lowerLine);
+          const isErrorLine = ERROR_LINE_PATTERN.test(lowerLine);
           const lineClassName = [
             'log-line',
             isSystemLine ? 'log-line-system' : '',

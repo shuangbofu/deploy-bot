@@ -8,3 +8,4 @@ backend/runtime/
 .env.*
 *.log
 .DS_Store
+tmp/

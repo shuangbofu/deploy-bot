@@ -43,8 +43,9 @@ public class DeploymentCleanupService {
         }
         cleanupRunWorkspace(deployment, buildWorkspaceRoot, settings);
         cleanupOldRunWorkspaces(buildWorkspaceRoot, settings);
-        cleanupPipelineArtifacts(deployment, settings);
-        cleanupRemoteArtifacts(deployment, buildWorkspaceRoot, settings);
+        List<Long> expiredSuccessfulDeploymentIds = findExpiredSuccessfulDeploymentIds(deployment, settings);
+        cleanupRemoteArtifacts(deployment, buildWorkspaceRoot, expiredSuccessfulDeploymentIds);
+        cleanupPipelineArtifacts(deployment, expiredSuccessfulDeploymentIds);
     }
 
     private void cleanupRunWorkspace(DeploymentEntity deployment, Path buildWorkspaceRoot, SystemSettingsEntity settings) {
@@ -71,14 +72,22 @@ public class DeploymentCleanupService {
         expired.forEach(item -> deleteRunWorkspace(buildWorkspaceRoot, item.getId()));
     }
 
-    private void cleanupPipelineArtifacts(DeploymentEntity deployment, SystemSettingsEntity settings) {
+    private void cleanupPipelineArtifacts(DeploymentEntity deployment, List<Long> expiredSuccessfulDeploymentIds) {
         if (deployment.getStatus() == DeploymentStatus.FAILED || deployment.getStatus() == DeploymentStatus.STOPPED) {
             deleteDirectory(deployment.getArtifactPath());
             deployment.setArtifactPath(null);
             deploymentRepository.save(deployment);
         }
+        expiredSuccessfulDeploymentIds.forEach(id -> deploymentRepository.findById(id).ifPresent(expired -> {
+            deleteDirectory(expired.getArtifactPath());
+            expired.setArtifactPath(null);
+            deploymentRepository.save(expired);
+        }));
+    }
+
+    private List<Long> findExpiredSuccessfulDeploymentIds(DeploymentEntity deployment, SystemSettingsEntity settings) {
         if (deployment.getPipeline() == null || deployment.getPipeline().getId() == null) {
-            return;
+            return List.of();
         }
         int retainCount = systemSettingsService.artifactRetainSuccessCount(settings);
         List<DeploymentEntity> successfulDeployments = deploymentRepository
@@ -86,15 +95,13 @@ public class DeploymentCleanupService {
                         deployment.getPipeline().getId(),
                         DeploymentStatus.SUCCESS
                 );
-        for (int index = retainCount; index < successfulDeployments.size(); index++) {
-            DeploymentEntity expired = successfulDeployments.get(index);
-            deleteDirectory(expired.getArtifactPath());
-            expired.setArtifactPath(null);
-            deploymentRepository.save(expired);
-        }
+        return successfulDeployments.stream()
+                .skip(retainCount)
+                .map(DeploymentEntity::getId)
+                .toList();
     }
 
-    private void cleanupRemoteArtifacts(DeploymentEntity deployment, Path buildWorkspaceRoot, SystemSettingsEntity settings) {
+    private void cleanupRemoteArtifacts(DeploymentEntity deployment, Path buildWorkspaceRoot, List<Long> expiredSuccessfulDeploymentIds) {
         HostEntity targetHost = deployment.getPipeline() == null ? null : deployment.getPipeline().getTargetHost();
         if (targetHost == null || targetHost.getType() != HostType.SSH) {
             return;
@@ -103,19 +110,9 @@ public class DeploymentCleanupService {
         if (deployment.getStatus() == DeploymentStatus.FAILED || deployment.getStatus() == DeploymentStatus.STOPPED) {
             deleteRemoteDirectory(targetHost, remoteWorkspaceRoot.resolve("artifacts").resolve("deploy-" + deployment.getId()));
         }
-        if (deployment.getPipeline() == null || deployment.getPipeline().getId() == null) {
-            return;
-        }
-        int retainCount = systemSettingsService.artifactRetainSuccessCount(settings);
-        List<DeploymentEntity> successfulDeployments = deploymentRepository
-                .findByPipelineIdAndStatusAndArtifactPathIsNotNullOrderByCreatedAtDesc(
-                        deployment.getPipeline().getId(),
-                        DeploymentStatus.SUCCESS
-                );
-        for (int index = retainCount; index < successfulDeployments.size(); index++) {
-            DeploymentEntity expired = successfulDeployments.get(index);
-            deleteRemoteDirectory(targetHost, remoteWorkspaceRoot.resolve("artifacts").resolve("deploy-" + expired.getId()));
-        }
+        expiredSuccessfulDeploymentIds.forEach(id ->
+                deleteRemoteDirectory(targetHost, remoteWorkspaceRoot.resolve("artifacts").resolve("deploy-" + id))
+        );
     }
 
     private void deleteRunWorkspace(Path buildWorkspaceRoot, Long deploymentId) {

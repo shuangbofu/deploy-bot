@@ -349,6 +349,8 @@ export interface PipelineSummary {
   variables?: Record<string, string>;
   /** 自定义标签。 */
   tags?: string[];
+  /** 重要标签，用于在标题前突出展示。 */
+  importantTags?: string[];
 }
 
 export interface PipelineHallSummary {
@@ -359,6 +361,7 @@ export interface PipelineHallSummary {
   projectName?: string | null;
   templateType?: string | null;
   tags?: string[] | null;
+  importantTags?: string[] | null;
   latestDeploymentId?: number | null;
   latestDeploymentOrder?: number | null;
   latestStatus?: DeploymentStatus | null;

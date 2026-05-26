@@ -3918,6 +3918,35 @@ body {
   margin-bottom: 12px !important;
 }
 
+.pipeline-important-tag.ant-tag {
+  max-width: 72px;
+  margin-inline-end: 6px;
+  padding: 0 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  vertical-align: 2px;
+  white-space: nowrap;
+}
+
+.pipeline-table-title-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.pipeline-table-title-row .pipeline-table-order {
+  margin-inline-end: 4px;
+}
+
+.pipeline-table-title-row .pipeline-important-tag.ant-tag {
+  margin-inline-end: 0;
+}
+
 .pipeline-table-title {
   min-width: 0;
 }
@@ -4277,6 +4306,17 @@ body {
 .log-viewer-anchor-list button:hover {
   color: #e0f2fe;
   border-color: rgba(125, 166, 226, 0.45);
+}
+
+.log-viewer-anchor-list button.log-viewer-anchor-list__item--error {
+  border-color: rgba(248, 113, 113, 0.42);
+  background: rgba(127, 29, 29, 0.72);
+  color: #fecaca;
+}
+
+.log-viewer-anchor-list button.log-viewer-anchor-list__item--error:hover {
+  border-color: rgba(248, 113, 113, 0.72);
+  color: #fee2e2;
 }
 
 .deployment-detail-content {
@@ -5878,20 +5918,32 @@ body {
   color: #cbd5e1 !important;
 }
 
+html.dark .ant-message-notice-content,
+body.dark .ant-message-notice-content,
 .dark .ant-message-notice-content,
+html.dark .ant-notification-notice,
+body.dark .ant-notification-notice,
 .dark .ant-notification-notice {
   border: 1px solid rgba(71, 85, 105, 0.78);
-  background: #111c2f;
-  color: #d8e3f0;
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
+  background: #111c2f !important;
+  color: #d8e3f0 !important;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42) !important;
 }
 
+html.dark .ant-message-custom-content,
+body.dark .ant-message-custom-content,
 .dark .ant-message-custom-content,
+html.dark .ant-notification-notice-message,
+body.dark .ant-notification-notice-message,
 .dark .ant-notification-notice-message {
   color: #e2e8f0 !important;
 }
 
+html.dark .ant-notification-notice-description,
+body.dark .ant-notification-notice-description,
 .dark .ant-notification-notice-description,
+html.dark .ant-notification-notice-close,
+body.dark .ant-notification-notice-close,
 .dark .ant-notification-notice-close {
   color: #cbd5e1 !important;
 }

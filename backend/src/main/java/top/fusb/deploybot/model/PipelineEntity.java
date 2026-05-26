@@ -99,6 +99,11 @@ public class PipelineEntity {
     @Column(name = "tags_json", length = 2000)
     private List<String> tags;
 
+    /** 重要标签，用于在标题前突出展示。 */
+    @Convert(converter = StringListJsonConverter.class)
+    @Column(name = "important_tags_json", length = 1000)
+    private List<String> importantTags;
+
     /** 本机构建 Java 环境。 */
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "java_environment_id")

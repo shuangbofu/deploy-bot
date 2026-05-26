@@ -37,6 +37,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -111,6 +112,7 @@ public class PipelineService {
                             pipeline.getProject() == null ? null : pipeline.getProject().getName(),
                             pipeline.getTemplateTypeSnapshot(),
                             pipeline.getTags() == null ? List.of() : pipeline.getTags(),
+                            pipeline.getImportantTags() == null ? List.of() : pipeline.getImportantTags(),
                             latestDeployment == null ? null : latestDeployment.getId(),
                             latestDeploymentOrder,
                             latestDeployment == null || latestDeployment.getStatus() == null ? null : latestDeployment.getStatus().name(),
@@ -280,6 +282,7 @@ public class PipelineService {
         entity.setPluginConfig(pluginConfig);
         entity.setVariables(variables);
         entity.setTags(normalizeTags(request.tags()));
+        entity.setImportantTags(normalizeTags(request.importantTags()).stream().limit(2).toList());
         entity.setJavaEnvironment(resolveEnvironment(request.javaEnvironmentId()));
         entity.setNodeEnvironment(resolveEnvironment(request.nodeEnvironmentId()));
         RuntimeEnvironmentEntity mavenEnvironment = resolveEnvironment(request.mavenEnvironmentId());
@@ -311,7 +314,14 @@ public class PipelineService {
         if (tags == null || tags.isEmpty()) {
             return List.of();
         }
-        return CollectionKit.sortedDistinctNonBlankStrings(tags);
+        Set<String> normalized = new LinkedHashSet<>();
+        tags.forEach(tag -> {
+            String trimmed = TextKit.trimToNull(tag);
+            if (trimmed != null) {
+                normalized.add(trimmed);
+            }
+        });
+        return List.copyOf(normalized);
     }
 
     private void bindTemplate(PipelineEntity entity, PipelineRequest request) {

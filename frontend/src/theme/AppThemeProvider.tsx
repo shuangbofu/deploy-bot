@@ -1,5 +1,5 @@
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
-import { ConfigProvider, theme as antdTheme } from 'antd';
+import { App as AntdApp, ConfigProvider, theme as antdTheme } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 
 type AppThemeMode = 'light' | 'dark';
@@ -72,6 +72,8 @@ export function AppThemeProvider({ children }: Props) {
   useEffect(() => {
     document.documentElement.classList.toggle('dark', isDark);
     document.documentElement.dataset.theme = isDark ? 'dark' : 'light';
+    document.body.classList.toggle('dark', isDark);
+    document.body.dataset.theme = isDark ? 'dark' : 'light';
     window.localStorage.setItem(THEME_STORAGE_KEY, mode);
     window.localStorage.setItem(THEME_FOLLOW_SYSTEM_STORAGE_KEY, String(followSystem));
     window.localStorage.setItem(THEME_AUTO_NIGHT_STORAGE_KEY, String(autoDarkAtNight));
@@ -137,7 +139,9 @@ export function AppThemeProvider({ children }: Props) {
           },
         }}
       >
-        {children}
+        <AntdApp>
+          {children}
+        </AntdApp>
       </ConfigProvider>
     </AppThemeContext.Provider>
   );

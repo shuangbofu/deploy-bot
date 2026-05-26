@@ -47,6 +47,7 @@ interface PipelineFormState {
   name: string;
   description: string;
   tags: string[];
+  importantTags: string[];
   projectId?: number;
   templateId?: number;
   templatePluginId?: string;
@@ -70,6 +71,7 @@ const emptyPipeline: PipelineFormState = {
   name: '',
   description: '',
   tags: [],
+  importantTags: [],
   projectId: undefined,
   templateId: undefined,
   templatePluginId: undefined,
@@ -341,7 +343,8 @@ const includesOptionValue = (options: SelectOptionItem[], value?: SelectOptionVa
 
 const buildPipelineFormSnapshot = (value: PipelineFormState) => JSON.stringify({
   ...value,
-  tags: [...(value.tags || [])].sort(),
+  tags: value.tags || [],
+  importantTags: value.importantTags || [],
   variables: Object.fromEntries(Object.entries(value.variables || {}).sort(([left], [right]) => left.localeCompare(right))),
   pluginConfig: Object.fromEntries(Object.entries(value.pluginConfig || {}).sort(([left], [right]) => left.localeCompare(right))),
   notificationIds: [...(value.notificationIds || [])].sort((left, right) => left - right),
@@ -655,6 +658,7 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
       name: record.name || '',
       description: record.description || '',
       tags: normalizeTags(record.tags),
+      importantTags: normalizeTags(record.importantTags).slice(0, 2),
       projectId: record.project?.id || undefined,
       templateId: record.template?.id || undefined,
       templatePluginId: record.templatePluginId || undefined,
@@ -701,6 +705,7 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
     defaultBranch: record.defaultBranch || 'main',
     variables: stripContextVariables(normalizeVariables(record.variables)),
     tags: normalizeTags(record.tags),
+    importantTags: normalizeTags(record.importantTags).slice(0, 2),
     javaEnvironmentId: record.javaEnvironment?.id || undefined,
     nodeEnvironmentId: record.nodeEnvironment?.id || undefined,
     mavenEnvironmentId: record.mavenEnvironment?.id || undefined,
@@ -798,6 +803,7 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
       defaultBranch: form.defaultBranch,
       variables: payloadVariables,
       tags: form.tags || [],
+      importantTags: form.importantTags || [],
       javaEnvironmentId: form.javaEnvironmentId,
       nodeEnvironmentId: form.nodeEnvironmentId,
       mavenEnvironmentId: form.mavenEnvironmentId,
@@ -1147,6 +1153,20 @@ const selectedTemplateVariables = useMemo(
     return <div className="runtime-config-value">{value || '-'}</div>;
   };
 
+  const updatePipelineTags = (nextTags: string[]) => {
+    setForm({
+      ...form,
+      tags: nextTags,
+    });
+  };
+
+  const updateImportantTags = (nextImportantTags: string[]) => {
+    setForm({
+      ...form,
+      importantTags: nextImportantTags.slice(0, 2),
+    });
+  };
+
   if (mode === 'view') {
     const pluginConfigItems = selectedPlugin
       ? selectedPlugin.pipelineFormSchema.sections
@@ -1258,7 +1278,16 @@ const selectedTemplateVariables = useMemo(
                   <Input.TextArea rows={3} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="可选。说明这条流水线的用途。" />
                 </Form.Item>
                 <Form.Item label="标签">
-                  <Select mode="tags" value={form.tags} placeholder="输入后回车，可用于业务线、端别、环境等筛选" onChange={(value) => setForm({ ...form, tags: value })} />
+                  <Select mode="tags" value={form.tags} placeholder="输入后回车，可用于业务线、端别、环境等筛选" onChange={updatePipelineTags} />
+                </Form.Item>
+                <Form.Item label="重要标签">
+                  <Select
+                    mode="tags"
+                    value={form.importantTags}
+                    options={form.tags.map((tag) => ({ label: tag, value: tag }))}
+                    placeholder="最多 2 个，会显示在标题前"
+                    onChange={(value) => updateImportantTags(value.slice(0, 2))}
+                  />
                 </Form.Item>
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                   <Form.Item label="项目" required>

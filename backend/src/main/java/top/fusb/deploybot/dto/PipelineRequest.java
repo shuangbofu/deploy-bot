@@ -33,6 +33,8 @@ public record PipelineRequest(
         Map<String, String> variables,
         /** 自定义标签。 */
         List<String> tags,
+        /** 重要标签，最多两个，用于标题前突出展示。 */
+        List<String> importantTags,
         /** 本机构建 Java 环境 ID。 */
         Long javaEnvironmentId,
         /** 本机构建 Node 环境 ID。 */

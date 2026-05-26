@@ -318,6 +318,7 @@ export default function DeploymentDetailPage({ scope }: Props) {
                     <button
                       key={`${anchor.index}-${anchor.label}`}
                       type="button"
+                      className={anchor.level === 'error' ? 'log-viewer-anchor-list__item--error' : undefined}
                       onClick={() => {
                         logViewerRef.current?.scrollToLine(anchor.index);
                         setLogAnchorOpen(false);

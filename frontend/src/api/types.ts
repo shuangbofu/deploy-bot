@@ -92,6 +92,7 @@ export interface PipelinePayload {
   defaultBranch: string;
   variables: Record<string, string>;
   tags: string[];
+  importantTags?: string[];
   javaEnvironmentId?: number;
   nodeEnvironmentId?: number;
   mavenEnvironmentId?: number;

@@ -11,6 +11,7 @@ public record PipelineHallSummary(
         String projectName,
         String templateType,
         List<String> tags,
+        List<String> importantTags,
         Long latestDeploymentId,
         Long latestDeploymentOrder,
         String latestStatus,

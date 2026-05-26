@@ -753,6 +753,7 @@ export default function UserPipelinesPage({
                       <div className="pipeline-card-masonry-column" key={`${hallView}-${tagFilter?.join('|') || 'all'}-${columnIndex}`}>
                         {column.map((item) => {
                           const tags = sortTagNames(normalizeTags(item.tags));
+                          const importantTags = normalizeTags(item.importantTags).slice(0, 2);
                           const activeDeployment = item.latestStatus && ACTIVE_DEPLOYMENT_STATUSES.includes(item.latestStatus)
                             ? item
                             : undefined;
@@ -803,6 +804,15 @@ export default function UserPipelinesPage({
                               </div>
                             </div>
                             <Typography.Title level={4} className="pipeline-title-text pipeline-card-title !m-0">
+                              {importantTags.map((tag) => (
+                                <Tag
+                                  key={tag}
+                                  style={stableTagStyle(tag)}
+                                  className="pipeline-important-tag app-color-tag !border-0"
+                                >
+                                  {tag}
+                                </Tag>
+                              ))}
                               {item.pipelineName}
                             </Typography.Title>
                             <div className="pipeline-card-middle">
@@ -948,29 +958,41 @@ export default function UserPipelinesPage({
                     {
                       title: '名称',
                       width: 260,
-                      render: (_, row) => (
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            className={`pipeline-hall-favorite-button shrink-0${row.favorited ? ' pipeline-hall-favorite-button--active' : ''}`}
-                            onClick={() => toggleFavorite(row.pipelineId, row.favorited).catch(() => message.error(row.favorited ? '取消收藏失败' : '收藏失败'))}
-                          >
-                            <Heart weight={row.favorited ? 'fill' : 'regular'} />
-                          </button>
-                          <PipelineIcon type={row.templateType} />
-                          <div className="pipeline-table-name-block min-w-0">
-                            <div className="flex items-center gap-1">
-                              {row.latestDeploymentOrder ? (
-                                <div className="shrink-0 text-xs font-semibold text-sky-600">
-                                  #{row.latestDeploymentOrder}
-                                </div>
-                              ) : null}
-                              <div className="pipeline-title-text pipeline-table-title truncate" title={row.pipelineName}>{row.pipelineName}</div>
+                      render: (_, row) => {
+                        const importantTags = normalizeTags(row.importantTags).slice(0, 2);
+                        return (
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              className={`pipeline-hall-favorite-button shrink-0${row.favorited ? ' pipeline-hall-favorite-button--active' : ''}`}
+                              onClick={() => toggleFavorite(row.pipelineId, row.favorited).catch(() => message.error(row.favorited ? '取消收藏失败' : '收藏失败'))}
+                            >
+                              <Heart weight={row.favorited ? 'fill' : 'regular'} />
+                            </button>
+                            <PipelineIcon type={row.templateType} />
+                            <div className="pipeline-table-name-block min-w-0">
+                              <div className="pipeline-table-title-row">
+                                {row.latestDeploymentOrder ? (
+                                  <div className="pipeline-table-order shrink-0 text-xs font-semibold text-sky-600">
+                                    #{row.latestDeploymentOrder}
+                                  </div>
+                                ) : null}
+                                {importantTags.map((tag) => (
+                                  <Tag
+                                    key={tag}
+                                    style={stableTagStyle(tag)}
+                                    className="pipeline-important-tag app-color-tag !border-0"
+                                  >
+                                    {tag}
+                                  </Tag>
+                                ))}
+                                <div className="pipeline-title-text pipeline-table-title truncate" title={row.pipelineName}>{row.pipelineName}</div>
+                              </div>
+                              <div className="pipeline-project-kicker truncate" title={row.projectName || ''}>{row.projectName || '-'}</div>
                             </div>
-                            <div className="pipeline-project-kicker truncate" title={row.projectName || ''}>{row.projectName || '-'}</div>
                           </div>
-                        </div>
-                      ),
+                        );
+                      },
                     },
                     {
                       title: '描述',
@@ -1008,7 +1030,7 @@ export default function UserPipelinesPage({
                     },
                     {
                       title: '最近状态',
-                      width: 190,
+                      width: 136,
                       render: (_, row) => {
                         const showProgressText = row.latestStatus === 'RUNNING' || hasDeploymentProgressStep(
                           row.latestProgressStage,
