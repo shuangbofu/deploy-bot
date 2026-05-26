@@ -4,6 +4,8 @@ import { notificationRecordsApi } from '../../api/notificationRecords';
 import type { NotificationDeliveryRecordSummary } from '../../api/types';
 import EmptyPane from '../../components/EmptyPane';
 import PageHeaderBar from '../../components/PageHeaderBar';
+import RefreshIconButton from '../../components/RefreshIconButton';
+import PipelineNameWithTags from '../../components/PipelineNameWithTags';
 import { formatDateTime } from '../../utils/datetime';
 
 const eventTypeOptions = [
@@ -101,7 +103,7 @@ export default function UserNotificationRecordsPage({ embedded = false }: UserNo
                 render: (_, record) => record.deployment?.triggeredByDisplayName || record.deployment?.triggeredBy || '-',
                 width: 140,
               },
-              { title: '流水线', render: (_, record) => record.pipelineName || record.deployment?.pipeline?.name || '-', width: 180 },
+              { title: '流水线', render: (_, record) => <PipelineNameWithTags name={record.pipelineName || record.deployment?.pipeline?.name} importantTags={record.deployment?.pipelineImportantTags || record.deployment?.pipeline?.importantTags} />, width: 180 },
               { title: '通知类型', render: (_, record) => record.eventType === 'DEPLOYMENT_STARTED' ? '开始通知' : '结束通知', width: 140 },
               { title: '结果', render: (_, record) => record.status === 'SUCCESS' ? '成功' : '失败', width: 100 },
               {
@@ -131,7 +133,7 @@ export default function UserNotificationRecordsPage({ embedded = false }: UserNo
       <PageHeaderBar
         title="通知记录"
         description="查看当前账号相关部署的通知发送结果。"
-        extra={<Button onClick={() => loadRecords().catch(() => message.error('加载通知记录失败'))}>刷新</Button>}
+        extra={<RefreshIconButton onClick={() => loadRecords().catch(() => message.error('加载通知记录失败'))} />}
       />
       <div className="app-page-scroll">
         {content}

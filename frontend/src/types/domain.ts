@@ -389,6 +389,7 @@ export interface PipelineHallRunningServiceSummary {
   serviceId: number;
   pipelineId?: number | null;
   pipelineName?: string | null;
+  importantTags?: string[] | null;
   serviceName?: string | null;
   templateType?: string | null;
   targetHostName?: string | null;
@@ -460,6 +461,8 @@ export interface DeploymentSummary {
   id: number;
   /** 部署创建时固化的流水线名称。 */
   pipelineName?: string | null;
+  /** 部署创建时固化的重要标签。 */
+  pipelineImportantTags?: string[] | null;
   /** 部署创建时固化的项目名称。 */
   projectName?: string | null;
   /** 本次部署使用的分支。 */

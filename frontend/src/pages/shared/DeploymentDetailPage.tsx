@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Button, Card, Col, Descriptions, Popconfirm, Progress, Row, Skeleton, Space, message } from 'antd';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -6,13 +7,15 @@ import { deploymentsApi } from '../../api/deployments';
 import DeploymentInspectionTabs from '../../components/DeploymentInspectionTabs';
 import LogViewer, { type LogAnchor, type LogViewerHandle } from '../../components/LogViewer';
 import PageHeaderBar from '../../components/PageHeaderBar';
+import RefreshIconButton from '../../components/RefreshIconButton';
+import PipelineNameWithTags from '../../components/PipelineNameWithTags';
 import StatusTag from '../../components/StatusTag';
 import { ACTIVE_DEPLOYMENT_STATUSES } from '../../constants/deployment';
 import { useDeploymentLogStream } from '../../hooks/useDeploymentLogStream';
 import type { DeploymentPluginDefinitionSummary, DeploymentSummary } from '../../types/domain';
 import { copyText } from '../../utils/clipboard';
 import { getDeploymentProgress, getDeploymentProgressColor, getDeploymentProgressLabel } from '../../utils/deploymentProgress';
-import { formatDeploymentTimeline } from '../../utils/deploymentTimeline';
+import { formatDeploymentTimeline, formatDeploymentTimelineTitle } from '../../utils/deploymentTimeline';
 
 type Props = {
   scope: 'admin' | 'user';
@@ -127,8 +130,8 @@ export default function DeploymentDetailPage({ scope }: Props) {
     || (scope === 'admin'
       ? (backPath === '/admin/services' ? '返回服务管理' : backPath === '/admin/dashboard' ? '返回仪表盘' : '返回部署记录')
       : '返回流水线大厅');
-  const renderDescriptionItem = (label: string, value?: string | number | null) => {
-    if (value == null || String(value).trim() === '') {
+  const renderDescriptionItem = (label: string, value?: ReactNode) => {
+    if (value == null || (typeof value === 'string' && value.trim() === '')) {
       return null;
     }
     return <Descriptions.Item label={label}>{value}</Descriptions.Item>;
@@ -212,13 +215,10 @@ export default function DeploymentDetailPage({ scope }: Props) {
               <Button danger>停止部署</Button>
             </Popconfirm>
           ) : null,
-          <Button key="refresh" type="primary" onClick={() => {
+          <RefreshIconButton key="refresh" type="primary" onClick={() => {
             loadDeploymentDetail().catch(() => message.error('刷新详情失败'));
             loadDeploymentLog().catch(() => message.error('刷新日志失败'));
-          }}
-          >
-            刷新
-          </Button>,
+          }} />,
         ]}
       />
       <div ref={contentRef} className="deployment-detail-content" style={contentHeight ? { height: contentHeight } : undefined}>
@@ -251,12 +251,16 @@ export default function DeploymentDetailPage({ scope }: Props) {
                   </div>
                 </div>
                 <Descriptions column={1} size="small" className="mt-4">
-                  {renderDescriptionItem('流水线', deployment?.pipelineName || deployment?.pipeline?.name)}
+                  {renderDescriptionItem('流水线', <PipelineNameWithTags name={deployment?.pipelineName || deployment?.pipeline?.name} importantTags={deployment?.pipelineImportantTags || deployment?.pipeline?.importantTags} />)}
                   {renderDescriptionItem('项目', deployment?.projectName || deployment?.pipeline?.project?.name)}
                   {renderDescriptionItem('分支', deployment?.branchName)}
                   {renderDescriptionItem('触发人', deployment?.triggeredByDisplayName || deployment?.triggeredBy)}
                   {renderDescriptionItem('停止人', deployment?.stoppedByDisplayName || deployment?.stoppedBy)}
-                  {renderDescriptionItem('部署时间', formatDeploymentTimeline(deployment, tick))}
+                  {renderDescriptionItem('部署时间', (
+                    <span title={formatDeploymentTimelineTitle(deployment)}>
+                      {formatDeploymentTimeline(deployment, tick)}
+                    </span>
+                  ))}
                   {renderDescriptionItem('产物目录', deployment?.artifactPath)}
                   {deployment?.rollbackFromDeploymentId ? (
                     <Descriptions.Item label="重发来源">

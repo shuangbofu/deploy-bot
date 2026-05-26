@@ -19,6 +19,7 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.ToString;
 import top.fusb.deploybot.model.converter.ObjectMapJsonConverter;
+import top.fusb.deploybot.model.converter.StringListJsonConverter;
 import top.fusb.deploybot.model.converter.StringMapJsonConverter;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -28,6 +29,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -78,6 +80,11 @@ public class DeploymentEntity {
     /** 创建部署时固化的流水线名称，避免删除流水线后历史记录丢失名称。 */
     @Column(length = 255)
     private String pipelineName;
+
+    /** 创建部署时固化的重要标签，避免后续流水线标签变更影响历史记录展示。 */
+    @Convert(converter = StringListJsonConverter.class)
+    @Column(name = "pipeline_important_tags_json", length = 1000)
+    private List<String> pipelineImportantTags;
 
     /** 创建部署时固化的项目名称，避免删除项目/流水线关联变更后历史记录丢失名称。 */
     @Column(length = 255)

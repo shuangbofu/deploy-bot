@@ -3584,6 +3584,32 @@ body {
   white-space: nowrap;
 }
 
+.service-table-actions-cell {
+  width: 198px !important;
+  max-width: 198px !important;
+  padding-left: 8px !important;
+  padding-right: 8px !important;
+}
+
+.service-table-actions {
+  white-space: nowrap;
+}
+
+.pipeline-hall-table .pipeline-table-status-cell {
+  width: 76px !important;
+  max-width: 76px !important;
+  padding-left: 8px !important;
+  padding-right: 8px !important;
+}
+
+.pipeline-hall-table .pipeline-table-duration-cell {
+  width: 74px !important;
+  max-width: 74px !important;
+  padding-left: 8px !important;
+  padding-right: 8px !important;
+  white-space: nowrap;
+}
+
 .pipeline-table-tags .ant-tag {
   margin-inline-end: 0;
 }
@@ -3929,6 +3955,27 @@ body {
   line-height: 18px;
   text-overflow: ellipsis;
   vertical-align: 2px;
+  white-space: nowrap;
+}
+
+.pipeline-name-with-tags {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  vertical-align: middle;
+}
+
+.pipeline-name-with-tags .pipeline-important-tag.ant-tag {
+  margin-inline-end: 0;
+  flex-shrink: 0;
+}
+
+.pipeline-name-with-tags__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 

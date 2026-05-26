@@ -70,6 +70,7 @@ public class ServiceManager {
                         service.getId(),
                         service.getPipeline() == null ? null : service.getPipeline().getId(),
                         service.getPipeline() == null ? null : service.getPipeline().getName(),
+                        service.getPipeline() == null || service.getPipeline().getImportantTags() == null ? List.of() : service.getPipeline().getImportantTags(),
                         service.getServiceName(),
                         service.getPipeline() == null ? null : service.getPipeline().getTemplateTypeSnapshot(),
                         service.getPipeline() != null && service.getPipeline().getTargetHost() != null ? service.getPipeline().getTargetHost().getName() : "本机",

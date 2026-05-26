@@ -5,6 +5,8 @@ import { useNavigate } from 'react-router-dom';
 import { servicesApi } from '../../api/services';
 import EmptyPane from '../../components/EmptyPane';
 import PageHeaderBar from '../../components/PageHeaderBar';
+import RefreshIconButton from '../../components/RefreshIconButton';
+import PipelineNameWithTags from '../../components/PipelineNameWithTags';
 import StatusTag from '../../components/StatusTag';
 import type { ServicePidHistorySummary, ServiceProcessSummary, ServiceSummary } from '../../api/types';
 import { formatDateTime } from '../../utils/datetime';
@@ -93,7 +95,7 @@ export default function ServiceManagementPage() {
     const actionLabel = actionLabelMap[action];
     Modal.confirm({
       title: `${actionLabel}服务`,
-      content: `确认${actionLabel}「${service.serviceName || service.pipeline?.name || `服务 #${service.id}`}」吗？`,
+      content: `确认${actionLabel}「${service.pipeline?.name || service.serviceName || `服务 #${service.id}`}」吗？`,
       okText: actionLabel,
       cancelText: '取消',
       okButtonProps: { danger: action === 'stop' },
@@ -267,9 +269,11 @@ export default function ServiceManagementPage() {
     return (
       <div className="space-y-3">
         <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-          <div className="text-base font-medium text-slate-800">{historyService.serviceName || historyService.pipeline?.name || `服务 #${historyService.id}`}</div>
+          <div className="text-base font-medium text-slate-800">
+            <PipelineNameWithTags name={historyService.pipeline?.name || historyService.serviceName} importantTags={historyService.pipeline?.importantTags} fallback={`服务 #${historyService.id}`} />
+          </div>
           <div className="mt-1 text-sm text-slate-500">
-            {historyService.pipeline?.project?.name || '-'} / {historyService.pipeline?.name || '-'} / {historyService.pipeline?.targetHost?.name || '本机'}
+            {historyService.pipeline?.project?.name || '-'} / <PipelineNameWithTags name={historyService.pipeline?.name} importantTags={historyService.pipeline?.importantTags} /> / {historyService.pipeline?.targetHost?.name || '本机'}
           </div>
         </div>
         <Tabs
@@ -349,7 +353,7 @@ export default function ServiceManagementPage() {
       <PageHeaderBar
         title="服务管理"
         description="查看受管服务状态，并执行启动、停止和重启操作。"
-        extra={<Button onClick={() => loadServices().catch(() => message.error('刷新失败'))}>刷新</Button>}
+        extra={<RefreshIconButton onClick={() => loadServices().catch(() => message.error('刷新失败'))} />}
       />
       <div className="app-page-scroll">
       <Card className="app-card">
@@ -413,7 +417,6 @@ export default function ServiceManagementPage() {
         <Table
           rowKey="id"
           loading={loading}
-          scroll={{ x: 960 }}
           dataSource={filteredServices}
           locale={{ emptyText: <EmptyPane description="当前没有可管理的服务。只有模板启用了进程监控并成功记录 PID 后，服务才会出现在这里。" /> }}
           pagination={{
@@ -425,7 +428,7 @@ export default function ServiceManagementPage() {
             onChange: (current, pageSize) => setPagination({ current, pageSize }),
           }}
           columns={[
-              { title: '流水线', render: (_, row) => row.pipeline?.name || '-' },
+              { title: '流水线', render: (_, row) => <PipelineNameWithTags name={row.pipeline?.name} importantTags={row.pipeline?.importantTags} /> },
               { title: '服务名', dataIndex: 'serviceName' },
               { title: '项目', render: (_, row) => row.pipeline?.project?.name || '-' },
               { title: '主机', render: (_, row) => row.pipeline?.targetHost?.name || '本机' },
@@ -436,9 +439,12 @@ export default function ServiceManagementPage() {
               { title: '最近更新', render: (_, row) => formatDateTime(row.updatedAt) },
               {
                 title: '操作',
-                width: 250,
+                width: 198,
+                className: 'service-table-actions-cell',
+                onHeaderCell: () => ({ className: 'service-table-actions-cell' }),
+                onCell: () => ({ className: 'service-table-actions-cell' }),
                 render: (_, row) => (
-                  <Space size={8} wrap>
+                  <Space className="service-table-actions" size={4}>
                     <Button
                       size="small"
                       onClick={() => openBindProcess(row).catch(() => message.error('加载进程列表失败'))}
@@ -484,7 +490,7 @@ export default function ServiceManagementPage() {
       <Modal
         width={880}
         open={bindModalOpen}
-        title={bindingService ? `绑定进程：${bindingService.serviceName || bindingService.pipeline?.name || `服务 #${bindingService.id}`}` : '绑定进程'}
+        title={bindingService ? `绑定进程：${bindingService.pipeline?.name || bindingService.serviceName || `服务 #${bindingService.id}`}` : '绑定进程'}
         okText="绑定"
         cancelText="取消"
         onOk={() => bindProcess().catch(() => message.error('绑定进程失败'))}
@@ -505,9 +511,7 @@ export default function ServiceManagementPage() {
             placeholder="搜索 PID / 命令 / 参数"
             onChange={(event) => setProcessKeyword(event.target.value)}
           />
-          <Button onClick={() => bindingService && openBindProcess(bindingService).catch(() => message.error('刷新进程列表失败'))}>
-            刷新
-          </Button>
+          <RefreshIconButton onClick={() => bindingService && openBindProcess(bindingService).catch(() => message.error('刷新进程列表失败'))} />
         </div>
         <Table
           className="service-process-table"

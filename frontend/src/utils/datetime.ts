@@ -17,3 +17,11 @@ export function formatDateTime(value) {
 
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
+
+export function formatDateTimeWithoutYear(value) {
+  const full = formatDateTime(value);
+  if (!full || full === '-' || full.length <= 5) {
+    return full;
+  }
+  return /^\d{4}-/.test(full) ? full.slice(5) : full;
+}

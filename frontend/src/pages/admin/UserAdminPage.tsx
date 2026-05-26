@@ -7,6 +7,7 @@ import { usersApi } from '../../api/users';
 import type { UserPayload, UserSummary } from '../../api/types';
 import EmptyPane from '../../components/EmptyPane';
 import PageHeaderBar from '../../components/PageHeaderBar';
+import RefreshIconButton from '../../components/RefreshIconButton';
 
 const emptyUser: UserPayload = {
   username: '',
@@ -117,7 +118,7 @@ export default function UserAdminPage() {
         description="管理登录账号、显示名称、角色和启用状态。新建用户与重置密码都会使用系统默认密码。"
         extra={(
           <Space>
-            <Button onClick={() => loadUsers().catch(() => message.error('加载用户失败'))}>刷新</Button>
+            <RefreshIconButton onClick={() => loadUsers().catch(() => message.error('加载用户失败'))} />
             <Button type="primary" onClick={openCreate}>新建用户</Button>
           </Space>
         )}

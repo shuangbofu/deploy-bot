@@ -10,7 +10,10 @@ import type { DeploymentPrecheckMissingItem } from '../../api/types';
 import EmptyPane from '../../components/EmptyPane';
 import HallSwitchIcon from '../../components/HallSwitchIcon';
 import PageHeaderBar from '../../components/PageHeaderBar';
+import RefreshIconButton from '../../components/RefreshIconButton';
+import PipelineNameWithTags from '../../components/PipelineNameWithTags';
 import PipelineIcon from '../../components/PipelineIcon';
+import ShortDateTime from '../../components/ShortDateTime';
 import StatusTag from '../../components/StatusTag';
 import { ACTIVE_DEPLOYMENT_STATUSES } from '../../constants/deployment';
 import { usePipelineHallPreferences, type PipelineHallFilterMode } from '../../hooks/usePipelineHallPreferences';
@@ -20,6 +23,7 @@ import { formatDateTime } from '../../utils/datetime';
 import { formatDeploymentElapsed } from '../../utils/deploymentDuration';
 import { getDeploymentProgressColor, getDeploymentProgressLabel, hasDeploymentProgressStep } from '../../utils/deploymentProgress';
 import { formatDurationSince } from '../../utils/duration';
+import { filterDisplayTags } from '../../utils/pipelineDisplay';
 import { getStableTagColor, getStableTagDarkColor, sortTagNames } from '../../utils/tagColors';
 
 type HallView = PipelineHallFilterMode;
@@ -613,7 +617,7 @@ export default function UserPipelinesPage({
         description={description}
         extra={(
           <Space className="pipeline-hall-header-actions" wrap>
-            <Button onClick={() => loadData().catch(() => message.error('加载流水线失败'))}>刷新</Button>
+            <RefreshIconButton onClick={() => loadData().catch(() => message.error('加载流水线失败'))} />
             <Segmented
               className="pipeline-hall-header-switch pipeline-hall-view-switch"
               value={hallView}
@@ -712,7 +716,9 @@ export default function UserPipelinesPage({
                       <div className="pipeline-hall-running-item-title">
                         <PipelineIcon type={item.templateType} />
                         <div className="pipeline-hall-running-item-content">
-                          <div className="pipeline-hall-running-item-name">{item.serviceName || item.pipelineName || `服务 #${item.serviceId}`}</div>
+                          <div className="pipeline-hall-running-item-name">
+                            <PipelineNameWithTags name={item.pipelineName || item.serviceName} importantTags={item.importantTags} fallback={`服务 #${item.serviceId}`} />
+                          </div>
                           <div className="pipeline-hall-running-item-meta">{item.targetHostName || '本机'}{item.currentPid ? ` [${item.currentPid}]` : ''}</div>
                           <div className={`pipeline-hall-running-item-duration${item.status === 'STOPPED' ? ' pipeline-hall-running-item-duration--stopped' : ''}`}>
                             {item.status === 'STOPPED' ? '已停止' : `运行中(${formatDurationSince(item.activeSince)})`}
@@ -752,8 +758,7 @@ export default function UserPipelinesPage({
                     {pipelineCardColumns.map((column, columnIndex) => (
                       <div className="pipeline-card-masonry-column" key={`${hallView}-${tagFilter?.join('|') || 'all'}-${columnIndex}`}>
                         {column.map((item) => {
-                          const tags = sortTagNames(normalizeTags(item.tags));
-                          const importantTags = normalizeTags(item.importantTags).slice(0, 2);
+                          const tags = filterDisplayTags(item.tags, item.importantTags);
                           const activeDeployment = item.latestStatus && ACTIVE_DEPLOYMENT_STATUSES.includes(item.latestStatus)
                             ? item
                             : undefined;
@@ -803,17 +808,8 @@ export default function UserPipelinesPage({
                                 <StatusTag status={item.latestStatus || undefined} progress={item.latestProgressPercent} />
                               </div>
                             </div>
-                            <Typography.Title level={4} className="pipeline-title-text pipeline-card-title !m-0">
-                              {importantTags.map((tag) => (
-                                <Tag
-                                  key={tag}
-                                  style={stableTagStyle(tag)}
-                                  className="pipeline-important-tag app-color-tag !border-0"
-                                >
-                                  {tag}
-                                </Tag>
-                              ))}
-                              {item.pipelineName}
+                            <Typography.Title level={4} className="pipeline-title-text pipeline-card-title !m-0" title={item.pipelineName}>
+                              <PipelineNameWithTags name={item.pipelineName} importantTags={item.importantTags} />
                             </Typography.Title>
                             <div className="pipeline-card-middle">
                               <Typography.Paragraph className="!mb-0 text-slate-600 dark:!text-slate-300">
@@ -945,7 +941,6 @@ export default function UserPipelinesPage({
 	                    className="pipeline-hall-table"
 	                    rowKey="pipelineId"
 	                    loading={hallLoading && filteredPipelineCards.length > 0}
-	                    scroll={{ x: 1180 }}
 	                    dataSource={filteredPipelineCards}
 	                    rowClassName={(row) => row.latestStatus === 'FAILED' ? 'pipeline-hall-table-row--failed' : ''}
 	                    locale={{ emptyText: <EmptyPane description="当前筛选条件下没有可部署流水线。" /> }}
@@ -959,7 +954,6 @@ export default function UserPipelinesPage({
                       title: '名称',
                       width: 260,
                       render: (_, row) => {
-                        const importantTags = normalizeTags(row.importantTags).slice(0, 2);
                         return (
                           <div className="flex items-center gap-2">
                             <button
@@ -977,16 +971,9 @@ export default function UserPipelinesPage({
                                     #{row.latestDeploymentOrder}
                                   </div>
                                 ) : null}
-                                {importantTags.map((tag) => (
-                                  <Tag
-                                    key={tag}
-                                    style={stableTagStyle(tag)}
-                                    className="pipeline-important-tag app-color-tag !border-0"
-                                  >
-                                    {tag}
-                                  </Tag>
-                                ))}
-                                <div className="pipeline-title-text pipeline-table-title truncate" title={row.pipelineName}>{row.pipelineName}</div>
+                                <div className="pipeline-title-text pipeline-table-title truncate">
+                                  <PipelineNameWithTags name={row.pipelineName} importantTags={row.importantTags} />
+                                </div>
                               </div>
                               <div className="pipeline-project-kicker truncate" title={row.projectName || ''}>{row.projectName || '-'}</div>
                             </div>
@@ -996,7 +983,6 @@ export default function UserPipelinesPage({
                     },
                     {
                       title: '描述',
-                      width: 260,
                       render: (_, row) => row.pipelineDescription ? (
                         <div className="line-clamp-2 text-sm leading-6 text-slate-600" title={row.pipelineDescription}>
                           {row.pipelineDescription}
@@ -1007,7 +993,7 @@ export default function UserPipelinesPage({
                       title: '标签',
                       width: 168,
                       render: (_, row) => {
-                        const tags = sortTagNames(normalizeTags(row.tags));
+                        const tags = filterDisplayTags(row.tags, row.importantTags);
                         return tags.length > 0 ? (
                           <Space className="pipeline-table-tags" size={[4, 4]} wrap>
                             {tags.map((tag) => (
@@ -1030,7 +1016,10 @@ export default function UserPipelinesPage({
                     },
                     {
                       title: '最近状态',
-                      width: 136,
+                      width: 76,
+                      className: 'pipeline-table-status-cell',
+                      onHeaderCell: () => ({ className: 'pipeline-table-status-cell' }),
+                      onCell: () => ({ className: 'pipeline-table-status-cell' }),
                       render: (_, row) => {
                         const showProgressText = row.latestStatus === 'RUNNING' || hasDeploymentProgressStep(
                           row.latestProgressStage,
@@ -1065,17 +1054,20 @@ export default function UserPipelinesPage({
                     },
                     {
                       title: '开始时间',
-                      width: 176,
-                      render: (_, row) => formatDateTime(row.latestStartedAt || row.latestCreatedAt),
+                      width: 138,
+                      render: (_, row) => <ShortDateTime value={row.latestStartedAt || row.latestCreatedAt} />,
                     },
                     {
                       title: '结束时间',
-                      width: 176,
-                      render: (_, row) => formatDateTime(row.latestFinishedAt),
+                      width: 138,
+                      render: (_, row) => <ShortDateTime value={row.latestFinishedAt} />,
                     },
                     {
                       title: '最近耗时',
-                      width: 118,
+                      width: 74,
+                      className: 'pipeline-table-duration-cell',
+                      onHeaderCell: () => ({ className: 'pipeline-table-duration-cell' }),
+                      onCell: () => ({ className: 'pipeline-table-duration-cell' }),
                       render: (_, row) => (
                         <span className="pipeline-table-duration">
                           {formatDeploymentElapsed({

@@ -5,6 +5,8 @@ import { deploymentsApi } from '../../api/deployments';
 import { pipelinesApi } from '../../api/pipelines';
 import EmptyPane from '../../components/EmptyPane';
 import PageHeaderBar from '../../components/PageHeaderBar';
+import RefreshIconButton from '../../components/RefreshIconButton';
+import PipelineNameWithTags from '../../components/PipelineNameWithTags';
 import StatusTag from '../../components/StatusTag';
 import { ACTIVE_DEPLOYMENT_STATUSES, DEPLOYMENT_STATUS_OPTIONS } from '../../constants/deployment';
 import type { DeploymentSummary, PipelineHistoryFilters, PipelineSummary } from '../../types/domain';
@@ -96,7 +98,7 @@ export default function UserPipelineHistoryPage({
         description="查看当前流水线的部署历史和部署结果。"
         extra={[
           <Button key="back" onClick={() => navigate(basePath)}>返回流水线大厅</Button>,
-          <Button key="refresh" type="primary" onClick={() => loadDeployments().catch(() => message.error('刷新失败'))}>刷新</Button>,
+          <RefreshIconButton key="refresh" type="primary" onClick={() => loadDeployments().catch(() => message.error('刷新失败'))} />,
         ]}
       />
       <div className="app-page-scroll">
@@ -179,7 +181,7 @@ export default function UserPipelineHistoryPage({
                 ),
               },
               { title: '项目', render: (_, row) => row.projectName || row.pipeline?.project?.name || '-' },
-              { title: '流水线', render: (_, row) => row.pipelineName || row.pipeline?.name || '-' },
+              { title: '流水线', render: (_, row) => <PipelineNameWithTags name={row.pipelineName || row.pipeline?.name} importantTags={row.pipelineImportantTags || row.pipeline?.importantTags || pipeline?.importantTags} /> },
               { title: '分支', dataIndex: 'branchName' },
               { title: '触发人', render: (_, record) => record.triggeredByDisplayName || record.triggeredBy || '-' },
               { title: '状态', render: (_, row) => <StatusTag status={row.status} /> },

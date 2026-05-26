@@ -6,6 +6,8 @@ import { pipelinesApi } from '../../api/pipelines';
 import { projectsApi } from '../../api/projects';
 import EmptyPane from '../../components/EmptyPane';
 import PageHeaderBar from '../../components/PageHeaderBar';
+import RefreshIconButton from '../../components/RefreshIconButton';
+import PipelineNameWithTags from '../../components/PipelineNameWithTags';
 import StatusTag from '../../components/StatusTag';
 import { ACTIVE_DEPLOYMENT_STATUSES } from '../../constants/deployment';
 import { DEPLOYMENT_STATUS_OPTIONS } from '../../constants/deployment';
@@ -90,7 +92,7 @@ export default function DeploymentRecordsPage() {
       <PageHeaderBar
         title="部署记录"
         description="查看全部部署记录和相关通知发送结果。"
-        extra={<Button onClick={() => loadDeployments().catch(() => message.error('刷新部署记录失败'))}>刷新</Button>}
+        extra={<RefreshIconButton onClick={() => loadDeployments().catch(() => message.error('刷新部署记录失败'))} />}
       />
       <Tabs
         className="deployment-record-tabs app-fixed-tabs app-soft-tabs"
@@ -185,7 +187,7 @@ export default function DeploymentRecordsPage() {
                 ),
               },
               { title: '项目', render: (_, row) => row.projectName || row.pipeline?.project?.name || '-' },
-              { title: '流水线', render: (_, row) => row.pipelineName || row.pipeline?.name || '-' },
+              { title: '流水线', render: (_, row) => <PipelineNameWithTags name={row.pipelineName || row.pipeline?.name} importantTags={row.pipelineImportantTags || row.pipeline?.importantTags} /> },
               { title: '分支', dataIndex: 'branchName' },
               { title: '触发人', render: (_, record) => record.triggeredByDisplayName || record.triggeredBy || '-' },
               { title: '状态', render: (_, row) => <StatusTag status={row.status} progress={row.progressPercent} /> },

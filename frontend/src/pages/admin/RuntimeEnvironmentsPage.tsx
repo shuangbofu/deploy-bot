@@ -9,6 +9,7 @@ import EnvironmentVariablesEditor from '../../components/EnvironmentVariablesEdi
 import EmptyPane from '../../components/EmptyPane';
 import CodeEditor from '../../components/CodeEditor';
 import PageHeaderBar from '../../components/PageHeaderBar';
+import RefreshIconButton from '../../components/RefreshIconButton';
 import type { HostSummary, MavenSettingsSummary, RuntimeEnvironmentSummary, RuntimeEnvironmentType } from '../../types/domain';
 import { formatDateTime } from '../../utils/datetime';
 import { buildRuntimeEnvironmentTypeOptions, defaultRuntimeEnvironmentTypes, getRuntimeEnvironmentTypeLabel } from '../../utils/runtimeEnvironment';
@@ -426,7 +427,7 @@ export default function RuntimeEnvironmentsPage() {
           : '统一维护构建和发布会用到的组件版本与路径。'}
         extra={[
           currentHost ? <Button key="back" onClick={() => navigate('/admin/hosts')}>返回主机管理</Button> : null,
-          <Button key="refresh" onClick={() => loadEnvironments().catch(() => message.error('刷新运行环境失败'))}>刷新</Button>,
+          <RefreshIconButton key="refresh" onClick={() => loadEnvironments().catch(() => message.error('刷新运行环境失败'))} />,
           <Button key="detect" onClick={() => openDetectModal().catch(() => message.error('自动检测失败'))}>自动检测</Button>,
           <Button key="preset" onClick={() => openPresetModal().catch(() => message.error('加载预置失败'))}>下载预置</Button>,
           <Button key="create" type="primary" onClick={openCreate}>新建运行环境</Button>,

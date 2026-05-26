@@ -13,6 +13,7 @@ import type {
 } from '../../api/types';
 import EmptyPane from '../../components/EmptyPane';
 import PageHeaderBar from '../../components/PageHeaderBar';
+import RefreshIconButton from '../../components/RefreshIconButton';
 import { getNotificationChannelTypeLabel, notificationTemplateVariableOptions } from '../../constants/notification';
 import { usePipelineHallPreferences } from '../../hooks/usePipelineHallPreferences';
 import { useAppTheme } from '../../theme/AppThemeProvider';
@@ -809,7 +810,7 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
                         <div className="mb-4 flex items-center justify-between gap-3">
                           <div className="text-sm text-slate-500">集中维护通知要使用的 Webhook 地址和签名密钥，后续创建通知配置时直接选择。</div>
                           <Space>
-                            <Button onClick={() => loadWebhookConfigs().catch(() => message.error('加载 Webhook 配置失败'))}>刷新</Button>
+                            <RefreshIconButton onClick={() => loadWebhookConfigs().catch(() => message.error('加载 Webhook 配置失败'))} />
                             <Button type="primary" onClick={openCreateWebhook}>新建 Webhook 配置</Button>
                           </Space>
                         </div>
@@ -850,7 +851,7 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
                         <div className="mb-4 flex items-center justify-between gap-3">
                           <div className="text-sm text-slate-500">维护通知消息的默认内容。通知配置选中模板后会自动带出内容，有特殊需求再做覆盖。</div>
                           <Space>
-                            <Button onClick={() => loadTemplates().catch(() => message.error('加载通知模板失败'))}>刷新</Button>
+                            <RefreshIconButton onClick={() => loadTemplates().catch(() => message.error('加载通知模板失败'))} />
                             <Button type="primary" onClick={openCreateTemplate}>新建通知模板</Button>
                           </Space>
                         </div>

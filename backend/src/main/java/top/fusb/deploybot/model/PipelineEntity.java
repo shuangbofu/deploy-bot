@@ -39,7 +39,7 @@ public class PipelineEntity {
     private Long id;
 
     /** 流水线名称。 */
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false)
     private String name;
 
     /** 流水线说明。 */

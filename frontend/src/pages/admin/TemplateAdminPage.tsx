@@ -8,6 +8,7 @@ import BooleanBadge from '../../components/BooleanBadge';
 import EmptyPane from '../../components/EmptyPane';
 import CodeEditor from '../../components/CodeEditor';
 import PageHeaderBar from '../../components/PageHeaderBar';
+import RefreshIconButton from '../../components/RefreshIconButton';
 import PipelineIcon from '../../components/PipelineIcon';
 import ShellVariableHint from '../../components/ShellVariableHint';
 import TemplatePreviewStage from '../../components/TemplatePreviewStage';
@@ -762,7 +763,7 @@ export default function TemplateAdminPage({ mode = 'list' }: { mode?: TemplatePa
         extra={(
           <Space>
             <Button onClick={() => navigate('/admin/plugins')}>返回插件</Button>
-            <Button onClick={() => loadTemplates().catch(() => message.error('加载模板失败'))}>刷新</Button>
+            <RefreshIconButton onClick={() => loadTemplates().catch(() => message.error('加载模板失败'))} />
             <Button type="primary" onClick={openCreate}>新建模板</Button>
           </Space>
         )}

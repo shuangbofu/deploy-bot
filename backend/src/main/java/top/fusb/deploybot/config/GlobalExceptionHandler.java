@@ -131,9 +131,6 @@ public class GlobalExceptionHandler {
 
     private String resolveUniqueViolationMessage(String rootMessage) {
         String normalized = rootMessage == null ? "" : rootMessage.toUpperCase();
-        if (normalized.contains("PUBLIC.PIPELINES") && normalized.contains("(NAME")) {
-            return "流水线名称已存在，请换一个名称。";
-        }
         if (normalized.contains("PUBLIC.PROJECTS") && normalized.contains("(NAME")) {
             return "项目名称已存在，请换一个名称。";
         }

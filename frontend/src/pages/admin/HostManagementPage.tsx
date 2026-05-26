@@ -8,6 +8,7 @@ import { runtimeEnvironmentsApi } from '../../api/runtimeEnvironments';
 import type { HostPayload } from '../../api/types';
 import EmptyPane from '../../components/EmptyPane';
 import PageHeaderBar from '../../components/PageHeaderBar';
+import RefreshIconButton from '../../components/RefreshIconButton';
 import type {
   HostSshAuthType,
   HostSummary,
@@ -289,7 +290,7 @@ export default function HostManagementPage() {
         description="管理本机和远程主机，以及对应的连接和工作空间配置。"
         extra={(
           <Space>
-            <Button onClick={() => loadHosts().catch(() => message.error('加载主机失败'))}>刷新</Button>
+            <RefreshIconButton onClick={() => loadHosts().catch(() => message.error('加载主机失败'))} />
             <Button type="primary" onClick={openCreate}>新建主机</Button>
           </Space>
         )}

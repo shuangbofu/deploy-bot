@@ -13,6 +13,8 @@ import type {
 } from '../../api/types';
 import EmptyPane from '../../components/EmptyPane';
 import PageHeaderBar from '../../components/PageHeaderBar';
+import RefreshIconButton from '../../components/RefreshIconButton';
+import PipelineNameWithTags from '../../components/PipelineNameWithTags';
 import {
   getNotificationChannelTypeLabel,
   getNotificationEventTypeLabel,
@@ -340,7 +342,7 @@ export default function NotificationAdminPage({
                 render: (_, record) => record.deployment?.triggeredByDisplayName || record.deployment?.triggeredBy || '-',
                 width: 140,
               },
-              { title: '流水线', render: (_, record) => record.pipelineName || record.deployment?.pipeline?.name || '-', width: 180 },
+              { title: '流水线', render: (_, record) => <PipelineNameWithTags name={record.pipelineName || record.deployment?.pipeline?.name} importantTags={record.deployment?.pipelineImportantTags || record.deployment?.pipeline?.importantTags} />, width: 180 },
               { title: '结果', render: (_, record) => record.status === 'SUCCESS' ? '成功' : '失败', width: 100 },
               {
                 title: '失败详情',
@@ -373,16 +375,14 @@ export default function NotificationAdminPage({
             title="通知"
             description="管理通知配置，以及每次发送的成功或失败记录。Webhook 配置和通知模板请到系统设置里维护。"
             extra={(
-              <Button
+              <RefreshIconButton
                 onClick={() => {
                   loadTemplates().catch(() => message.error('加载通知模板失败'));
                   loadWebhookConfigs().catch(() => message.error('加载 Webhook 配置失败'));
                   loadNotifications().catch(() => message.error('加载通知配置失败'));
                   loadRecords().catch(() => message.error('加载通知记录失败'));
                 }}
-              >
-                刷新
-              </Button>
+              />
             )}
           />
           <div className="app-page-scroll">

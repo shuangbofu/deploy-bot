@@ -3,6 +3,7 @@ package top.fusb.deploybot.dto;
 import top.fusb.deploybot.model.DeploymentStatus;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 public record DeploymentListSummary(
@@ -19,6 +20,7 @@ public record DeploymentListSummary(
         String logPath,
         String errorMessage,
         String pipelineName,
+        List<String> pipelineImportantTags,
         String projectName,
         PipelineRef pipeline,
         String artifactPath,
@@ -30,6 +32,7 @@ public record DeploymentListSummary(
     public record PipelineRef(
             Long id,
             String name,
+            List<String> importantTags,
             ProjectRef project
     ) {
     }

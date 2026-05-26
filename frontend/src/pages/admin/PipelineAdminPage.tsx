@@ -15,8 +15,11 @@ import EmptyPane from '../../components/EmptyPane';
 import CodeEditor from '../../components/CodeEditor';
 import PageHeaderBar from '../../components/PageHeaderBar';
 import PipelineVariablesEditor from '../../components/PipelineVariablesEditor';
+import RefreshIconButton from '../../components/RefreshIconButton';
 import PipelineIcon from '../../components/PipelineIcon';
+import PipelineNameWithTags from '../../components/PipelineNameWithTags';
 import { copyText } from '../../utils/clipboard';
+import { filterDisplayTags } from '../../utils/pipelineDisplay';
 import { getStableTagColor, getStableTagDarkColor, PHASE_LABEL_MAP, sortByPhase, sortTagNames } from '../../utils/tagColors';
 import type {
   HostSummary,
@@ -928,6 +931,7 @@ const selectedTemplateVariables = useMemo(
       )),
     ),
     parsedTags: normalizeTags(item.tags),
+    parsedDisplayTags: filterDisplayTags(item.tags, item.importantTags),
   })), [pipelines, plugins, templateOptions]);
 
   useEffect(() => {
@@ -1393,7 +1397,7 @@ const selectedTemplateVariables = useMemo(
         description="配置用户可直接部署的流水线，绑定项目、模板、变量和运行环境。构建在本机完成，目标主机负责接收产物并发布。"
         extra={(
           <Space>
-            <Button onClick={() => loadPipelines().catch(() => message.error('加载流水线数据失败'))}>刷新</Button>
+            <RefreshIconButton onClick={() => loadPipelines().catch(() => message.error('加载流水线数据失败'))} />
             <Button type="primary" onClick={openCreate}>新建流水线</Button>
           </Space>
         )}
@@ -1508,7 +1512,7 @@ const selectedTemplateVariables = useMemo(
                     <div className="scale-[0.82] origin-left">
                       <PipelineIcon type={row.resolvedTemplateOption?.templateType || row.templateTypeSnapshot || row.template?.templateType} />
                     </div>
-                    <span>{row.name}</span>
+                    <PipelineNameWithTags name={row.name} importantTags={row.importantTags} />
                   </div>
                 ),
               },
@@ -1528,10 +1532,10 @@ const selectedTemplateVariables = useMemo(
               {
                 title: '标签',
                 width: 180,
-                render: (_, row) => row.parsedTags.length > 0
+                render: (_, row) => row.parsedDisplayTags.length > 0
                   ? (
                     <Space wrap>
-                      {sortTagNames(row.parsedTags).map((tag: string) => (
+                      {row.parsedDisplayTags.map((tag: string) => (
                         <Tag
                           key={tag}
                           style={stableTagStyle(tag)}

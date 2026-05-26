@@ -5,6 +5,7 @@ import type { ProjectPayload, ProjectSummary } from '../../api/types';
 import BooleanBadge from '../../components/BooleanBadge';
 import EmptyPane from '../../components/EmptyPane';
 import PageHeaderBar from '../../components/PageHeaderBar';
+import RefreshIconButton from '../../components/RefreshIconButton';
 
 const emptyProject: ProjectPayload = {
   name: '',
@@ -182,7 +183,7 @@ export default function ProjectAdminPage() {
         description="管理项目名称、仓库地址和 Git 认证配置。"
         extra={(
           <Space>
-            <Button onClick={() => loadProjects().catch(() => message.error('加载项目失败'))}>刷新</Button>
+            <RefreshIconButton onClick={() => loadProjects().catch(() => message.error('加载项目失败'))} />
             <Button type="primary" onClick={openCreate}>新建项目</Button>
           </Space>
         )}

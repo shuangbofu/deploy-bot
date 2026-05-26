@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { deploymentPluginsApi } from '../../api/deploymentPlugins';
 import EmptyPane from '../../components/EmptyPane';
 import PageHeaderBar from '../../components/PageHeaderBar';
+import RefreshIconButton from '../../components/RefreshIconButton';
 import PipelineIcon from '../../components/PipelineIcon';
 import TemplatePreviewStage from '../../components/TemplatePreviewStage';
 import type { DeploymentPluginDefinitionSummary, ShellVariableSummary } from '../../types/domain';
@@ -188,7 +189,7 @@ export default function PluginAdminPage() {
       <PageHeaderBar
         title="插件管理"
         description="查看当前后端真正加载到的部署类型插件，以及它们自带模板、组件依赖和配置能力。"
-        extra={<Button onClick={() => loadData().catch(() => message.error('加载插件失败'))}>刷新</Button>}
+        extra={<RefreshIconButton onClick={() => loadData().catch(() => message.error('加载插件失败'))} />}
       />
       <div className="app-page-scroll">
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 2xl:grid-cols-3">

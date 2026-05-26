@@ -385,6 +385,7 @@ public class DeploymentService {
         entity.setPipeline(pipeline);
         entity.setBranchName(branch);
         entity.setPipelineName(pipeline.getName());
+        entity.setPipelineImportantTags(pipeline.getImportantTags() == null ? List.of() : pipeline.getImportantTags());
         entity.setProjectName(pipeline.getProject() == null ? null : pipeline.getProject().getName());
         entity.setVariables(variables);
         entity.setExecutionSnapshot(buildExecutionSnapshot(pipeline, branch, variables));
@@ -1038,6 +1039,7 @@ public class DeploymentService {
         entity.setPipeline(pipeline);
         entity.setBranchName(source.getBranchName());
         entity.setPipelineName(pipeline.getName());
+        entity.setPipelineImportantTags(pipeline.getImportantTags() == null ? List.of() : pipeline.getImportantTags());
         entity.setProjectName(pipeline.getProject() == null ? null : pipeline.getProject().getName());
         entity.setTriggeredBy(requireCurrentUser().username());
         entity.setStatus(DeploymentStatus.PENDING);
@@ -1216,6 +1218,7 @@ public class DeploymentService {
                 entity.getLogPath(),
                 entity.getErrorMessage(),
                 pipelineName,
+                resolveDeploymentPipelineImportantTags(entity),
                 projectName,
                 toPipelineRef(entity),
                 entity.getArtifactPath(),
@@ -1233,6 +1236,7 @@ public class DeploymentService {
         return new DeploymentListSummary.PipelineRef(
                 entity.getPipeline().getId(),
                 entity.getPipeline().getName(),
+                entity.getPipeline().getImportantTags() == null ? List.of() : entity.getPipeline().getImportantTags(),
                 entity.getPipeline().getProject() == null ? null : new DeploymentListSummary.ProjectRef(
                         entity.getPipeline().getProject().getId(),
                         entity.getPipeline().getProject().getName()
@@ -1252,6 +1256,7 @@ public class DeploymentService {
         entity.setTriggeredByDisplayName(resolveDisplayName(entity.getTriggeredBy()));
         entity.setStoppedByDisplayName(resolveDisplayName(entity.getStoppedBy()));
         entity.setPipelineName(resolveDeploymentPipelineName(entity));
+        entity.setPipelineImportantTags(resolveDeploymentPipelineImportantTags(entity));
         entity.setProjectName(resolveDeploymentProjectName(entity));
         return entity;
     }
@@ -1267,6 +1272,27 @@ public class DeploymentService {
             return entity.getPipeline().getName();
         }
         return readSnapshotText(entity.getExecutionSnapshot(), "pipelineName");
+    }
+
+    private List<String> resolveDeploymentPipelineImportantTags(DeploymentEntity entity) {
+        if (entity == null) {
+            return List.of();
+        }
+        if (entity.getPipelineImportantTags() != null && !entity.getPipelineImportantTags().isEmpty()) {
+            return entity.getPipelineImportantTags();
+        }
+        if (entity.getPipeline() != null && entity.getPipeline().getImportantTags() != null && !entity.getPipeline().getImportantTags().isEmpty()) {
+            return entity.getPipeline().getImportantTags();
+        }
+        Object snapshotValue = entity.getExecutionSnapshot() == null ? null : entity.getExecutionSnapshot().get("pipelineImportantTags");
+        if (snapshotValue instanceof List<?> list) {
+            return list.stream()
+                    .filter(Objects::nonNull)
+                    .map(String::valueOf)
+                    .filter(TextKit::isNotBlank)
+                    .toList();
+        }
+        return List.of();
     }
 
     private String resolveDeploymentProjectName(DeploymentEntity entity) {
@@ -1433,6 +1459,7 @@ public class DeploymentService {
         PipelineTemplateResolverService.ResolvedPipelineTemplate resolvedTemplate = pipelineTemplateResolverService.resolveRequired(pipeline);
         Map<String, Object> snapshot = new LinkedHashMap<>();
         snapshot.put("pipelineName", pipeline.getName());
+        snapshot.put("pipelineImportantTags", pipeline.getImportantTags() == null ? List.of() : pipeline.getImportantTags());
         snapshot.put("projectName", pipeline.getProject() == null ? null : pipeline.getProject().getName());
         snapshot.put("pluginId", resolvedTemplate.pluginId());
         snapshot.put("templateName", resolvedTemplate.name());

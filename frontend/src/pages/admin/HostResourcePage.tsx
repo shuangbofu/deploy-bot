@@ -6,6 +6,7 @@ import { hostsApi } from '../../api/hosts';
 import { runtimeEnvironmentsApi } from '../../api/runtimeEnvironments';
 import EmptyPane from '../../components/EmptyPane';
 import PageHeaderBar from '../../components/PageHeaderBar';
+import RefreshIconButton from '../../components/RefreshIconButton';
 import type { HostResourceSnapshot, RuntimeEnvironmentSummary } from '../../types/domain';
 import { formatDateTime } from '../../utils/datetime';
 import { getRuntimeEnvironmentTypeLabel, sortRuntimeEnvironmentTypes } from '../../utils/runtimeEnvironment';
@@ -90,7 +91,7 @@ export default function HostResourcePage() {
         extra={(
           <Space>
             <Button onClick={() => navigate('/admin/hosts')}>返回主机</Button>
-            <Button type="primary" loading={loading} onClick={() => loadResources().catch((error) => message.error(error?.response?.data?.message || '刷新主机资源失败'))}>刷新</Button>
+            <RefreshIconButton type="primary" loading={loading} onClick={() => loadResources().catch((error) => message.error(error?.response?.data?.message || '刷新主机资源失败'))} />
           </Space>
         )}
       />
