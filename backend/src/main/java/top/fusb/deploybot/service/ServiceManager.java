@@ -39,6 +39,7 @@ public class ServiceManager {
     private static final Logger log = LoggerFactory.getLogger(ServiceManager.class);
     private static final int HEARTBEAT_MISS_THRESHOLD = 3;
     private static final int PRE_DEPLOY_STOP_MAX_RETRIES = 3;
+    private static final int DEPLOYMENT_CONFIRM_MAX_RETRIES = 3;
     private static final DateTimeFormatter REMOTE_PROCESS_START_FORMATTER = new DateTimeFormatterBuilder()
             .parseCaseInsensitive()
             .appendPattern("EEE MMM d HH:mm:ss yyyy")
@@ -190,9 +191,24 @@ public class ServiceManager {
     }
 
     public void updateFromDeployment(DeploymentEntity deployment, Long pid) {
-        ServiceEntity service = serviceRepository.findByPipelineId(deployment.getPipeline().getId())
-                .orElseGet(ServiceEntity::new);
+        Long pipelineId = deployment.getPipeline().getId();
+        for (int attempt = 1; attempt <= DEPLOYMENT_CONFIRM_MAX_RETRIES; attempt++) {
+            ServiceEntity service = serviceRepository.findByPipelineId(pipelineId)
+                    .orElseGet(ServiceEntity::new);
+            try {
+                updateFromDeploymentOnce(service, deployment, pid);
+                return;
+            } catch (ObjectOptimisticLockingFailureException ex) {
+                if (attempt >= DEPLOYMENT_CONFIRM_MAX_RETRIES) {
+                    throw ex;
+                }
+                log.info("部署 {} 接管服务记录时命中乐观锁冲突，重新读取服务后重试。pipelineId={}，attempt={}/{}。",
+                        deployment.getId(), pipelineId, attempt, DEPLOYMENT_CONFIRM_MAX_RETRIES);
+            }
+        }
+    }
 
+    private void updateFromDeploymentOnce(ServiceEntity service, DeploymentEntity deployment, Long pid) {
         Map<String, String> variables = deployment.getVariables() == null ? Map.of() : deployment.getVariables();
         Long previousPid = service.getCurrentPid();
         ServiceStatus previousStatus = service.getStatus();

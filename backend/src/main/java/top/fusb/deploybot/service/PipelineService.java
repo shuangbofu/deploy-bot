@@ -16,12 +16,6 @@ import top.fusb.deploybot.model.RuntimeEnvironmentEntity;
 import top.fusb.deploybot.model.PipelineEntity;
 import top.fusb.deploybot.model.UserFavoritePipelineEntity;
 import top.fusb.deploybot.notification.dto.NotificationBinding;
-import top.fusb.deploybot.plugin.api.deployment.DeploymentPlugin;
-import top.fusb.deploybot.plugin.api.deployment.form.PluginFormField;
-import top.fusb.deploybot.plugin.api.deployment.form.PluginFormFieldBinding;
-import top.fusb.deploybot.plugin.api.deployment.form.PluginFormFieldBindingScope;
-import top.fusb.deploybot.plugin.api.deployment.form.PluginFormSection;
-import top.fusb.deploybot.plugin.runtime.DeploymentPluginRuntime;
 import top.fusb.deploybot.notification.repo.NotificationChannelRepository;
 import top.fusb.deploybot.repo.HostRepository;
 import top.fusb.deploybot.repo.MavenSettingsRepository;
@@ -68,7 +62,6 @@ public class PipelineService {
     private final UserFavoritePipelineRepository userFavoritePipelineRepository;
     private final ServicePidHistoryRepository servicePidHistoryRepository;
     private final PipelineTemplateResolverService pipelineTemplateResolverService;
-    private final DeploymentPluginRuntime deploymentPluginRuntime;
 
     public List<PipelineEntity> findAll() {
         return pipelineRepository.findAll();
@@ -284,7 +277,6 @@ public class PipelineService {
         entity.setDefaultBranch(request.defaultBranch());
         Map<String, String> variables = new LinkedHashMap<>(request.variables() == null ? Map.of() : request.variables());
         Map<String, String> pluginConfig = normalizePluginConfig(request.pluginConfig());
-        applyPluginConfig(entity, variables, pluginConfig);
         entity.setPluginConfig(pluginConfig);
         entity.setVariables(variables);
         entity.setTags(normalizeTags(request.tags()));
@@ -305,28 +297,6 @@ public class PipelineService {
         return pipelineRepository.save(entity);
     }
 
-    private void applyPluginConfig(PipelineEntity entity, Map<String, String> variables, Map<String, String> pluginConfig) {
-        if (pluginConfig.isEmpty()) {
-            return;
-        }
-        DeploymentPlugin plugin = deploymentPluginRuntime.resolveDeploymentPlugin(
-                TextKit.trimToNull(entity.getTemplatePluginId()) != null
-                        ? entity.getTemplatePluginId()
-                        : pipelineTemplateResolverService.resolvePluginId(entity)
-        );
-        if (plugin == null || plugin.pipelineFormSchema() == null || plugin.pipelineFormSchema().sections() == null) {
-            return;
-        }
-        for (PluginFormSection section : plugin.pipelineFormSchema().sections()) {
-            if (section == null || section.fields() == null) {
-                continue;
-            }
-            for (PluginFormField field : section.fields()) {
-                applyPluginConfigField(entity, variables, pluginConfig, field);
-            }
-        }
-    }
-
     private Map<String, String> normalizePluginConfig(Map<String, String> pluginConfig) {
         Map<String, String> normalized = new LinkedHashMap<>();
         (pluginConfig == null ? Map.<String, String>of() : pluginConfig).forEach((key, value) -> {
@@ -342,35 +312,6 @@ public class PipelineService {
             return List.of();
         }
         return CollectionKit.sortedDistinctNonBlankStrings(tags);
-    }
-
-    private void applyPluginConfigField(
-            PipelineEntity entity,
-            Map<String, String> variables,
-            Map<String, String> pluginConfig,
-            PluginFormField field
-    ) {
-        if (field == null || TextKit.isBlank(field.key())) {
-            return;
-        }
-        PluginFormFieldBinding binding = field.binding();
-        if (binding == null || TextKit.isBlank(binding.key())) {
-            binding = PluginFormFieldBinding.pluginConfig(field.key());
-        }
-        String value = pluginConfig.get(field.key());
-        if (binding.scope() == PluginFormFieldBindingScope.PIPELINE_VARIABLE) {
-            if (TextKit.isNotBlank(value)) {
-                variables.put(binding.key(), value);
-            } else {
-                variables.remove(binding.key());
-            }
-            return;
-        }
-        if (TextKit.isNotBlank(value)) {
-            variables.put(binding.key(), value);
-        } else {
-            variables.remove(binding.key());
-        }
     }
 
     private void bindTemplate(PipelineEntity entity, PipelineRequest request) {

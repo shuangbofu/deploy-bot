@@ -8,6 +8,8 @@ import top.fusb.deploybot.dto.PipelineHallSummary;
 import top.fusb.deploybot.dto.PipelineRequest;
 import top.fusb.deploybot.model.PipelineEntity;
 import top.fusb.deploybot.security.AdminOnly;
+import top.fusb.deploybot.security.AuthContextHolder;
+import top.fusb.deploybot.security.AuthenticatedUser;
 import top.fusb.deploybot.service.GitBranchService;
 import top.fusb.deploybot.service.DeploymentPluginBridgeService;
 import top.fusb.deploybot.service.PipelineService;
@@ -66,11 +68,13 @@ public class PipelineController {
     @GetMapping(value = "/hall/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter hallStream(@RequestParam(required = false) Long version) {
         service.findHallSummaries();
+        AuthenticatedUser currentUser = AuthContextHolder.get();
         SseEmitter emitter = new SseEmitter(0L);
         Thread thread = new Thread(() -> {
             String lastSignature = null;
             try {
-                while (true) {
+                AuthContextHolder.set(currentUser);
+                while (!Thread.currentThread().isInterrupted()) {
                     List<PipelineHallSummary> summaries = service.findHallSummaries();
                     String nextSignature = hallSignature(summaries);
                     Long nextVersion = (long) nextSignature.hashCode();
@@ -85,11 +89,18 @@ public class PipelineController {
                     }
                     Thread.sleep(1200L);
                 }
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
             } catch (Exception ex) {
                 emitter.completeWithError(ex);
+            } finally {
+                AuthContextHolder.clear();
             }
         }, "pipeline-hall-stream");
         thread.setDaemon(true);
+        emitter.onCompletion(thread::interrupt);
+        emitter.onTimeout(thread::interrupt);
+        emitter.onError(ignored -> thread.interrupt());
         thread.start();
         return emitter;
     }
