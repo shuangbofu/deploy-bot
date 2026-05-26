@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
-import { API_BASE_URL } from '../api/client';
+import { API_BASE_URL, handleAuthExpired } from '../api/client';
 import { authStorage } from '../auth/authStorage';
+import type { DeploymentSummary } from '../types/domain';
 
 type LogStreamPayload = {
   content?: string;
@@ -14,6 +15,7 @@ type Options = {
   enabled: boolean;
   offset: number;
   onLog: (payload: LogStreamPayload) => void;
+  onDeployment?: (deployment: DeploymentSummary) => void;
   onDone?: () => void;
   onError?: () => void;
 };
@@ -56,18 +58,20 @@ const decodeBase64Utf8 = (value: string) => {
   return new TextDecoder().decode(bytes);
 };
 
-export function useDeploymentLogStream({ deploymentId, enabled, offset, onLog, onDone, onError }: Options) {
+export function useDeploymentLogStream({ deploymentId, enabled, offset, onLog, onDeployment, onDone, onError }: Options) {
   const offsetRef = useRef(offset);
   const onLogRef = useRef(onLog);
+  const onDeploymentRef = useRef(onDeployment);
   const onDoneRef = useRef(onDone);
   const onErrorRef = useRef(onError);
 
   useEffect(() => {
     offsetRef.current = offset;
     onLogRef.current = onLog;
+    onDeploymentRef.current = onDeployment;
     onDoneRef.current = onDone;
     onErrorRef.current = onError;
-  }, [offset, onDone, onError, onLog]);
+  }, [offset, onDeployment, onDone, onError, onLog]);
 
   useEffect(() => {
     if (!enabled || !deploymentId) {
@@ -76,13 +80,26 @@ export function useDeploymentLogStream({ deploymentId, enabled, offset, onLog, o
     const controller = new AbortController();
     const connect = async () => {
       try {
+        const token = authStorage.getToken();
+        if (!token) {
+          handleAuthExpired('AUTH-001');
+          return;
+        }
         const response = await fetch(resolveStreamUrl(deploymentId, offsetRef.current), {
           headers: {
-            Authorization: `Bearer ${authStorage.getToken() || ''}`,
+            Authorization: `Bearer ${token}`,
           },
           signal: controller.signal,
         });
         if (!response.ok || !response.body) {
+          if (response.status === 401 || response.status === 403) {
+            try {
+              const payload = await response.clone().json();
+              handleAuthExpired(payload?.subCode);
+            } catch {
+              handleAuthExpired('AUTH-001');
+            }
+          }
           throw new Error('日志流连接失败');
         }
         const reader = response.body.getReader();
@@ -98,6 +115,14 @@ export function useDeploymentLogStream({ deploymentId, enabled, offset, onLog, o
           parsed.events.forEach((item) => {
             if (item.event === 'done') {
               onDoneRef.current?.();
+              return;
+            }
+            if (item.event === 'deployment' && item.data) {
+              try {
+                onDeploymentRef.current?.(JSON.parse(item.data) as DeploymentSummary);
+              } catch {
+                // 忽略单条状态事件解析失败，日志流本身继续读取。
+              }
               return;
             }
             if (item.event !== 'log' || !item.data) {

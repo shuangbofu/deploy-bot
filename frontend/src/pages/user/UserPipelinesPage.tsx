@@ -18,7 +18,7 @@ import { usePipelineHallStream } from '../../hooks/usePipelineHallStream';
 import type { PipelineBranchOption, PipelineHallRunningServiceSummary, PipelineHallSummary, PipelineSummary, UserRecentPipelineSummary } from '../../types/domain';
 import { formatDateTime } from '../../utils/datetime';
 import { formatDeploymentElapsed } from '../../utils/deploymentDuration';
-import { getDeploymentProgressColor, getDeploymentProgressLabel } from '../../utils/deploymentProgress';
+import { getDeploymentProgressColor, getDeploymentProgressLabel, hasDeploymentProgressStep } from '../../utils/deploymentProgress';
 import { formatDurationSince } from '../../utils/duration';
 import { getStableTagColor, getStableTagDarkColor, sortTagNames } from '../../utils/tagColors';
 
@@ -931,12 +931,14 @@ export default function UserPipelinesPage({
                 )
               ) : (
                 <Card className="app-card">
-                  <Table
-                    rowKey="pipelineId"
-                    loading={hallLoading && filteredPipelineCards.length > 0}
-                    scroll={{ x: 1180 }}
-                    dataSource={filteredPipelineCards}
-                    locale={{ emptyText: <EmptyPane description="当前筛选条件下没有可部署流水线。" /> }}
+	                  <Table
+	                    className="pipeline-hall-table"
+	                    rowKey="pipelineId"
+	                    loading={hallLoading && filteredPipelineCards.length > 0}
+	                    scroll={{ x: 1180 }}
+	                    dataSource={filteredPipelineCards}
+	                    rowClassName={(row) => row.latestStatus === 'FAILED' ? 'pipeline-hall-table-row--failed' : ''}
+	                    locale={{ emptyText: <EmptyPane description="当前筛选条件下没有可部署流水线。" /> }}
                     pagination={{
                       pageSize: 10,
                       showSizeChanger: true,
@@ -1008,7 +1010,11 @@ export default function UserPipelinesPage({
                       title: '最近状态',
                       width: 190,
                       render: (_, row) => {
-                        const showProgressText = row.latestStatus === 'RUNNING' && row.latestProgressStage;
+                        const showProgressText = row.latestStatus === 'RUNNING' || hasDeploymentProgressStep(
+                          row.latestProgressStage,
+                          row.latestProgressCurrent,
+                          row.latestProgressTotal,
+                        );
                         const progressText = getDeploymentProgressLabel(
                           row.latestProgressPercent ?? 0,
                           row.latestStatus,

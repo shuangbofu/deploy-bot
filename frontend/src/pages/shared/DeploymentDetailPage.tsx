@@ -79,16 +79,6 @@ export default function DeploymentDetailPage({ scope }: Props) {
     return () => window.clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    if (!deployment?.status || !ACTIVE_DEPLOYMENT_STATUSES.includes(deployment.status)) {
-      return undefined;
-    }
-    const timer = window.setInterval(() => {
-      loadDeploymentDetail({ silent: true }).catch(() => message.error('刷新部署详情失败'));
-    }, 3000);
-    return () => window.clearInterval(timer);
-  }, [deployment, deploymentId]);
-
   useDeploymentLogStream({
     deploymentId,
     enabled: Boolean(deployment?.status && ACTIVE_DEPLOYMENT_STATUSES.includes(deployment.status)),
@@ -105,6 +95,7 @@ export default function DeploymentDetailPage({ scope }: Props) {
         loadDeploymentDetail({ silent: true }).catch(() => undefined);
       }
     },
+    onDeployment: setDeployment,
     onDone: () => {
       loadDeploymentDetail({ silent: true }).catch(() => undefined);
       loadDeploymentLog({ silent: true }).catch(() => undefined);

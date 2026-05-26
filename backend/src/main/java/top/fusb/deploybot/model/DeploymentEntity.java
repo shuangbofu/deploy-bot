@@ -203,12 +203,18 @@ public class DeploymentEntity {
 
     @Transient
     public String getProgressStage() {
+        if (status == DeploymentStatus.SUCCESS || status == DeploymentStatus.PENDING) {
+            return null;
+        }
         ProgressSnapshot snapshot = readProgressSnapshot();
         return snapshot == null ? null : snapshot.getStage();
     }
 
     @Transient
     public Integer getProgressCurrent() {
+        if (status == DeploymentStatus.SUCCESS || status == DeploymentStatus.PENDING) {
+            return null;
+        }
         ProgressSnapshot snapshot = readProgressSnapshot();
         ProgressStep step = resolveProgressStep(snapshot);
         return step == null ? null : step.getCurrent();
@@ -216,6 +222,9 @@ public class DeploymentEntity {
 
     @Transient
     public Integer getProgressTotal() {
+        if (status == DeploymentStatus.SUCCESS || status == DeploymentStatus.PENDING) {
+            return null;
+        }
         ProgressSnapshot snapshot = readProgressSnapshot();
         ProgressStep step = resolveProgressStep(snapshot);
         return step == null ? null : step.getTotal();

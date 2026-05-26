@@ -50,7 +50,7 @@ export function resolveBackendAssetUrl(url?: string | null) {
   return new URL(url, window.location.origin).toString();
 }
 
-function handleAuthExpired(subCode?: string | null) {
+export function handleAuthExpired(subCode?: string | null) {
   if (subCode === 'AUTH-001' || subCode === 'AUTH-003') {
     authStorage.clearToken();
     const hashPath = window.location.hash.replace(/^#/, '') || '/';

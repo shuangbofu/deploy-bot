@@ -9,6 +9,8 @@ import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.model.DeploymentEntity;
 import top.fusb.deploybot.model.DeploymentStatus;
 import top.fusb.deploybot.dto.UserRecentPipelineSummary;
+import top.fusb.deploybot.security.AuthContextHolder;
+import top.fusb.deploybot.security.AuthenticatedUser;
 import top.fusb.deploybot.service.DeploymentService;
 import top.fusb.deploybot.service.DeploymentPluginBridgeService;
 import jakarta.validation.Valid;
@@ -115,13 +117,23 @@ public class DeploymentController {
     @GetMapping(value = "/{id}/log/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter logStream(@PathVariable Long id, @RequestParam(defaultValue = "0") long offset) {
         service.findById(id);
+        AuthenticatedUser currentUser = AuthContextHolder.get();
         SseEmitter emitter = new SseEmitter(0L);
         Thread thread = new Thread(() -> {
             long currentOffset = Math.max(0L, offset);
             try {
+                AuthContextHolder.set(currentUser);
                 boolean finished = false;
                 int idleAfterFinished = 0;
+                DeploymentStatus lastStatus = null;
                 while (!finished || idleAfterFinished < 2) {
+                    DeploymentEntity deployment = service.findById(id);
+                    if (deployment.getStatus() != lastStatus || finished != isFinished(deployment.getStatus())) {
+                        lastStatus = deployment.getStatus();
+                        emitter.send(SseEmitter.event()
+                                .name("deployment")
+                                .data(deployment));
+                    }
                     DeploymentService.LogChunk chunk = service.readAuthorizedLogChunk(id, currentOffset);
                     currentOffset = chunk.offset();
                     if (chunk.content() != null && !chunk.content().isEmpty()) {
@@ -143,11 +155,22 @@ public class DeploymentController {
                 emitter.complete();
             } catch (Exception ex) {
                 emitter.completeWithError(ex);
+            } finally {
+                AuthContextHolder.clear();
             }
         }, "deployment-log-stream-" + id);
         thread.setDaemon(true);
+        emitter.onCompletion(thread::interrupt);
+        emitter.onTimeout(thread::interrupt);
+        emitter.onError(ignored -> thread.interrupt());
         thread.start();
         return emitter;
+    }
+
+    private boolean isFinished(DeploymentStatus status) {
+        return status == DeploymentStatus.SUCCESS
+                || status == DeploymentStatus.FAILED
+                || status == DeploymentStatus.STOPPED;
     }
 
     /**

@@ -40,6 +40,7 @@ public class ServiceManager {
     private static final int HEARTBEAT_MISS_THRESHOLD = 3;
     private static final int PRE_DEPLOY_STOP_MAX_RETRIES = 3;
     private static final int DEPLOYMENT_CONFIRM_MAX_RETRIES = 3;
+    private static final int MANUAL_STOP_MAX_RETRIES = 3;
     private static final DateTimeFormatter REMOTE_PROCESS_START_FORMATTER = new DateTimeFormatterBuilder()
             .parseCaseInsensitive()
             .appendPattern("EEE MMM d HH:mm:ss yyyy")
@@ -232,22 +233,34 @@ public class ServiceManager {
     }
 
     public ServiceEntity stop(Long id) {
-        ServiceEntity service = serviceRepository.findById(id)
-                .orElseThrow(() -> new BusinessException(ErrorSubCode.SERVICE_NOT_FOUND));
-        HostEntity targetHost = service.getPipeline() == null ? null : service.getPipeline().getTargetHost();
-        Long previousPid = service.getCurrentPid();
-        ServiceStatus previousStatus = service.getStatus();
-        if (service.getCurrentPid() != null) {
-            stopProcess(service.getCurrentPid(), targetHost);
+        Long lastObservedPid = null;
+        for (int attempt = 1; attempt <= MANUAL_STOP_MAX_RETRIES; attempt++) {
+            ServiceEntity service = serviceRepository.findById(id)
+                    .orElseThrow(() -> new BusinessException(ErrorSubCode.SERVICE_NOT_FOUND));
+            HostEntity targetHost = service.getPipeline() == null ? null : service.getPipeline().getTargetHost();
+            Long previousPid = service.getCurrentPid();
+            ServiceStatus previousStatus = service.getStatus();
+            Long pid = resolveManagedPid(service);
+            lastObservedPid = pid;
+            if (pid != null) {
+                stopProcess(pid, targetHost);
+            }
+            service.setCurrentPid(null);
+            service.setStatus(ServiceStatus.STOPPED);
+            service.setActiveSince(null);
+            service.setHeartbeatMissCount(0);
+            service.setUpdatedAt(LocalDateTime.now());
+            try {
+                ServiceEntity saved = serviceRepository.save(service);
+                recordPidHistory(saved, saved.getLastDeployment(), previousPid, null, previousStatus, ServiceStatus.STOPPED, ServicePidChangeSource.MANUAL_STOP, "手动停止服务");
+                return saved;
+            } catch (ObjectOptimisticLockingFailureException ex) {
+                log.info("手动停止服务 {} 时命中乐观锁冲突，准备重读最新服务状态后重试。attempt={}/{}，lastObservedPid={}。",
+                        id, attempt, MANUAL_STOP_MAX_RETRIES, pid);
+            }
         }
-        service.setCurrentPid(null);
-        service.setStatus(ServiceStatus.STOPPED);
-        service.setActiveSince(null);
-        service.setHeartbeatMissCount(0);
-        service.setUpdatedAt(LocalDateTime.now());
-        ServiceEntity saved = serviceRepository.save(service);
-        recordPidHistory(saved, saved.getLastDeployment(), previousPid, null, previousStatus, ServiceStatus.STOPPED, ServicePidChangeSource.MANUAL_STOP, "手动停止服务");
-        return saved;
+        log.warn("手动停止服务 {} 时连续 {} 次命中乐观锁冲突，lastObservedPid={}。", id, MANUAL_STOP_MAX_RETRIES, lastObservedPid);
+        throw new BusinessException(ErrorSubCode.REMOTE_SERVICE_STOP_FAILED, "服务状态正在刷新，请稍后重试。");
     }
 
     public List<ServiceProcessSummary> listProcessCandidates(Long id) {

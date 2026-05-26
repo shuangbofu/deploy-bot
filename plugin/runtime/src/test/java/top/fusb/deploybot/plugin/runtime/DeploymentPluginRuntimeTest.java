@@ -168,9 +168,11 @@ class DeploymentPluginRuntimeTest {
         assertTrue(deployResult.variables().get("springBootArgs").contains("--spring.profiles.active=test"));
         assertTrue(deployResult.variables().get("springBootArgs").contains("--spring.config.additional-location=file:/opt/apps/demo/config/deploy-42.yml"));
         assertTrue(deployResult.variables().get("springBootArgs").contains("--deploybot.deployment-id='42'"));
-        assertTrue(deployResult.variables().get("startCommand").contains("nohup java -Xms256m -Xmx512m -Dfile.encoding=UTF-8 -jar 'DeployBot.jar'"));
+        assertTrue(deployResult.variables().get("startCommand").contains("nohup env LANG=C.UTF-8 LC_ALL=C.UTF-8 java -Xms256m -Xmx512m"));
+        assertTrue(deployResult.variables().get("startCommand").contains("-Dfile.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8 -jar 'DeployBot.jar'"));
         assertTrue(deployResult.variables().get("startCommand").contains("< /dev/null"));
         assertTrue(deployResult.variables().get("startCommand").contains("--spring.profiles.active=test"));
+        assertTrue(deployResult.variables().get("startCommand").contains("--deploybot.pipeline-name='部署平台'"));
         assertTrue(deployResult.variables().get("startCommand").contains("--server.port=8080"));
         assertEquals(deployResult.variables().get("startCommand"), deployResult.variables().get("START_COMMAND"));
     }

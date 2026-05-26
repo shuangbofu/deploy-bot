@@ -104,7 +104,9 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Result<Void>> handleDataIntegrity(DataIntegrityViolationException ex, HttpServletRequest request) {
         String rootMessage = ex.getMostSpecificCause() != null ? ex.getMostSpecificCause().getMessage() : ex.getMessage();
         String userMessage = "数据存在关联引用，当前操作无法完成。";
-        if (rootMessage != null && rootMessage.contains("Value too long for column")) {
+        if (isUniqueViolation(rootMessage)) {
+            userMessage = resolveUniqueViolationMessage(rootMessage);
+        } else if (rootMessage != null && rootMessage.contains("Value too long for column")) {
             userMessage = "提交内容过长，已超出字段限制，请检查部署变量、脚本或快照内容。";
         }
         log.warn("API data integrity error on {} {}: {}", request.getMethod(), request.getRequestURI(), ex.getMessage(), ex);
@@ -114,6 +116,37 @@ public class GlobalExceptionHandler {
                 "DATA-000",
                 userMessage
         );
+    }
+
+    private boolean isUniqueViolation(String rootMessage) {
+        if (rootMessage == null || rootMessage.isBlank()) {
+            return false;
+        }
+        String normalized = rootMessage.toLowerCase();
+        return normalized.contains("unique index")
+                || normalized.contains("unique constraint")
+                || normalized.contains("primary key violation")
+                || normalized.contains("duplicate key");
+    }
+
+    private String resolveUniqueViolationMessage(String rootMessage) {
+        String normalized = rootMessage == null ? "" : rootMessage.toUpperCase();
+        if (normalized.contains("PUBLIC.PIPELINES") && normalized.contains("(NAME")) {
+            return "流水线名称已存在，请换一个名称。";
+        }
+        if (normalized.contains("PUBLIC.PROJECTS") && normalized.contains("(NAME")) {
+            return "项目名称已存在，请换一个名称。";
+        }
+        if (normalized.contains("PUBLIC.HOSTS") && normalized.contains("(NAME")) {
+            return "主机名称已存在，请换一个名称。";
+        }
+        if (normalized.contains("PUBLIC.TEMPLATES") && normalized.contains("(NAME")) {
+            return "模板名称已存在，请换一个名称。";
+        }
+        if (normalized.contains("PUBLIC.USERS") && normalized.contains("(USERNAME")) {
+            return "用户名已存在，请换一个用户名。";
+        }
+        return "数据已存在，请检查名称或唯一字段是否重复。";
     }
 
     @ExceptionHandler(Exception.class)

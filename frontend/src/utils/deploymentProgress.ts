@@ -11,6 +11,11 @@ const PROGRESS_STAGE_LABEL: Record<string, string> = {
   ROLLBACK: '回滚',
 };
 
+const FINISHED_PROGRESS_LABEL: Partial<Record<DeploymentStatus, string>> = {
+  SUCCESS: '部署完成',
+  PENDING: '待执行',
+};
+
 /**
  * 优先使用后端计算好的进度，避免前端重复推导构建/发布阶段细节。
  */
@@ -37,6 +42,9 @@ export function getDeploymentProgressLabel(
   progressCurrent?: number | null,
   progressTotal?: number | null,
 ) {
+  if (status === 'SUCCESS' || status === 'PENDING' || !status) {
+    return status ? (FINISHED_PROGRESS_LABEL[status] || `${progress}%`) : `${progress}%`;
+  }
   if (status === 'RUNNING' && progressStage === 'STARTUP') {
     return '等待启动';
   }
@@ -54,6 +62,19 @@ export function getDeploymentProgressLabel(
     return '部署中';
   }
   return `${progress}%`;
+}
+
+export function hasDeploymentProgressStep(
+  progressStage?: string | null,
+  progressCurrent?: number | null,
+  progressTotal?: number | null,
+) {
+  return Boolean(
+    getProgressStageLabel(progressStage)
+    && typeof progressCurrent === 'number'
+    && typeof progressTotal === 'number'
+    && progressTotal > 0,
+  );
 }
 
 function getProgressStageLabel(progressStage?: string | null) {

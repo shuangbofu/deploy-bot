@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Button, Card, Input, Modal, Select, Space, Table, Tabs, message } from 'antd';
+import { EllipsisOutlined } from '@ant-design/icons';
+import { Button, Card, Dropdown, Input, Modal, Select, Space, Table, Tabs, message } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { servicesApi } from '../../api/services';
 import EmptyPane from '../../components/EmptyPane';
@@ -75,6 +76,42 @@ export default function ServiceManagementPage() {
       }
     } finally {
       setActingId(undefined);
+    }
+  };
+
+  const confirmServiceAction = (service: ServiceSummary, action: 'start' | 'stop' | 'restart') => {
+    const actionLabelMap = {
+      start: '启动',
+      stop: '停止',
+      restart: '重启',
+    };
+    const successTextMap = {
+      start: '服务启动任务已触发',
+      stop: '服务已停止',
+      restart: '服务重启任务已触发',
+    };
+    const actionLabel = actionLabelMap[action];
+    Modal.confirm({
+      title: `${actionLabel}服务`,
+      content: `确认${actionLabel}「${service.serviceName || service.pipeline?.name || `服务 #${service.id}`}」吗？`,
+      okText: actionLabel,
+      cancelText: '取消',
+      okButtonProps: { danger: action === 'stop' },
+      onOk: () => triggerAction(
+        service.id,
+        action,
+        successTextMap[action],
+      ).catch(() => message.error(`${actionLabel}服务失败`)),
+    });
+  };
+
+  const handleMoreAction = (service: ServiceSummary, key: string) => {
+    if (key === 'history') {
+      openHistoryModal(service).catch(() => message.error('加载 PID 轨迹失败'));
+      return;
+    }
+    if (key === 'start' || key === 'restart' || key === 'stop') {
+      confirmServiceAction(service, key);
     }
   };
 
@@ -388,8 +425,8 @@ export default function ServiceManagementPage() {
             onChange: (current, pageSize) => setPagination({ current, pageSize }),
           }}
           columns={[
-              { title: '服务名', dataIndex: 'serviceName' },
               { title: '流水线', render: (_, row) => row.pipeline?.name || '-' },
+              { title: '服务名', dataIndex: 'serviceName' },
               { title: '项目', render: (_, row) => row.pipeline?.project?.name || '-' },
               { title: '主机', render: (_, row) => row.pipeline?.targetHost?.name || '本机' },
               { title: 'PID', dataIndex: 'currentPid' },
@@ -399,28 +436,9 @@ export default function ServiceManagementPage() {
               { title: '最近更新', render: (_, row) => formatDateTime(row.updatedAt) },
               {
                 title: '操作',
-                width: 340,
+                width: 250,
                 render: (_, row) => (
-                  <Space wrap>
-                    {row.status === 'RUNNING' ? (
-                      <>
-                        <Button
-                          size="small"
-                          onClick={() => triggerAction(row.id, 'restart', '服务重启任务已触发').catch(() => message.error('重启服务失败'))}
-                          loading={actingId === row.id}
-                        >
-                          重启
-                        </Button>
-                        <Button
-                          size="small"
-                          danger
-                          onClick={() => triggerAction(row.id, 'stop', '服务已停止').catch(() => message.error('停止服务失败'))}
-                          loading={actingId === row.id}
-                        >
-                          停止
-                        </Button>
-                      </>
-                    ) : null}
+                  <Space size={8} wrap>
                     <Button
                       size="small"
                       onClick={() => openBindProcess(row).catch(() => message.error('加载进程列表失败'))}
@@ -428,15 +446,6 @@ export default function ServiceManagementPage() {
                     >
                       绑定进程
                     </Button>
-                    {row.status !== 'RUNNING' ? (
-                      <Button
-                        size="small"
-                        onClick={() => triggerAction(row.id, 'start', '服务启动任务已触发').catch(() => message.error('启动服务失败'))}
-                        loading={actingId === row.id}
-                      >
-                        启动
-                      </Button>
-                    ) : null}
                     <Button
                       size="small"
                       disabled={!row.lastDeployment?.id}
@@ -444,12 +453,27 @@ export default function ServiceManagementPage() {
                     >
                       查看详情
                     </Button>
-                    <Button
-                      size="small"
-                      onClick={() => openHistoryModal(row).catch(() => message.error('加载 PID 轨迹失败'))}
+                    <Dropdown
+                      trigger={['click']}
+                      menu={{
+                        items: [
+                          { key: 'history', label: '查看轨迹' },
+                          ...(row.status === 'RUNNING'
+                            ? [
+                              { type: 'divider' as const },
+                              { key: 'restart', label: '重启服务' },
+                              { key: 'stop', label: '停止服务', danger: true },
+                            ]
+                            : [
+                              { type: 'divider' as const },
+                              { key: 'start', label: '启动服务' },
+                            ]),
+                        ],
+                        onClick: ({ key }) => handleMoreAction(row, key),
+                      }}
                     >
-                      查看轨迹
-                    </Button>
+                      <Button size="small" loading={actingId === row.id} icon={<EllipsisOutlined />} />
+                    </Dropdown>
                   </Space>
                 ),
               },

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { API_BASE_URL } from '../api/client';
+import { API_BASE_URL, handleAuthExpired } from '../api/client';
 import { authStorage } from '../auth/authStorage';
 import type { PipelineHallSummary } from '../types/domain';
 
@@ -66,13 +66,26 @@ export function usePipelineHallStream({ enabled, version, onUpdate, onError }: O
     const controller = new AbortController();
     const connect = async () => {
       try {
+        const token = authStorage.getToken();
+        if (!token) {
+          handleAuthExpired('AUTH-001');
+          return;
+        }
         const response = await fetch(resolveStreamUrl(versionRef.current), {
           headers: {
-            Authorization: `Bearer ${authStorage.getToken() || ''}`,
+            Authorization: `Bearer ${token}`,
           },
           signal: controller.signal,
         });
         if (!response.ok || !response.body) {
+          if (response.status === 401 || response.status === 403) {
+            try {
+              const payload = await response.clone().json();
+              handleAuthExpired(payload?.subCode);
+            } catch {
+              handleAuthExpired('AUTH-001');
+            }
+          }
           throw new Error('流水线大厅状态流连接失败');
         }
         const reader = response.body.getReader();

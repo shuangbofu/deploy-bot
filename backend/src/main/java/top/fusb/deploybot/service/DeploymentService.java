@@ -1402,18 +1402,10 @@ public class DeploymentService {
     }
 
     private String resolveServiceName(PipelineEntity pipeline) {
-        String fallback = pipeline.getName();
-        if (TextKit.isBlank(fallback)) {
+        if (pipeline == null || pipeline.getId() == null) {
             return "service";
         }
-        String name = fallback.trim()
-                .replaceAll("[^A-Za-z0-9._-]+", "-")
-                .replaceAll("^-+", "")
-                .replaceAll("-+$", "");
-        if (TextKit.isNotBlank(name)) {
-            return name;
-        }
-        return pipeline.getId() == null ? "service" : "pipeline-" + pipeline.getId();
+        return "pipeline-" + pipeline.getId();
     }
 
     private String resolveTargetDir(PipelineEntity pipeline) {
