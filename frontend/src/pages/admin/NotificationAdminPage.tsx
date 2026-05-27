@@ -405,10 +405,10 @@ export default function NotificationAdminPage({
         <Form layout="vertical">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <Form.Item label="名称" required>
-              <Input value={channelForm.name} onChange={(event) => setChannelForm({ ...channelForm, name: event.target.value })} />
+              <Input value={channelForm.name} onChange={(event) => setChannelForm({ ...channelForm, name: event.target.value })} placeholder="例如：部署结束飞书通知" />
             </Form.Item>
             <Form.Item label="通知渠道类型" required>
-              <Select value={channelForm.type} options={[{ label: '飞书', value: 'FEISHU' }]} onChange={(value) => setChannelForm({ ...channelForm, type: value })} />
+              <Select value={channelForm.type} options={[{ label: '飞书', value: 'FEISHU' }]} onChange={(value) => setChannelForm({ ...channelForm, type: value })} placeholder="请选择通知渠道类型" />
             </Form.Item>
           </div>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -417,6 +417,7 @@ export default function NotificationAdminPage({
                 value={channelForm.eventType}
                 options={notificationEventTypeOptions}
                 onChange={(value) => setChannelForm({ ...channelForm, eventType: value })}
+                placeholder="请选择通知类型"
               />
             </Form.Item>
             <Form.Item label="Webhook 配置" required>
@@ -441,7 +442,7 @@ export default function NotificationAdminPage({
             </Form.Item>
           </div>
           <Form.Item label="描述">
-            <Input.TextArea rows={2} value={channelForm.description} onChange={(event) => setChannelForm({ ...channelForm, description: event.target.value })} />
+            <Input.TextArea rows={2} value={channelForm.description} onChange={(event) => setChannelForm({ ...channelForm, description: event.target.value })} placeholder="可选。说明这条通知配置的接收范围或用途。" />
           </Form.Item>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <Form.Item label="通知模板">

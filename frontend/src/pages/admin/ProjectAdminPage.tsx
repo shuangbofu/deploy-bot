@@ -313,13 +313,13 @@ export default function ProjectAdminPage() {
       >
         <Form layout="vertical">
           <Form.Item label="项目名称">
-            <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+            <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="例如：Deploy Bot" />
           </Form.Item>
           <Form.Item label="描述">
-            <Input.TextArea rows={4} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
+            <Input.TextArea rows={4} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="可选。说明这个项目对应的仓库或业务系统。" />
           </Form.Item>
           <Form.Item label="Git 地址">
-            <Input value={form.gitUrl} onChange={(event) => setForm({ ...form, gitUrl: event.target.value })} />
+            <Input value={form.gitUrl} onChange={(event) => setForm({ ...form, gitUrl: event.target.value })} placeholder="例如：git@github.com:team/demo.git" />
           </Form.Item>
           <Form.Item label="Git 认证方式">
             <Radio.Group
@@ -344,7 +344,7 @@ export default function ProjectAdminPage() {
             </>
           ) : null}
           {form.gitAuthType === 'SSH' ? (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-7 text-slate-600">
+            <div className="app-inline-alert app-inline-alert--warning rounded-2xl p-4 text-sm leading-7">
               当前项目将使用系统设置里统一生成的 SSH 密钥对访问 Git 仓库。
               请先到“系统设置”中生成密钥对，并把系统公钥配置到 Git 平台。
               同时请确认这里填写的是 SSH 仓库地址，而不是 HTTP 地址。

@@ -1295,10 +1295,12 @@ const selectedTemplateVariables = useMemo(
                 </Form.Item>
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                   <Form.Item label="项目" required>
-                    <Select value={form.projectId} options={projects.map((item) => ({ label: item.name, value: item.id }))} onChange={(value) => setForm({ ...form, projectId: value, defaultBranch: '' })} placeholder="请选择项目" />
+                    <Select showSearch optionFilterProp="label" value={form.projectId} options={projects.map((item) => ({ label: item.name, value: item.id }))} onChange={(value) => setForm({ ...form, projectId: value, defaultBranch: '' })} placeholder="请选择项目" />
                   </Form.Item>
                   <Form.Item label="模板" required>
                     <Select
+                      showSearch
+                      optionFilterProp="title"
                       value={selectedTemplate?.optionId}
                       options={templateOptions.map((item) => ({ label: renderTemplateOptionLabel(item), value: item.optionId, title: item.name }))}
                       optionLabelProp="title"
@@ -1323,7 +1325,7 @@ const selectedTemplateVariables = useMemo(
                     />
                   </Form.Item>
                   <Form.Item label="默认分支" required>
-                    <Select showSearch loading={branchesLoading} disabled={!form.projectId} value={form.defaultBranch || undefined} placeholder={form.projectId ? '请选择默认分支' : '请先选择项目'} options={branchOptions.map((branch) => ({ label: branch, value: branch }))} onChange={(value) => setForm({ ...form, defaultBranch: value })} />
+                    <Select showSearch optionFilterProp="label" loading={branchesLoading} disabled={!form.projectId} value={form.defaultBranch || undefined} placeholder={form.projectId ? '请选择默认分支' : '请先选择项目'} options={branchOptions.map((branch) => ({ label: branch, value: branch }))} onChange={(value) => setForm({ ...form, defaultBranch: value })} />
                   </Form.Item>
                 </div>
               </Form>
@@ -1334,6 +1336,8 @@ const selectedTemplateVariables = useMemo(
                   {buildRuntimeFieldConfigs.map((item) => requiredEnvironmentTypes.includes(item.type) ? (
                     <Form.Item key={item.type} label={`本机构建 ${item.label} 环境`} required>
                       <Select
+                        showSearch
+                        optionFilterProp="label"
                         allowClear
                         value={form[item.formKey]}
                         options={buildEnvironmentOptionsMap[item.type]}
@@ -1343,15 +1347,15 @@ const selectedTemplateVariables = useMemo(
                     </Form.Item>
                   ) : null)}
                 </div>
-                {requiredEnvironmentTypes.includes('MAVEN') ? <Form.Item label="构建 Maven Settings"><Select allowClear value={form.mavenSettingsId} options={mavenSettingsOptions} onChange={(value) => setForm({ ...form, mavenSettingsId: value })} placeholder={form.mavenEnvironmentId ? '可选。选择后构建时会自动对 mvn 注入 -s settings.xml' : '请先选择 Maven 环境'} disabled={!form.mavenEnvironmentId} /></Form.Item> : null}
+                {requiredEnvironmentTypes.includes('MAVEN') ? <Form.Item label="构建 Maven Settings"><Select showSearch optionFilterProp="label" allowClear value={form.mavenSettingsId} options={mavenSettingsOptions} onChange={(value) => setForm({ ...form, mavenSettingsId: value })} placeholder={form.mavenEnvironmentId ? '可选。选择后构建时会自动对 mvn 注入 -s settings.xml' : '请先选择 Maven 环境'} disabled={!form.mavenEnvironmentId} /></Form.Item> : null}
               </Form>
             </Card> : null}
             {currentStepKey === 'target' ? <Card title="目标主机" className="app-card">
               <Form layout="vertical">
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                  <Form.Item label="目标主机" required><Select value={form.targetHostId} options={hosts.map((item) => ({ label: item.name, value: item.id }))} placeholder="请选择目标主机" onChange={(value) => setForm({ ...form, targetHostId: value, runtimeJavaEnvironmentId: undefined })} /></Form.Item>
+                  <Form.Item label="目标主机" required><Select showSearch optionFilterProp="label" value={form.targetHostId} options={hosts.map((item) => ({ label: item.name, value: item.id }))} placeholder="请选择目标主机" onChange={(value) => setForm({ ...form, targetHostId: value, runtimeJavaEnvironmentId: undefined })} /></Form.Item>
                   <Form.Item label="部署目录" required extra="脚本中可直接使用 $TARGET_DIR。"><Input value={form.targetDir} onChange={(event) => setForm({ ...form, targetDir: event.target.value })} placeholder="例如：/opt/apps/demo" /></Form.Item>
-                  {requiredRuntimeEnvironmentTypes.includes('JAVA') ? <Form.Item label="目标主机运行组件" required><Select allowClear value={form.runtimeJavaEnvironmentId} options={runtimeJavaOptions} onChange={(value) => setForm({ ...form, runtimeJavaEnvironmentId: value })} placeholder="请选择目标主机运行应用时使用的组件环境" /></Form.Item> : null}
+                  {requiredRuntimeEnvironmentTypes.includes('JAVA') ? <Form.Item label="目标主机运行组件" required><Select showSearch optionFilterProp="label" allowClear value={form.runtimeJavaEnvironmentId} options={runtimeJavaOptions} onChange={(value) => setForm({ ...form, runtimeJavaEnvironmentId: value })} placeholder="请选择目标主机运行应用时使用的组件环境" /></Form.Item> : null}
                 </div>
                 {serviceMonitorEnabled ? (
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

@@ -231,10 +231,10 @@ export default function UserAdminPage() {
       >
         <Form layout="vertical">
           <Form.Item label="用户名" required>
-            <Input value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} />
+            <Input value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} placeholder="例如：admin / deployer" />
           </Form.Item>
           <Form.Item label="显示名称" required>
-            <Input value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} />
+            <Input value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} placeholder="例如：系统管理员" />
           </Form.Item>
           <Form.Item label="头像">
             <Space align="start">
@@ -261,6 +261,7 @@ export default function UserAdminPage() {
                 { label: '普通用户', value: 'USER' },
               ]}
               onChange={(value) => setForm({ ...form, role: value })}
+              placeholder="请选择用户角色"
             />
           </Form.Item>
           <Form.Item label="启用状态">

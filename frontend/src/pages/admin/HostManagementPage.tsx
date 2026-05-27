@@ -465,13 +465,13 @@ export default function HostManagementPage() {
       >
         <Form layout="vertical">
           <Form.Item label="主机名称">
-            <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+            <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="例如：测试服务器 / 腾讯云主机" />
           </Form.Item>
           <Form.Item label="主机类型">
-            <Select value={form.type} options={currentHostTypeOptions} onChange={(value) => setForm({ ...form, type: value })} disabled={Boolean(editingHost?.builtIn)} />
+            <Select value={form.type} options={currentHostTypeOptions} onChange={(value) => setForm({ ...form, type: value })} disabled={Boolean(editingHost?.builtIn)} placeholder="请选择主机类型" />
           </Form.Item>
           <Form.Item label="说明">
-            <Input.TextArea rows={3} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
+            <Input.TextArea rows={3} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="可选。说明主机用途、环境或归属系统。" />
           </Form.Item>
           {form.type === 'SSH' ? (
             <>
@@ -479,7 +479,7 @@ export default function HostManagementPage() {
                 <Input value={form.hostname} onChange={(event) => setForm({ ...form, hostname: event.target.value })} placeholder="例如：192.168.1.21" />
               </Form.Item>
               <Form.Item label="SSH 端口">
-                <Input type="number" value={form.port} onChange={(event) => setForm({ ...form, port: Number(event.target.value || 22) })} />
+                <Input type="number" value={form.port} onChange={(event) => setForm({ ...form, port: Number(event.target.value || 22) })} placeholder="默认 22" />
               </Form.Item>
               <Form.Item label="SSH 用户名">
                 <Input value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} placeholder="例如：deploy" />
@@ -489,6 +489,7 @@ export default function HostManagementPage() {
                   value={form.sshAuthType}
                   options={sshAuthTypeOptions}
                   onChange={(value: HostSshAuthType) => setForm({ ...form, sshAuthType: value, sshPassword: '', sshPrivateKey: '', sshPassphrase: '' })}
+                  placeholder="请选择 SSH 认证方式"
                 />
               </Form.Item>
               {form.sshAuthType === 'PASSWORD' ? (
@@ -507,7 +508,7 @@ export default function HostManagementPage() {
                 </>
               ) : null}
               {form.sshAuthType === 'SYSTEM_KEY_PAIR' ? (
-                <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-7 text-slate-600">
+                <div className="app-inline-alert app-inline-alert--warning mb-4 rounded-2xl p-4 text-sm leading-7">
                   当前主机会使用系统设置里的“主机 SSH 密钥对”登录。请先去系统设置生成主机密钥对，再把公钥配置到目标主机的 `authorized_keys`。
                 </div>
               ) : null}

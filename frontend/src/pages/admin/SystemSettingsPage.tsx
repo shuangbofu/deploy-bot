@@ -928,16 +928,16 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
       >
         <Form layout="vertical">
           <Form.Item label="名称" required>
-            <Input value={webhookForm.name} onChange={(event) => setWebhookForm({ ...webhookForm, name: event.target.value })} />
+            <Input value={webhookForm.name} onChange={(event) => setWebhookForm({ ...webhookForm, name: event.target.value })} placeholder="例如：研发群飞书机器人" />
           </Form.Item>
           <Form.Item label="通知渠道类型" required>
-            <Select value={webhookForm.type} options={[{ label: '飞书', value: 'FEISHU' }]} onChange={(value) => setWebhookForm({ ...webhookForm, type: value })} />
+            <Select value={webhookForm.type} options={[{ label: '飞书', value: 'FEISHU' }]} onChange={(value) => setWebhookForm({ ...webhookForm, type: value })} placeholder="请选择通知渠道类型" />
           </Form.Item>
           <Form.Item label="描述">
-            <Input.TextArea rows={2} value={webhookForm.description} onChange={(event) => setWebhookForm({ ...webhookForm, description: event.target.value })} />
+            <Input.TextArea rows={2} value={webhookForm.description} onChange={(event) => setWebhookForm({ ...webhookForm, description: event.target.value })} placeholder="可选。说明 Webhook 对应的群或接收人。" />
           </Form.Item>
           <Form.Item label="Webhook 地址" required>
-            <Input value={webhookForm.webhookUrl} onChange={(event) => setWebhookForm({ ...webhookForm, webhookUrl: event.target.value })} />
+            <Input value={webhookForm.webhookUrl} onChange={(event) => setWebhookForm({ ...webhookForm, webhookUrl: event.target.value })} placeholder="请输入飞书机器人 Webhook 地址" />
           </Form.Item>
           <Form.Item label="签名密钥">
             <Input.Password
@@ -964,16 +964,17 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
       >
         <Form layout="vertical">
           <Form.Item label="模板名称" required>
-            <Input value={templateForm.name} onChange={(event) => setTemplateForm({ ...templateForm, name: event.target.value })} />
+            <Input value={templateForm.name} onChange={(event) => setTemplateForm({ ...templateForm, name: event.target.value })} placeholder="例如：部署结束文本模板" />
           </Form.Item>
           <Form.Item label="描述">
-            <Input.TextArea rows={2} value={templateForm.description} onChange={(event) => setTemplateForm({ ...templateForm, description: event.target.value })} />
+            <Input.TextArea rows={2} value={templateForm.description} onChange={(event) => setTemplateForm({ ...templateForm, description: event.target.value })} placeholder="可选。说明模板适用的通知场景。" />
           </Form.Item>
           <Form.Item label="模板形式" required>
             <Select
               value={templateForm.templateMode}
               options={notificationTemplateModeOptions}
               onChange={(value) => setTemplateForm({ ...templateForm, templateMode: value })}
+              placeholder="请选择模板形式"
             />
           </Form.Item>
           <Form.Item label="启用">
@@ -990,7 +991,7 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
           </Form.Item>
           <Form.Item label="消息模板" required>
             {templateForm.templateMode === 'FEISHU_CARD' ? (
-              <div className="mb-3 rounded-2xl bg-slate-50 px-4 py-3 text-xs leading-6 text-slate-600">
+              <div className="app-inline-alert app-inline-alert--warning mb-3 rounded-2xl px-4 py-3 text-xs leading-6">
                 <div>卡片模式请直接填写飞书 `interactive` 卡片的 JSON 内容。</div>
                 <div>
                   变量仍然可以照常写成 <code>{'{{pipelineName}}'}</code>、<code>{'{{detailUrl}}'}</code> 这样的占位符。
@@ -1007,6 +1008,7 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
               rows={12}
               value={templateForm.messageTemplate}
               onChange={(event) => setTemplateForm({ ...templateForm, messageTemplate: event.target.value })}
+              placeholder="请输入消息模板内容，可使用上方变量。"
             />
           </Form.Item>
         </Form>

@@ -484,13 +484,13 @@ export default function TemplateAdminPage({ mode = 'list' }: { mode?: TemplatePa
           <Card title="基础信息" className="app-card">
             <Form layout="vertical">
               <Form.Item label="模板名称">
-                <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+                <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="例如：Spring Boot Jar 部署" />
               </Form.Item>
               <Form.Item label="归属插件">
                 <Input value={activePluginName || form.pluginId || ''} disabled />
               </Form.Item>
               <Form.Item label="描述">
-                <Input.TextArea rows={3} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
+                <Input.TextArea rows={3} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="可选。说明模板适用的项目类型和部署方式。" />
               </Form.Item>
               <Form.Item label="插件内类型">
                 <Select
@@ -498,6 +498,7 @@ export default function TemplateAdminPage({ mode = 'list' }: { mode?: TemplatePa
                   options={availableTemplateTypeOptions}
                   onChange={(value) => setForm({ ...form, pluginId: routePluginId, templateType: value })}
                   disabled={availableTemplateTypeOptions.length <= 1}
+                  placeholder="请选择插件内类型"
                 />
               </Form.Item>
             </Form>
