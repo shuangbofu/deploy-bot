@@ -37,6 +37,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class ServiceManager {
     private static final Logger log = LoggerFactory.getLogger(ServiceManager.class);
+    private static final Logger heartbeatLog = LoggerFactory.getLogger("top.fusb.deploybot.heartbeat");
     private static final int HEARTBEAT_MISS_THRESHOLD = 3;
     private static final int PRE_DEPLOY_STOP_MAX_RETRIES = 3;
     private static final int DEPLOYMENT_CONFIRM_MAX_RETRIES = 3;
@@ -91,17 +92,17 @@ public class ServiceManager {
         if (services.isEmpty()) {
             return;
         }
-        log.info("开始执行服务心跳刷新，服务数量={}。", services.size());
+        heartbeatLog.info("开始执行服务心跳刷新，服务数量={}。", services.size());
         services.forEach(service -> {
             try {
                 refreshStatus(service);
             } catch (ObjectOptimisticLockingFailureException ex) {
-                log.info("服务 {} 心跳刷新命中乐观锁冲突，说明期间已有更新写入，跳过本次旧快照回写。", service.getId());
+                heartbeatLog.info("服务 {} 心跳刷新命中乐观锁冲突，说明期间已有更新写入，跳过本次旧快照回写。", service.getId());
             } catch (Exception ex) {
-                log.warn("服务 {} 心跳刷新失败：{}", service.getId(), ex.getMessage());
+                heartbeatLog.warn("服务 {} 心跳刷新失败：{}", service.getId(), ex.getMessage());
             }
         });
-        log.info("服务心跳刷新完成。");
+        heartbeatLog.info("服务心跳刷新完成。");
     }
 
     public ServiceEntity findById(Long id) {
@@ -309,7 +310,7 @@ public class ServiceManager {
         Long pid = resolveManagedPid(service);
         Long previousPid = service.getCurrentPid();
         ServiceStatus previousStatus = service.getStatus();
-        log.info(
+        heartbeatLog.info(
                 "服务 {} 开始刷新状态：status={}，currentPid={}，解析后pid={}，pid来源={}，lastDeploymentId={}，lastDeploymentPid={}，heartbeatMissCount={}。",
                 service.getId(),
                 service.getStatus(),
@@ -335,7 +336,7 @@ public class ServiceManager {
             if (missCount >= HEARTBEAT_MISS_THRESHOLD) {
                 service.setStatus(ServiceStatus.STOPPED);
                 service.setActiveSince(null);
-                log.info(
+                heartbeatLog.info(
                         "服务 {} 连续 {} 次心跳未命中，标记为已停止，保留 pid={} 供后续排查。currentPid={}，lastDeploymentId={}，lastDeploymentPid={}。",
                         service.getId(),
                         missCount,
@@ -345,7 +346,7 @@ public class ServiceManager {
                         service.getLastDeployment() == null ? null : service.getLastDeployment().getMonitoredPid()
                 );
             } else {
-                log.info(
+                heartbeatLog.info(
                         "服务 {} 第 {} 次心跳未命中，暂不清理 pid={}。currentPid={}，lastDeploymentId={}，lastDeploymentPid={}。",
                         service.getId(),
                         missCount,

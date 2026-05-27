@@ -8,6 +8,7 @@ import org.springframework.context.event.EventListener;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -60,6 +61,57 @@ public class SchemaMigrationBootstrap {
                 "CREATE UNIQUE INDEX IF NOT EXISTS uk_user_favorite_pipeline ON user_favorite_pipelines(user_id, pipeline_id)"
         );
         statements.forEach(this::executeSilently);
+        dropPipelineNameUniqueConstraints();
+    }
+
+    private void dropPipelineNameUniqueConstraints() {
+        findPipelineNameUniqueConstraintNames().forEach(name -> executeSilently("ALTER TABLE pipelines DROP CONSTRAINT IF EXISTS " + name));
+        findPipelineNameUniqueIndexNames().forEach(name -> executeSilently("DROP INDEX IF EXISTS " + name));
+    }
+
+    private List<String> findPipelineNameUniqueConstraintNames() {
+        try {
+            return jdbcTemplate.queryForList("""
+                    SELECT tc.CONSTRAINT_NAME
+                    FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+                    JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+                      ON tc.CONSTRAINT_SCHEMA = kcu.CONSTRAINT_SCHEMA
+                     AND tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+                     AND tc.TABLE_NAME = kcu.TABLE_NAME
+                    WHERE tc.TABLE_SCHEMA = 'PUBLIC'
+                      AND tc.TABLE_NAME = 'PIPELINES'
+                      AND tc.CONSTRAINT_TYPE = 'UNIQUE'
+                      AND kcu.COLUMN_NAME = 'NAME'
+                    """, String.class);
+        } catch (Exception ex) {
+            log.warn("Failed to inspect pipeline name unique constraints: {}", ex.getMessage());
+            return List.of();
+        }
+    }
+
+    private List<String> findPipelineNameUniqueIndexNames() {
+        try {
+            return jdbcTemplate.query("""
+                    SELECT INDEX_NAME, NON_UNIQUE, COLUMN_NAME
+                    FROM INFORMATION_SCHEMA.INDEX_COLUMNS
+                    WHERE TABLE_SCHEMA = 'PUBLIC'
+                      AND TABLE_NAME = 'PIPELINES'
+                      AND COLUMN_NAME = 'NAME'
+                    """, (rs) -> {
+                List<String> names = new ArrayList<>();
+                while (rs.next()) {
+                    String indexName = rs.getString("INDEX_NAME");
+                    Boolean nonUnique = (Boolean) rs.getObject("NON_UNIQUE");
+                    if (Boolean.FALSE.equals(nonUnique) && indexName != null && !indexName.isBlank()) {
+                        names.add(indexName);
+                    }
+                }
+                return names;
+            });
+        } catch (Exception ex) {
+            log.warn("Failed to inspect pipeline name unique indexes: {}", ex.getMessage());
+            return List.of();
+        }
     }
 
     private void executeSilently(String sql) {

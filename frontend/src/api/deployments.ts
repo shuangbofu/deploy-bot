@@ -17,6 +17,7 @@ export const deploymentsApi = {
     status?: string;
     startTime?: number;
     endTime?: number;
+    pipelineId?: number;
   }) => (await client.get<PageResult<DeploymentSummary>>('/deployments/page', { params })).data,
   listMinePage: async (params: {
     page: number;

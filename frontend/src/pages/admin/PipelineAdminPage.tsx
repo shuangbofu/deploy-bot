@@ -1318,7 +1318,6 @@ const selectedTemplateVariables = useMemo(
                           mavenSettingsId: undefined,
                           runtimeJavaEnvironmentId: undefined,
                           pluginConfig: {},
-                          notificationIds: [],
                         });
                       }}
                     />

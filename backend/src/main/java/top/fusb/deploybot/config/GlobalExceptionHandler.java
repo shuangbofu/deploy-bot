@@ -130,20 +130,19 @@ public class GlobalExceptionHandler {
     }
 
     private String resolveUniqueViolationMessage(String rootMessage) {
-        String normalized = rootMessage == null ? "" : rootMessage.toUpperCase();
-        if (normalized.contains("PUBLIC.PROJECTS") && normalized.contains("(NAME")) {
-            return "项目名称已存在，请换一个名称。";
+        return "数据已存在，唯一约束冲突：" + extractConstraintName(rootMessage);
+    }
+
+    private String extractConstraintName(String rootMessage) {
+        if (rootMessage == null || rootMessage.isBlank()) {
+            return "未识别约束";
         }
-        if (normalized.contains("PUBLIC.HOSTS") && normalized.contains("(NAME")) {
-            return "主机名称已存在，请换一个名称。";
+        int quotedStart = rootMessage.indexOf('"');
+        int quotedEnd = quotedStart >= 0 ? rootMessage.indexOf('"', quotedStart + 1) : -1;
+        if (quotedStart >= 0 && quotedEnd > quotedStart) {
+            return rootMessage.substring(quotedStart + 1, quotedEnd);
         }
-        if (normalized.contains("PUBLIC.TEMPLATES") && normalized.contains("(NAME")) {
-            return "模板名称已存在，请换一个名称。";
-        }
-        if (normalized.contains("PUBLIC.USERS") && normalized.contains("(USERNAME")) {
-            return "用户名已存在，请换一个用户名。";
-        }
-        return "数据已存在，请检查名称或唯一字段是否重复。";
+        return rootMessage.length() > 120 ? rootMessage.substring(0, 120) : rootMessage;
     }
 
     @ExceptionHandler(Exception.class)

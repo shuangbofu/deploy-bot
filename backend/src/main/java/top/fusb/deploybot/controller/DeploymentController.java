@@ -30,6 +30,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @RestController
 @RequestMapping("/api/deployments")
@@ -56,9 +58,10 @@ public class DeploymentController {
             @RequestParam(required = false) String triggeredBy,
             @RequestParam(required = false) DeploymentStatus status,
             @RequestParam(required = false) Long startTime,
-            @RequestParam(required = false) Long endTime
+            @RequestParam(required = false) Long endTime,
+            @RequestParam(required = false) Long pipelineId
     ) {
-        return service.findPage(page, pageSize, projectName, pipelineName, triggeredBy, status, startTime, endTime);
+        return service.findPage(page, pageSize, projectName, pipelineName, triggeredBy, status, startTime, endTime, pipelineId);
     }
 
     @GetMapping("/mine/filter-options")
@@ -119,6 +122,7 @@ public class DeploymentController {
         service.findById(id);
         AuthenticatedUser currentUser = AuthContextHolder.get();
         SseEmitter emitter = new SseEmitter(0L);
+        AtomicBoolean closed = new AtomicBoolean(false);
         Thread thread = new Thread(() -> {
             long currentOffset = Math.max(0L, offset);
             try {
@@ -126,10 +130,15 @@ public class DeploymentController {
                 boolean finished = false;
                 int idleAfterFinished = 0;
                 DeploymentStatus lastStatus = null;
-                while (!finished || idleAfterFinished < 2) {
+                DeploymentProgressCursor lastProgressCursor = null;
+                while ((!finished || idleAfterFinished < 2) && !closed.get()) {
                     DeploymentEntity deployment = service.findById(id);
-                    if (deployment.getStatus() != lastStatus || finished != isFinished(deployment.getStatus())) {
+                    DeploymentProgressCursor progressCursor = DeploymentProgressCursor.from(deployment);
+                    if (deployment.getStatus() != lastStatus
+                            || !Objects.equals(progressCursor, lastProgressCursor)
+                            || finished != isFinished(deployment.getStatus())) {
                         lastStatus = deployment.getStatus();
+                        lastProgressCursor = progressCursor;
                         emitter.send(SseEmitter.event()
                                 .name("deployment")
                                 .data(deployment));
@@ -151,18 +160,26 @@ public class DeploymentController {
                     }
                     Thread.sleep(200L);
                 }
-                emitter.send(SseEmitter.event().name("done").data(Map.of("offset", currentOffset)));
-                emitter.complete();
+                if (!closed.get()) {
+                    emitter.send(SseEmitter.event().name("done").data(Map.of("offset", currentOffset)));
+                    emitter.complete();
+                }
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
             } catch (Exception ex) {
-                emitter.completeWithError(ex);
+                closed.set(true);
             } finally {
                 AuthContextHolder.clear();
             }
         }, "deployment-log-stream-" + id);
         thread.setDaemon(true);
-        emitter.onCompletion(thread::interrupt);
-        emitter.onTimeout(thread::interrupt);
-        emitter.onError(ignored -> thread.interrupt());
+        Runnable closeStream = () -> {
+            closed.set(true);
+            thread.interrupt();
+        };
+        emitter.onCompletion(closeStream);
+        emitter.onTimeout(closeStream);
+        emitter.onError(ignored -> closeStream.run());
         thread.start();
         return emitter;
     }
@@ -171,6 +188,22 @@ public class DeploymentController {
         return status == DeploymentStatus.SUCCESS
                 || status == DeploymentStatus.FAILED
                 || status == DeploymentStatus.STOPPED;
+    }
+
+    private record DeploymentProgressCursor(
+            Integer percent,
+            String stage,
+            Integer current,
+            Integer total
+    ) {
+        private static DeploymentProgressCursor from(DeploymentEntity deployment) {
+            return new DeploymentProgressCursor(
+                    deployment.getProgressPercent(),
+                    deployment.getProgressStage(),
+                    deployment.getProgressCurrent(),
+                    deployment.getProgressTotal()
+            );
+        }
     }
 
     /**

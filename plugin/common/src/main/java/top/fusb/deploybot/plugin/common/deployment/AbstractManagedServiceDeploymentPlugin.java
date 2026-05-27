@@ -48,6 +48,7 @@ public abstract class AbstractManagedServiceDeploymentPlugin extends AbstractDep
         addApplicationArgument(arguments, DEPLOYMENT_ID_ARGUMENT_NAME, valueOf(variables, "deploymentId"));
         addApplicationArgument(arguments, "deploybot.pipeline-id", valueOf(variables, "pipelineId"));
         addApplicationArgument(arguments, "deploybot.pipeline-name", context == null || context.projectContext() == null ? null : context.projectContext().pipelineName());
+        addApplicationArgument(arguments, "deploybot.pipeline-tags", valueOf(variables, "pipelineTags"));
         addApplicationArgument(arguments, "deploybot.project-id", valueOf(variables, "projectId"));
         addApplicationArgument(arguments, "deploybot.project-name", context == null || context.projectContext() == null ? null : context.projectContext().projectName());
         addApplicationArgument(arguments, "deploybot.service-name", context == null || context.serviceContext() == null ? null : context.serviceContext().serviceName());

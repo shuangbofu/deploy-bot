@@ -100,7 +100,7 @@ const LogViewer = forwardRef<LogViewerHandle, LogViewerProps>(function LogViewer
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
     updateScrollButtons(containerRef.current);
-  }, [autoScroll, content]);
+  }, [autoScroll, content, idleHint]);
 
   useLayoutEffect(() => {
     if (!autoScrollAvailable) {

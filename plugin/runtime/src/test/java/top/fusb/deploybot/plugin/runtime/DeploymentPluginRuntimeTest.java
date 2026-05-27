@@ -152,6 +152,7 @@ class DeploymentPluginRuntimeTest {
         deployVariables.put("javaOpts", "-Xms256m -Xmx512m");
         deployVariables.put("javaSystemProperties", "-Dfile.encoding=UTF-8");
         deployVariables.put("applicationArgs", "--server.port=8080");
+        deployVariables.put("pipelineTags", "测试,后端");
         PluginVariableAssemblyResult deployResult = runtime.assembleVariables(new PluginVariableAssemblyContext(
                 PluginVariableAssemblyPhase.DEPLOY,
                 "springboot-deployment",
@@ -173,6 +174,7 @@ class DeploymentPluginRuntimeTest {
         assertTrue(deployResult.variables().get("startCommand").contains("< /dev/null"));
         assertTrue(deployResult.variables().get("startCommand").contains("--spring.profiles.active=test"));
         assertTrue(deployResult.variables().get("startCommand").contains("--deploybot.pipeline-name='部署平台'"));
+        assertTrue(deployResult.variables().get("startCommand").contains("--deploybot.pipeline-tags='测试,后端'"));
         assertTrue(deployResult.variables().get("startCommand").contains("--server.port=8080"));
         assertEquals(deployResult.variables().get("startCommand"), deployResult.variables().get("START_COMMAND"));
     }

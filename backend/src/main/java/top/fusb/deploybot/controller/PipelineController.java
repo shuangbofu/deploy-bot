@@ -31,6 +31,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @RestController
 @RequestMapping("/api/pipelines")
@@ -70,11 +71,12 @@ public class PipelineController {
         service.findHallSummaries();
         AuthenticatedUser currentUser = AuthContextHolder.get();
         SseEmitter emitter = new SseEmitter(0L);
+        AtomicBoolean closed = new AtomicBoolean(false);
         Thread thread = new Thread(() -> {
             String lastSignature = null;
             try {
                 AuthContextHolder.set(currentUser);
-                while (!Thread.currentThread().isInterrupted()) {
+                while (!Thread.currentThread().isInterrupted() && !closed.get()) {
                     List<PipelineHallSummary> summaries = service.findHallSummaries();
                     String nextSignature = hallSignature(summaries);
                     Long nextVersion = (long) nextSignature.hashCode();
@@ -92,15 +94,19 @@ public class PipelineController {
             } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
             } catch (Exception ex) {
-                emitter.completeWithError(ex);
+                closed.set(true);
             } finally {
                 AuthContextHolder.clear();
             }
         }, "pipeline-hall-stream");
         thread.setDaemon(true);
-        emitter.onCompletion(thread::interrupt);
-        emitter.onTimeout(thread::interrupt);
-        emitter.onError(ignored -> thread.interrupt());
+        Runnable closeStream = () -> {
+            closed.set(true);
+            thread.interrupt();
+        };
+        emitter.onCompletion(closeStream);
+        emitter.onTimeout(closeStream);
+        emitter.onError(ignored -> closeStream.run());
         thread.start();
         return emitter;
     }

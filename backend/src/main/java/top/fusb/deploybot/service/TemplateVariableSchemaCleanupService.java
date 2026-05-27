@@ -35,6 +35,7 @@ public class TemplateVariableSchemaCleanupService {
             "projectName",
             "pipelineId",
             "pipelineName",
+            "pipelineTags",
             "serviceName",
             "targetDir",
             "workspaceRoot",

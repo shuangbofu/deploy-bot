@@ -237,7 +237,8 @@ public class DeploymentService {
             String triggeredBy,
             DeploymentStatus status,
             Long startTime,
-            Long endTime
+            Long endTime,
+            Long pipelineId
     ) {
         requireCurrentUser();
         Page<DeploymentEntity> result = deploymentRepository.findAll((root, query, cb) -> {
@@ -249,6 +250,9 @@ public class DeploymentService {
             }
             if (TextKit.isNotBlank(pipelineName)) {
                 predicates.add(cb.equal(pipelineJoin.get("name"), pipelineName));
+            }
+            if (pipelineId != null) {
+                predicates.add(cb.equal(pipelineJoin.get("id"), pipelineId));
             }
             if (TextKit.isNotBlank(triggeredBy)) {
                 String pattern = "%" + triggeredBy.trim().toLowerCase() + "%";
@@ -365,6 +369,7 @@ public class DeploymentService {
         variables.put("projectName", pipeline.getProject().getName());
         variables.put("pipelineId", pipeline.getId() == null ? "" : pipeline.getId().toString());
         variables.put("pipelineName", pipeline.getName());
+        variables.put("pipelineTags", serializePipelineTags(pipeline));
         variables.put("serviceName", resolveServiceName(pipeline));
         variables.put("targetDir", resolveTargetDir(pipeline));
         putPluginConfigVariables(variables, pipeline);
@@ -1021,6 +1026,7 @@ public class DeploymentService {
         variables.put("projectName", pipeline.getProject().getName());
         variables.put("pipelineId", pipeline.getId() == null ? "" : pipeline.getId().toString());
         variables.put("pipelineName", pipeline.getName());
+        variables.put("pipelineTags", serializePipelineTags(pipeline));
         variables.put("serviceName", resolveServiceName(pipeline));
         variables.put("targetDir", resolveTargetDir(pipeline));
         putPluginConfigVariables(variables, pipeline);
@@ -1437,6 +1443,14 @@ public class DeploymentService {
     private String resolveTargetDir(PipelineEntity pipeline) {
         String targetDir = TextKit.trimToNull(pipeline == null ? null : pipeline.getTargetDir());
         return targetDir == null ? "" : targetDir;
+    }
+
+    private String serializePipelineTags(PipelineEntity pipeline) {
+        List<String> tags = pipeline == null || pipeline.getTags() == null ? List.of() : pipeline.getTags();
+        return String.join(",", tags.stream()
+                .filter(TextKit::isNotBlank)
+                .map(String::trim)
+                .toList());
     }
 
     private void putPluginConfigVariables(Map<String, String> variables, PipelineEntity pipeline) {
