@@ -32,6 +32,7 @@ export default function DeploymentDetailPage({ scope }: Props) {
   const [logLoading, setLogLoading] = useState(true);
   const [logOffset, setLogOffset] = useState(0);
   const [lastLogUpdateAt, setLastLogUpdateAt] = useState(() => Date.now());
+  const [logStreamClosing, setLogStreamClosing] = useState(false);
   const [plugins, setPlugins] = useState<DeploymentPluginDefinitionSummary[]>([]);
   const [tick, setTick] = useState(() => Date.now());
   const contentRef = useRef<HTMLDivElement | null>(null);
@@ -84,7 +85,7 @@ export default function DeploymentDetailPage({ scope }: Props) {
 
   useDeploymentLogStream({
     deploymentId,
-    enabled: Boolean(deployment?.status && ACTIVE_DEPLOYMENT_STATUSES.includes(deployment.status)),
+    enabled: Boolean(deploymentId && (deployment?.status && ACTIVE_DEPLOYMENT_STATUSES.includes(deployment.status) || logStreamClosing)),
     offset: logOffset,
     onLog: (payload) => {
       if (payload.content) {
@@ -95,11 +96,13 @@ export default function DeploymentDetailPage({ scope }: Props) {
         setLogOffset(payload.offset);
       }
       if (payload.finished) {
+        setLogStreamClosing(true);
         loadDeploymentDetail({ silent: true }).catch(() => undefined);
       }
     },
     onDeployment: setDeployment,
     onDone: () => {
+      setLogStreamClosing(false);
       loadDeploymentDetail({ silent: true }).catch(() => undefined);
       loadDeploymentLog({ silent: true }).catch(() => undefined);
     },

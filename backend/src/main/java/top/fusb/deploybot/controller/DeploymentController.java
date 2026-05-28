@@ -131,7 +131,7 @@ public class DeploymentController {
                 int idleAfterFinished = 0;
                 DeploymentStatus lastStatus = null;
                 DeploymentProgressCursor lastProgressCursor = null;
-                while ((!finished || idleAfterFinished < 2) && !closed.get()) {
+                while ((!finished || idleAfterFinished < 10) && !closed.get()) {
                     DeploymentEntity deployment = service.findById(id);
                     DeploymentProgressCursor progressCursor = DeploymentProgressCursor.from(deployment);
                     if (deployment.getStatus() != lastStatus
@@ -156,7 +156,7 @@ public class DeploymentController {
                     }
                     finished = chunk.finished();
                     if (finished) {
-                        idleAfterFinished++;
+                        idleAfterFinished = chunk.content() != null && !chunk.content().isEmpty() ? 0 : idleAfterFinished + 1;
                     }
                     Thread.sleep(200L);
                 }

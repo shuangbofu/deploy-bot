@@ -56,18 +56,39 @@ const normalizeTerminalLogLines = (content: string) => {
 
 const ERROR_LINE_PATTERN = /(error|failed|fatal|exception|denied|refused|timed out|BUILD FAILURE|npm ERR|认证失败|失败|报错|错误)/i;
 
-const buildLogAnchors = (lines: string[]) => lines
-  .map((line, index) => ({ line, index, isError: ERROR_LINE_PATTERN.test(line) }))
-  .filter(({ line, isError }) => /^\[步骤\s*\d+\/\d+]/.test(line)
-    || /^\[完成]/.test(line)
-    || /^\[系统].*(构建完成|发布阶段|部署失败|启动观察未通过|服务检测超时)/.test(line)
-    || isError)
-  .slice(-18)
-  .map(({ line, index, isError }) => ({
+const STACK_TRACE_LINE_PATTERN = /^\s*(at\s|Caused by:|Suppressed:|\.\.\. \d+ more)/;
+
+const isFlowAnchorLine = (line: string) => /^\[步骤\s*\d+\/\d+]/.test(line)
+  || /^\[完成]/.test(line)
+  || /^\[系统].*(构建完成|发布阶段|部署失败|启动观察未通过|服务检测超时|部署执行异常)/.test(line);
+
+const isErrorAnchorLine = (line: string) => {
+  if (STACK_TRACE_LINE_PATTERN.test(line)) {
+    return false;
+  }
+  return /^\[系统].*(失败|异常|错误|超时)/.test(line)
+    || /^npm ERR/i.test(line)
+    || /\b(BUILD FAILURE|fatal:|Error:|Exception:)\b/i.test(line);
+};
+
+const buildLogAnchors = (lines: string[]) => {
+  const flowAnchors = lines
+    .map((line, index) => ({ line, index, isError: false }))
+    .filter(({ line }) => isFlowAnchorLine(line));
+  const errorAnchors = lines
+    .map((line, index) => ({ line, index, isError: true }))
+    .filter(({ line }) => isErrorAnchorLine(line))
+    .slice(-8);
+  return [...flowAnchors, ...errorAnchors]
+    .sort((left, right) => left.index - right.index)
+    .filter((item, index, source) => index === 0 || item.index !== source[index - 1].index)
+    .slice(-24)
+    .map(({ line, index, isError }) => ({
     index,
     level: isError ? 'error' as const : 'normal' as const,
     label: line.replace(/^\[系统]\s*\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\s*/, '[系统] ').slice(0, 34),
   }));
+};
 
 /**
  * 日志查看器。

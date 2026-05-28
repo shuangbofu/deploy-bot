@@ -771,6 +771,25 @@ body {
   box-shadow: none;
 }
 
+.ant-btn-primary {
+  border-color: #102542 !important;
+  background: #102542 !important;
+  color: #ffffff !important;
+  box-shadow: 0 8px 18px rgba(16, 37, 66, 0.16);
+}
+
+.ant-btn-primary:hover,
+.ant-btn-primary:focus {
+  border-color: #173055 !important;
+  background: #173055 !important;
+  color: #ffffff !important;
+}
+
+.ant-btn-primary:active {
+  border-color: #0b1a2f !important;
+  background: #0b1a2f !important;
+}
+
 .dark .ant-btn-default {
   border-color: rgba(71, 85, 105, 0.9);
   background: #111c2f;
@@ -4846,8 +4865,6 @@ body {
 
 .log-line-error {
   color: #fca5a5;
-  background: rgba(127, 29, 29, 0.24);
-  border-radius: 8px;
   padding: 0 6px;
 }
 
@@ -6078,6 +6095,68 @@ body {
   border-top-color: rgba(51, 65, 85, 0.78);
 }
 
+.ant-modal-confirm .ant-modal-confirm-btns .ant-btn,
+.ant-popconfirm-buttons .ant-btn {
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.ant-modal-confirm .ant-modal-confirm-btns .ant-btn-default,
+.ant-popconfirm-buttons .ant-btn-default {
+  border-color: #cbd5e1 !important;
+  background: #ffffff !important;
+  color: #173055 !important;
+}
+
+.ant-modal-confirm .ant-modal-confirm-btns .ant-btn-default:hover,
+.ant-popconfirm-buttons .ant-btn-default:hover {
+  border-color: #94a3b8 !important;
+  background: #f8fafc !important;
+  color: #102542 !important;
+}
+
+.ant-modal-confirm .ant-modal-confirm-btns .ant-btn-primary,
+.ant-popconfirm-buttons .ant-btn-primary {
+  border-color: #102542 !important;
+  background: #102542 !important;
+  color: #ffffff !important;
+}
+
+.ant-modal-confirm .ant-modal-confirm-btns .ant-btn-primary:hover,
+.ant-popconfirm-buttons .ant-btn-primary:hover {
+  border-color: #173055 !important;
+  background: #173055 !important;
+  color: #ffffff !important;
+}
+
+.dark .ant-modal-confirm .ant-modal-confirm-btns .ant-btn-default,
+.dark .ant-popconfirm-buttons .ant-btn-default {
+  border-color: rgba(71, 85, 105, 0.9) !important;
+  background: rgba(30, 41, 59, 0.82) !important;
+  color: #d8e3f0 !important;
+}
+
+.dark .ant-modal-confirm .ant-modal-confirm-btns .ant-btn-default:hover,
+.dark .ant-popconfirm-buttons .ant-btn-default:hover {
+  border-color: rgba(100, 116, 139, 0.9) !important;
+  background: rgba(51, 65, 85, 0.92) !important;
+  color: #e2e8f0 !important;
+}
+
+.dark .ant-modal-confirm .ant-modal-confirm-btns .ant-btn-primary,
+.dark .ant-popconfirm-buttons .ant-btn-primary {
+  border-color: #2563eb !important;
+  background: #2563eb !important;
+  color: #ffffff !important;
+}
+
+.dark .ant-modal-confirm .ant-modal-confirm-btns .ant-btn-primary:hover,
+.dark .ant-popconfirm-buttons .ant-btn-primary:hover {
+  border-color: #1d4ed8 !important;
+  background: #1d4ed8 !important;
+  color: #ffffff !important;
+}
+
 .dark .ant-popover-inner {
   border: 1px solid rgba(71, 85, 105, 0.78);
   background: #111c2f;
@@ -6126,6 +6205,44 @@ html.dark .ant-notification-notice-close,
 body.dark .ant-notification-notice-close,
 .dark .ant-notification-notice-close {
   color: #cbd5e1 !important;
+}
+
+.ant-message-notice-content .ant-btn-primary,
+.ant-notification-notice .ant-btn-primary {
+  border-color: #102542 !important;
+  background: #102542 !important;
+  color: #ffffff !important;
+}
+
+.ant-message-notice-content .ant-btn-primary:hover,
+.ant-notification-notice .ant-btn-primary:hover {
+  border-color: #173055 !important;
+  background: #173055 !important;
+  color: #ffffff !important;
+}
+
+.ant-message-notice-content a,
+.ant-notification-notice a {
+  color: #1d4ed8;
+}
+
+.dark .ant-message-notice-content .ant-btn-primary,
+.dark .ant-notification-notice .ant-btn-primary {
+  border-color: #2563eb !important;
+  background: #2563eb !important;
+  color: #ffffff !important;
+}
+
+.dark .ant-message-notice-content .ant-btn-primary:hover,
+.dark .ant-notification-notice .ant-btn-primary:hover {
+  border-color: #1d4ed8 !important;
+  background: #1d4ed8 !important;
+  color: #ffffff !important;
+}
+
+.dark .ant-message-notice-content a,
+.dark .ant-notification-notice a {
+  color: #93c5fd;
 }
 
 .dark .ant-dropdown-menu {
