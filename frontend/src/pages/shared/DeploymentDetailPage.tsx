@@ -215,7 +215,7 @@ export default function DeploymentDetailPage({ scope }: Props) {
               <Button danger>停止部署</Button>
             </Popconfirm>
           ) : null,
-          <RefreshIconButton key="refresh" type="primary" onClick={() => {
+          <RefreshIconButton key="refresh" onClick={() => {
             loadDeploymentDetail().catch(() => message.error('刷新详情失败'));
             loadDeploymentLog().catch(() => message.error('刷新日志失败'));
           }} />,

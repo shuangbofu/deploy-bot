@@ -579,9 +579,19 @@ public class DeploymentService {
         if (!missingItems.isEmpty()) {
             throw new BusinessException(
                     ErrorSubCode.PIPELINE_CONFIG_INCOMPLETE,
-                    "流水线配置不完整，请先补充：" + missingItems.stream().map(DeploymentPrecheckMissingItem::code).collect(java.util.stream.Collectors.joining("、"))
+                    resolvePipelineUnavailableMessage(missingItems)
             );
         }
+    }
+
+    private String resolvePipelineUnavailableMessage(List<DeploymentPrecheckMissingItem> missingItems) {
+        return missingItems.stream()
+                .filter(item -> "PIPELINE_LOCKED".equals(item.code()))
+                .findFirst()
+                .map(item -> TextKit.isBlank(item.label()) ? "流水线已锁定，暂时不能部署。" : "流水线已锁定：" + item.label())
+                .orElseGet(() -> "流水线配置不完整，请先补充：" + missingItems.stream()
+                        .map(DeploymentPrecheckMissingItem::code)
+                        .collect(java.util.stream.Collectors.joining("、")));
     }
 
     private List<DeploymentPrecheckMissingItem> collectPipelineMissingItems(PipelineEntity pipeline) {
@@ -589,6 +599,9 @@ public class DeploymentService {
         if (pipeline == null) {
             missingItems.add(new DeploymentPrecheckMissingItem("PIPELINE", null, null));
         } else {
+            if (isPipelineLockedNow(pipeline)) {
+                missingItems.add(new DeploymentPrecheckMissingItem("PIPELINE_LOCKED", buildPipelineLockWindowText(pipeline), TextKit.trimToNull(pipeline.getLockReason())));
+            }
             if (pipeline.getProject() == null) {
                 missingItems.add(new DeploymentPrecheckMissingItem("PROJECT", null, null));
             }
@@ -611,6 +624,25 @@ public class DeploymentService {
             }
         }
         return missingItems;
+    }
+
+    private boolean isPipelineLockedNow(PipelineEntity pipeline) {
+        if (pipeline == null || !Boolean.TRUE.equals(pipeline.getLocked())) {
+            return false;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime startAt = pipeline.getLockStartAt();
+        LocalDateTime endAt = pipeline.getLockEndAt();
+        return (startAt == null || !now.isBefore(startAt)) && (endAt == null || now.isBefore(endAt));
+    }
+
+    private String buildPipelineLockWindowText(PipelineEntity pipeline) {
+        if (pipeline == null || (pipeline.getLockStartAt() == null && pipeline.getLockEndAt() == null)) {
+            return null;
+        }
+        String start = pipeline.getLockStartAt() == null ? "立即" : pipeline.getLockStartAt().toString();
+        String end = pipeline.getLockEndAt() == null ? "长期" : pipeline.getLockEndAt().toString();
+        return start + " 至 " + end;
     }
 
     private void validateRequiredRuntimeEnvironments(PipelineEntity pipeline, List<DeploymentPrecheckMissingItem> missingItems) {

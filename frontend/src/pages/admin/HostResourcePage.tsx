@@ -91,7 +91,7 @@ export default function HostResourcePage() {
         extra={(
           <Space>
             <Button onClick={() => navigate('/admin/hosts')}>返回主机</Button>
-            <RefreshIconButton type="primary" loading={loading} onClick={() => loadResources().catch((error) => message.error(error?.response?.data?.message || '刷新主机资源失败'))} />
+            <RefreshIconButton loading={loading} onClick={() => loadResources().catch((error) => message.error(error?.response?.data?.message || '刷新主机资源失败'))} />
           </Space>
         )}
       />

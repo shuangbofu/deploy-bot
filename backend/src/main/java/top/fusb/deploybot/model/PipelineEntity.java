@@ -21,6 +21,7 @@ import top.fusb.deploybot.notification.dto.NotificationBinding;
 
 import java.util.List;
 import java.util.Map;
+import java.time.LocalDateTime;
 
 /**
  * 流水线是平台最核心的可执行对象。
@@ -103,6 +104,20 @@ public class PipelineEntity {
     @Convert(converter = StringListJsonConverter.class)
     @Column(name = "important_tags_json", length = 1000)
     private List<String> importantTags;
+
+    /** 管理员临时锁定后，普通用户不可触发部署。 */
+    @Column(name = "locked")
+    private Boolean locked = false;
+
+    /** 流水线锁定原因。 */
+    @Column(name = "lock_reason", length = 1000)
+    private String lockReason;
+
+    /** 锁定开始时间；为空表示立即生效。 */
+    private LocalDateTime lockStartAt;
+
+    /** 锁定结束时间；为空表示长期锁定。 */
+    private LocalDateTime lockEndAt;
 
     /** 本机构建 Java 环境。 */
     @ManyToOne(fetch = FetchType.EAGER)

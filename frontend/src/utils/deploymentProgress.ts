@@ -13,6 +13,8 @@ const PROGRESS_STAGE_LABEL: Record<string, string> = {
 
 const FINISHED_PROGRESS_LABEL: Partial<Record<DeploymentStatus, string>> = {
   SUCCESS: '部署完成',
+  FAILED: '部署失败',
+  STOPPED: '已取消',
   PENDING: '待执行',
 };
 
@@ -42,7 +44,7 @@ export function getDeploymentProgressLabel(
   progressCurrent?: number | null,
   progressTotal?: number | null,
 ) {
-  if (status === 'SUCCESS' || status === 'PENDING' || !status) {
+  if (status === 'SUCCESS' || status === 'FAILED' || status === 'STOPPED' || status === 'PENDING' || !status) {
     return status ? (FINISHED_PROGRESS_LABEL[status] || `${progress}%`) : `${progress}%`;
   }
   if (status === 'RUNNING' && progressStage === 'STARTUP') {

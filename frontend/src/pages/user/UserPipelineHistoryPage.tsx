@@ -98,7 +98,7 @@ export default function UserPipelineHistoryPage({
         description="查看当前流水线的部署历史和部署结果。"
         extra={[
           <Button key="back" onClick={() => navigate(basePath)}>返回流水线大厅</Button>,
-          <RefreshIconButton key="refresh" type="primary" onClick={() => loadDeployments().catch(() => message.error('刷新失败'))} />,
+          <RefreshIconButton key="refresh" onClick={() => loadDeployments().catch(() => message.error('刷新失败'))} />,
         ]}
       />
       <div className="app-page-scroll">

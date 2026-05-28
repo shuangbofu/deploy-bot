@@ -351,6 +351,14 @@ export interface PipelineSummary {
   tags?: string[];
   /** 重要标签，用于在标题前突出展示。 */
   importantTags?: string[];
+  /** 是否被管理员锁定。 */
+  locked?: boolean | null;
+  /** 锁定原因。 */
+  lockReason?: string | null;
+  /** 锁定开始时间。 */
+  lockStartAt?: string | null;
+  /** 锁定结束时间。 */
+  lockEndAt?: string | null;
 }
 
 export interface PipelineHallSummary {
@@ -362,12 +370,17 @@ export interface PipelineHallSummary {
   templateType?: string | null;
   tags?: string[] | null;
   importantTags?: string[] | null;
+  locked?: boolean | null;
+  lockReason?: string | null;
+  lockStartAt?: string | null;
+  lockEndAt?: string | null;
   latestDeploymentId?: number | null;
   latestDeploymentOrder?: number | null;
   latestStatus?: DeploymentStatus | null;
   latestBranchName?: string | null;
   latestTriggeredBy?: string | null;
   latestTriggeredByDisplayName?: string | null;
+  latestTriggeredByAvatar?: string | null;
   latestCreatedAt?: string | null;
   latestStartedAt?: string | null;
   latestFinishedAt?: string | null;

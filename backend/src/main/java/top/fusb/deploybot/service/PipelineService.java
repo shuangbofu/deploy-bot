@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.dto.PipelineBranchOption;
 import top.fusb.deploybot.dto.PipelineHallSummary;
+import top.fusb.deploybot.dto.PipelineLockRequest;
 import top.fusb.deploybot.dto.PipelineRequest;
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorSubCode;
@@ -64,17 +65,20 @@ public class PipelineService {
     private final ServicePidHistoryRepository servicePidHistoryRepository;
     private final PipelineTemplateResolverService pipelineTemplateResolverService;
 
+    @Transactional
     public List<PipelineEntity> findAll() {
-        return pipelineRepository.findAll();
+        return normalizeLockStates(pipelineRepository.findAll());
     }
 
+    @Transactional
     public PipelineEntity findById(Long id) {
-        return pipelineRepository.findById(id)
-                .orElseThrow(() -> new BusinessException(ErrorSubCode.PIPELINE_NOT_FOUND));
+        return normalizeLockState(pipelineRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.PIPELINE_NOT_FOUND)));
     }
 
+    @Transactional
     public List<PipelineHallSummary> findHallSummaries() {
-        return buildHallSummaries(pipelineRepository.findAll(Sort.by(Sort.Order.desc("id"))));
+        return buildHallSummaries(normalizeLockStates(pipelineRepository.findAll(Sort.by(Sort.Order.desc("id")))));
     }
 
     public List<PipelineHallSummary> findHallSummariesByIds(List<Long> pipelineIds) {
@@ -88,7 +92,7 @@ public class PipelineService {
             return List.of();
         }
         return buildHallSummaries(
-                pipelineRepository.findAllById(requestedIds).stream()
+                normalizeLockStates(pipelineRepository.findAllById(requestedIds)).stream()
                         .sorted(Comparator.comparing(PipelineEntity::getId).reversed())
                         .toList()
         );
@@ -113,12 +117,17 @@ public class PipelineService {
                             pipeline.getTemplateTypeSnapshot(),
                             pipeline.getTags() == null ? List.of() : pipeline.getTags(),
                             pipeline.getImportantTags() == null ? List.of() : pipeline.getImportantTags(),
+                            pipeline.getLocked(),
+                            pipeline.getLockReason(),
+                            pipeline.getLockStartAt(),
+                            pipeline.getLockEndAt(),
                             latestDeployment == null ? null : latestDeployment.getId(),
                             latestDeploymentOrder,
                             latestDeployment == null || latestDeployment.getStatus() == null ? null : latestDeployment.getStatus().name(),
                             latestDeployment == null ? null : latestDeployment.getBranchName(),
                             latestDeployment == null ? null : latestDeployment.getTriggeredBy(),
                             latestDeployment == null ? null : latestDeployment.getTriggeredByDisplayName(),
+                            latestDeployment == null ? null : resolveAvatar(latestDeployment.getTriggeredBy()),
                             latestDeployment == null ? null : latestDeployment.getCreatedAt(),
                             latestDeployment == null ? null : latestDeployment.getStartedAt(),
                             latestDeployment == null ? null : latestDeployment.getFinishedAt(),
@@ -186,6 +195,26 @@ public class PipelineService {
                 .ifPresent(userFavoritePipelineRepository::delete);
     }
 
+    @Transactional
+    public PipelineEntity lock(Long id, PipelineLockRequest request) {
+        PipelineEntity entity = findById(id);
+        entity.setLocked(true);
+        entity.setLockReason(TextKit.trimToNull(request == null ? null : request.reason()));
+        entity.setLockStartAt(request == null ? null : request.startAt());
+        entity.setLockEndAt(request == null ? null : request.endAt());
+        return pipelineRepository.save(entity);
+    }
+
+    @Transactional
+    public PipelineEntity unlock(Long id) {
+        PipelineEntity entity = findById(id);
+        entity.setLocked(false);
+        entity.setLockReason(null);
+        entity.setLockStartAt(null);
+        entity.setLockEndAt(null);
+        return pipelineRepository.save(entity);
+    }
+
     private top.fusb.deploybot.model.DeploymentEntity enrichTriggeredByDisplayName(top.fusb.deploybot.model.DeploymentEntity entity) {
         if (entity == null) {
             return null;
@@ -202,6 +231,15 @@ public class PipelineService {
         return userRepository.findByUsername(username)
                 .map(item -> TextKit.isBlank(item.getDisplayName()) ? item.getUsername() : item.getDisplayName())
                 .orElse(username);
+    }
+
+    private String resolveAvatar(String username) {
+        if (TextKit.isBlank(username)) {
+            return null;
+        }
+        return userRepository.findByUsername(username)
+                .map(top.fusb.deploybot.model.UserEntity::getAvatar)
+                .orElse(null);
     }
 
     private Set<Long> findFavoritePipelineIdSet(List<Long> pipelineIds) {
@@ -223,7 +261,7 @@ public class PipelineService {
             Long hostId,
             List<String> tags
     ) {
-        return PageResult.of(pipelineRepository.findAll((root, query, cb) -> {
+        var result = pipelineRepository.findAll((root, query, cb) -> {
             List<jakarta.persistence.criteria.Predicate> predicates = new java.util.ArrayList<>();
             if (TextKit.isNotBlank(keyword)) {
                 String pattern = "%" + keyword.trim().toLowerCase() + "%";
@@ -250,7 +288,31 @@ public class PipelineService {
                 }
             }
             return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
-        }, PageRequest.of(Math.max(0, page - 1), Math.max(1, Math.min(100, pageSize)), Sort.by(Sort.Order.desc("id")))));
+        }, PageRequest.of(Math.max(0, page - 1), Math.max(1, Math.min(100, pageSize)), Sort.by(Sort.Order.desc("id"))));
+        return new PageResult<>(
+                normalizeLockStates(result.getContent()),
+                result.getTotalElements(),
+                result.getNumber() + 1,
+                result.getSize()
+        );
+    }
+
+    private List<PipelineEntity> normalizeLockStates(List<PipelineEntity> pipelines) {
+        return pipelines.stream().map(this::normalizeLockState).toList();
+    }
+
+    private PipelineEntity normalizeLockState(PipelineEntity pipeline) {
+        if (pipeline == null || !Boolean.TRUE.equals(pipeline.getLocked()) || pipeline.getLockEndAt() == null) {
+            return pipeline;
+        }
+        if (LocalDateTime.now().isBefore(pipeline.getLockEndAt())) {
+            return pipeline;
+        }
+        pipeline.setLocked(false);
+        pipeline.setLockReason(null);
+        pipeline.setLockStartAt(null);
+        pipeline.setLockEndAt(null);
+        return pipelineRepository.save(pipeline);
     }
 
     public List<String> findAllTags() {

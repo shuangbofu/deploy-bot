@@ -1,7 +1,9 @@
-import type { CSSProperties } from 'react';
+import type { CSSProperties, Key } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { EllipsisOutlined } from '@ant-design/icons';
-import { Button, Card, Dropdown, Form, Input, Modal, Select, Space, Steps, Table, Tag, message } from 'antd';
+import { LockSimple } from '@phosphor-icons/react';
+import { Button, Card, DatePicker, Dropdown, Form, Input, Modal, Select, Space, Steps, Table, Tag, message } from 'antd';
+import dayjs from 'dayjs';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { deploymentPluginsApi } from '../../api/deploymentPlugins';
 import { hostsApi } from '../../api/hosts';
@@ -19,6 +21,7 @@ import RefreshIconButton from '../../components/RefreshIconButton';
 import PipelineIcon from '../../components/PipelineIcon';
 import PipelineNameWithTags from '../../components/PipelineNameWithTags';
 import { copyText } from '../../utils/clipboard';
+import { formatDateTime } from '../../utils/datetime';
 import { filterDisplayTags } from '../../utils/pipelineDisplay';
 import { getStableTagColor, getStableTagDarkColor, PHASE_LABEL_MAP, sortByPhase, sortTagNames } from '../../utils/tagColors';
 import type {
@@ -45,6 +48,23 @@ const phaseClassName = (phase?: string | null) => `app-phase-tag--${phase || 'sh
 const phaseLabelClassName = (phase?: string | null) => `app-phase-label--${phase || 'shared'}`;
 
 const PIPELINE_TABLE_SCROLL_LEFT_KEY = 'deploy-bot:pipeline-table-scroll-left';
+
+const lockWindowText = (startAt?: string | null, endAt?: string | null) => {
+  if (!startAt && !endAt) {
+    return '长期锁定';
+  }
+  return `${startAt ? formatDateTime(startAt) : '立即'} 至 ${endAt ? formatDateTime(endAt) : '长期'}`;
+};
+
+const toLocalDateTimeString = (value: dayjs.Dayjs) => value.format('YYYY-MM-DDTHH:mm:ss');
+
+function PipelineLockIcon({ reason, startAt, endAt }: { reason?: string | null; startAt?: string | null; endAt?: string | null }) {
+  return (
+    <span className="pipeline-lock-icon" title={`${reason || '流水线已锁定'}｜${lockWindowText(startAt, endAt)}`}>
+      <LockSimple size={14} weight="fill" />
+    </span>
+  );
+}
 
 interface PipelineFormState {
   name: string;
@@ -441,6 +461,14 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
   const [duplicateSource, setDuplicateSource] = useState<PipelineSummary>();
   const [duplicateName, setDuplicateName] = useState('');
   const [duplicating, setDuplicating] = useState(false);
+  const [lockModalOpen, setLockModalOpen] = useState(false);
+  const [lockingPipeline, setLockingPipeline] = useState<PipelineSummary>();
+  const [batchLockPipelineIds, setBatchLockPipelineIds] = useState<number[]>([]);
+  const [selectedPipelineIds, setSelectedPipelineIds] = useState<Key[]>([]);
+  const [lockReason, setLockReason] = useState('');
+  const [lockStartAt, setLockStartAt] = useState('');
+  const [lockEndAt, setLockEndAt] = useState('');
+  const [locking, setLocking] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [keyword, setKeyword] = useState('');
   const [projectFilter, setProjectFilter] = useState<number>();
@@ -740,6 +768,61 @@ export default function PipelineAdminPage({ mode = 'list' }: { mode?: PipelinePa
     } finally {
       setDuplicating(false);
     }
+  };
+
+  const openLock = (record: PipelineSummary) => {
+    setLockingPipeline(record);
+    setBatchLockPipelineIds([]);
+    setLockReason(record.lockReason || '');
+    setLockStartAt(record.lockStartAt || '');
+    setLockEndAt(record.lockEndAt || '');
+    setLockModalOpen(true);
+  };
+
+  const openBatchLock = () => {
+    if (selectedPipelineIds.length === 0) {
+      message.warning('请先选择要锁定的流水线');
+      return;
+    }
+    setLockingPipeline(undefined);
+    setBatchLockPipelineIds(selectedPipelineIds.map(Number).filter((id) => Number.isFinite(id)));
+    setLockReason('');
+    setLockStartAt('');
+    setLockEndAt('');
+    setLockModalOpen(true);
+  };
+
+  const lockPipeline = async () => {
+    const targetIds = lockingPipeline ? [lockingPipeline.id] : batchLockPipelineIds;
+    if (targetIds.length === 0) {
+      return;
+    }
+    setLocking(true);
+    try {
+      const payload = {
+        reason: lockReason.trim(),
+        startAt: lockStartAt || undefined,
+        endAt: lockEndAt || undefined,
+      };
+      await Promise.all(targetIds.map((id) => pipelinesApi.lock(id, payload)));
+      await loadPipelines();
+      setLockModalOpen(false);
+      setLockingPipeline(undefined);
+      setBatchLockPipelineIds([]);
+      setSelectedPipelineIds([]);
+      setLockReason('');
+      setLockStartAt('');
+      setLockEndAt('');
+      message.success(targetIds.length > 1 ? `已锁定 ${targetIds.length} 条流水线` : '流水线已锁定');
+    } finally {
+      setLocking(false);
+    }
+  };
+
+  const unlockPipeline = async (record: PipelineSummary) => {
+    await pipelinesApi.unlock(record.id);
+    await loadPipelines();
+    message.success('流水线已解除锁定');
   };
 
   const savePipeline = async () => {
@@ -1407,6 +1490,15 @@ const selectedTemplateVariables = useMemo(
       />
       <div className="app-page-scroll">
       <Card className="app-card" ref={tableWrapRef}>
+        {selectedPipelineIds.length > 0 ? (
+          <div className="pipeline-batch-toolbar">
+            <span className="pipeline-batch-toolbar__count">已选择 {selectedPipelineIds.length} 条流水线</span>
+            <Space size={8}>
+              <Button className="pipeline-batch-toolbar__button pipeline-batch-toolbar__button--primary" size="small" onClick={openBatchLock}>批量锁定</Button>
+              <Button className="pipeline-batch-toolbar__button" size="small" onClick={() => setSelectedPipelineIds([])}>取消选择</Button>
+            </Space>
+          </div>
+        ) : null}
         <div className="app-filter-grid">
           <Input
             value={keyword}
@@ -1497,6 +1589,10 @@ const selectedTemplateVariables = useMemo(
           loading={loading}
           scroll={{ x: 2200 }}
           dataSource={tableData}
+          rowSelection={{
+            selectedRowKeys: selectedPipelineIds,
+            onChange: setSelectedPipelineIds,
+          }}
           locale={{ emptyText: <EmptyPane description="还没有流水线，点击右上角先把项目和模板组合起来。" /> }}
           pagination={{
             current: pagination.current,
@@ -1515,7 +1611,12 @@ const selectedTemplateVariables = useMemo(
                     <div className="scale-[0.82] origin-left">
                       <PipelineIcon type={row.resolvedTemplateOption?.templateType || row.templateTypeSnapshot || row.template?.templateType} />
                     </div>
-                    <PipelineNameWithTags name={row.name} importantTags={row.importantTags} />
+                    <div className="min-w-0">
+                      <span className="inline-flex max-w-full min-w-0 items-center gap-1.5">
+                        {row.locked ? <PipelineLockIcon reason={row.lockReason} startAt={row.lockStartAt} endAt={row.lockEndAt} /> : null}
+                        <PipelineNameWithTags name={row.name} importantTags={row.importantTags} />
+                      </span>
+                    </div>
                   </div>
                 ),
               },
@@ -1628,10 +1729,23 @@ const selectedTemplateVariables = useMemo(
                       trigger={['click']}
                       menu={{
                         items: [
+                          { key: 'lock', label: record.locked ? '解除锁定' : '锁定' },
                           { key: 'duplicate', label: '复制' },
                           { key: 'delete', label: <span className="text-red-500">删除</span> },
                         ],
                         onClick: ({ key }) => {
+                          if (key === 'lock') {
+                            if (record.locked) {
+                              Modal.confirm({
+                                title: '解除锁定这条流水线吗？',
+                                okText: '解除锁定',
+                                cancelText: '取消',
+                                onOk: () => unlockPipeline(record),
+                              });
+                            } else {
+                              openLock(record);
+                            }
+                          }
                           if (key === 'duplicate') {
                             openDuplicate(record);
                           }
@@ -1677,6 +1791,57 @@ const selectedTemplateVariables = useMemo(
               onChange={(event) => setDuplicateName(event.target.value)}
               placeholder="请输入复制后的流水线名称"
             />
+          </Form.Item>
+        </Form>
+      </Modal>
+      <Modal
+        title={lockingPipeline ? `锁定 ${lockingPipeline.name}` : `批量锁定 ${batchLockPipelineIds.length} 条流水线`}
+        open={lockModalOpen}
+        okText="确认锁定"
+        cancelText="取消"
+        confirmLoading={locking}
+        onCancel={() => {
+          setLockModalOpen(false);
+          setLockingPipeline(undefined);
+          setBatchLockPipelineIds([]);
+          setLockReason('');
+          setLockStartAt('');
+          setLockEndAt('');
+        }}
+        onOk={() => lockPipeline().catch(() => message.error('锁定流水线失败'))}
+        destroyOnHidden
+      >
+        <Form layout="vertical">
+          <Form.Item label="锁定原因">
+            <Input.TextArea
+              value={lockReason}
+              rows={3}
+              maxLength={500}
+              showCount
+              onChange={(event) => setLockReason(event.target.value)}
+              placeholder="例如：正在排查线上问题，暂时禁止部署"
+            />
+          </Form.Item>
+          <Form.Item label="锁定时间段">
+            <Space.Compact className="w-full">
+              <DatePicker
+                showTime
+                className="w-1/2"
+                value={lockStartAt ? dayjs(lockStartAt) : null}
+                placeholder="立即生效"
+                onChange={(value) => setLockStartAt(value ? toLocalDateTimeString(value) : '')}
+              />
+              <DatePicker
+                showTime
+                className="w-1/2"
+                value={lockEndAt ? dayjs(lockEndAt) : null}
+                placeholder="长期锁定"
+                onChange={(value) => setLockEndAt(value ? toLocalDateTimeString(value) : '')}
+              />
+            </Space.Compact>
+            <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              不选择开始时间表示立即生效，不选择结束时间表示长期锁定。
+            </div>
           </Form.Item>
         </Form>
       </Modal>

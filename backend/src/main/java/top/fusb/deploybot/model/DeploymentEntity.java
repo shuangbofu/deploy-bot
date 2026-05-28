@@ -245,7 +245,7 @@ public class DeploymentEntity {
             return snapshot.getRollbackStep();
         }
         if (STARTUP_STAGE.equals(snapshot.getStage())) {
-            return new ProgressStep(snapshot.getStartupAttemptCurrent(), snapshot.getStartupAttemptTotal());
+            return null;
         }
         if (DEPLOY_STAGE.equals(snapshot.getStage())) {
             return snapshot.getDeployStep();

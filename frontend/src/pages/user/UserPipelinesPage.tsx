@@ -1,12 +1,13 @@
 import { EllipsisOutlined } from '@ant-design/icons';
-import { Heart } from '@phosphor-icons/react';
+import { Heart, LockSimple, UserCircle } from '@phosphor-icons/react';
 import type { CSSProperties } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Card, Dropdown, Input, Modal, Popconfirm, Progress, Segmented, Select, Space, Table, Tag, Typography, message } from 'antd';
+import { Avatar, Button, Card, Dropdown, Input, Modal, Popconfirm, Progress, Segmented, Select, Space, Table, Tag, Typography, message } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { deploymentsApi } from '../../api/deployments';
 import { pipelinesApi } from '../../api/pipelines';
 import type { DeploymentPrecheckMissingItem } from '../../api/types';
+import { resolveBackendAssetUrl } from '../../api/client';
 import EmptyPane from '../../components/EmptyPane';
 import HallSwitchIcon from '../../components/HallSwitchIcon';
 import PageHeaderBar from '../../components/PageHeaderBar';
@@ -29,6 +30,7 @@ import { getStableTagColor, getStableTagDarkColor, sortTagNames } from '../../ut
 type HallView = PipelineHallFilterMode;
 
 const DEPLOYMENT_PRECHECK_LABEL: Record<string, string> = {
+  PIPELINE_LOCKED: '流水线已锁定',
   PIPELINE: '流水线',
   PROJECT: '项目',
   TEMPLATE: '模板',
@@ -39,6 +41,9 @@ const DEPLOYMENT_PRECHECK_LABEL: Record<string, string> = {
 };
 
 const deploymentPrecheckItemLabel = (item: DeploymentPrecheckMissingItem) => {
+  if (item.code === 'PIPELINE_LOCKED') {
+    return item.label ? `流水线已锁定：${item.label}` : '流水线已锁定';
+  }
   if (item.code === 'BUILD_RUNTIME_ENVIRONMENT') {
     return `本机构建 ${item.label || item.name || ''} 环境`.trim();
   }
@@ -50,6 +55,20 @@ const deploymentPrecheckItemLabel = (item: DeploymentPrecheckMissingItem) => {
   }
   return DEPLOYMENT_PRECHECK_LABEL[item.code] || item.label || item.name || item.code;
 };
+
+const lockWindowText = (startAt?: string | null, endAt?: string | null) => {
+  if (!startAt && !endAt) {
+    return '长期锁定';
+  }
+  return `${startAt ? formatDateTime(startAt) : '立即'} 至 ${endAt ? formatDateTime(endAt) : '长期'}`;
+};
+
+const lockModalContent = (reason?: string | null, startAt?: string | null, endAt?: string | null) => (
+  <div className="space-y-2">
+    <div>{reason || '管理员已锁定该流水线，暂时不能部署。'}</div>
+    <div className="text-sm text-slate-500 dark:text-slate-400">锁定时间：{lockWindowText(startAt, endAt)}</div>
+  </div>
+);
 
 const deploymentPrecheckMessage = (missingItems?: DeploymentPrecheckMissingItem[]) => {
   if (!missingItems?.length) {
@@ -63,6 +82,29 @@ const stableTagStyle = (tag: string): CSSProperties => ({
   '--app-tag-bg-dark': getStableTagDarkColor(tag),
   '--app-tag-fg': '#ffffff',
 } as CSSProperties);
+
+const deploymentUserName = (item: Pick<PipelineHallSummary, 'latestTriggeredBy' | 'latestTriggeredByDisplayName'>) => (
+  item.latestTriggeredByDisplayName || item.latestTriggeredBy || '-'
+);
+
+function DeploymentUser({ item }: { item: Pick<PipelineHallSummary, 'latestTriggeredBy' | 'latestTriggeredByDisplayName' | 'latestTriggeredByAvatar'> }) {
+  const name = deploymentUserName(item);
+  const avatarUrl = resolveBackendAssetUrl(item.latestTriggeredByAvatar);
+  return (
+    <span className="deployment-user-inline">
+      <Avatar size={20} src={avatarUrl} icon={!avatarUrl ? <UserCircle size={14} weight="fill" /> : undefined} />
+      <span className="truncate">{name}</span>
+    </span>
+  );
+}
+
+function PipelineLockIcon({ reason, startAt, endAt }: { reason?: string | null; startAt?: string | null; endAt?: string | null }) {
+  return (
+    <span className="pipeline-lock-icon" title={`${reason || '流水线已锁定'}｜${lockWindowText(startAt, endAt)}`}>
+      <LockSimple size={14} weight="fill" />
+    </span>
+  );
+}
 
 function splitIntoColumns<T>(items: T[], columnCount: number): T[][] {
   const count = Math.max(1, columnCount);
@@ -510,6 +552,14 @@ export default function UserPipelinesPage({
 
   /** 打开部署弹窗时顺便拉取可选分支。 */
   const openDeployModal = async (pipeline: PipelineSummary) => {
+    if (pipeline.locked) {
+      Modal.warning({
+        title: '流水线已锁定',
+        content: lockModalContent(pipeline.lockReason, pipeline.lockStartAt, pipeline.lockEndAt),
+        okText: '知道了',
+      });
+      return;
+    }
     setDeployingPipeline(pipeline);
     setSelectedBranch(pipeline.defaultBranch);
     setDeployModalOpen(true);
@@ -552,6 +602,15 @@ export default function UserPipelinesPage({
     try {
       const precheck = await deploymentsApi.precheck(payload);
       if (!precheck.passed) {
+        const lockedItem = precheck.missingItems.find((item) => item.code === 'PIPELINE_LOCKED');
+        if (lockedItem) {
+          Modal.warning({
+            title: '流水线已锁定',
+            content: lockModalContent(lockedItem.label, lockedItem.name),
+            okText: '知道了',
+          });
+          return;
+        }
         message.error(deploymentPrecheckMessage(precheck.missingItems));
         return;
       }
@@ -788,6 +847,7 @@ export default function UserPipelinesPage({
                                       {item.projectName || 'Project'}
                                     </Typography.Text>
                                     <div className="pipeline-card-title-meta-row">
+                                      {item.locked ? <PipelineLockIcon reason={item.lockReason} startAt={item.lockStartAt} endAt={item.lockEndAt} /> : null}
                                       <button
                                         type="button"
                                         className={`pipeline-hall-favorite-button${item.favorited ? ' pipeline-hall-favorite-button--active' : ''}`}
@@ -835,7 +895,7 @@ export default function UserPipelinesPage({
                                 </div>
                                 <div className="pipeline-meta-row">
                                   <span>部署人</span>
-                                  <span>{item.latestTriggeredByDisplayName || item.latestTriggeredBy || '-'}</span>
+                                  <span><DeploymentUser item={item} /></span>
                                 </div>
                                 <div className="pipeline-meta-row">
                                   <span>开始时间</span>
@@ -883,6 +943,10 @@ export default function UserPipelinesPage({
                                       tags: item.tags || undefined,
                                       project: item.projectName ? { id: 0, name: item.projectName } : undefined,
                                       template: item.templateType ? { id: 0, name: item.templateType, templateType: item.templateType } : undefined,
+                                      locked: item.locked || false,
+                                      lockReason: item.lockReason || undefined,
+                                      lockStartAt: item.lockStartAt || undefined,
+                                      lockEndAt: item.lockEndAt || undefined,
                                     } as PipelineSummary).catch(() => message.error('打开部署窗口失败'))}
                                   >
                                     部署
@@ -966,6 +1030,7 @@ export default function UserPipelinesPage({
                             <PipelineIcon type={row.templateType} />
                             <div className="pipeline-table-name-block min-w-0">
                               <div className="pipeline-table-title-row">
+                                {row.locked ? <PipelineLockIcon reason={row.lockReason} startAt={row.lockStartAt} endAt={row.lockEndAt} /> : null}
                                 {row.latestDeploymentOrder ? (
                                   <div className="pipeline-table-order shrink-0 text-xs font-semibold text-sky-600">
                                     #{row.latestDeploymentOrder}
@@ -1050,7 +1115,7 @@ export default function UserPipelinesPage({
                     {
                       title: '部署人',
                       width: 140,
-                      render: (_, row) => row.latestTriggeredByDisplayName || row.latestTriggeredBy || '-',
+                      render: (_, row) => <DeploymentUser item={row} />,
                     },
                     {
                       title: '开始时间',
@@ -1103,6 +1168,10 @@ export default function UserPipelinesPage({
                                   tags: row.tags || undefined,
                                   project: row.projectName ? { id: 0, name: row.projectName } : undefined,
                                   template: row.templateType ? { id: 0, name: row.templateType, templateType: row.templateType } : undefined,
+                                  locked: row.locked || false,
+                                  lockReason: row.lockReason || undefined,
+                                  lockStartAt: row.lockStartAt || undefined,
+                                  lockEndAt: row.lockEndAt || undefined,
                                 } as PipelineSummary).catch(() => message.error('打开部署窗口失败'))}
                               >
                                 部署

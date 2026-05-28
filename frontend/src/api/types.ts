@@ -104,6 +104,12 @@ export interface PipelinePayload {
   notificationBindings?: Array<{ notificationId: number; eventType: string }>;
 }
 
+export interface PipelineLockPayload {
+  reason?: string;
+  startAt?: string;
+  endAt?: string;
+}
+
 export interface NotificationPayload {
   name: string;
   description?: string;
