@@ -524,13 +524,19 @@ public class DeploymentRunner {
 
     private Path resolveBuildSourceDir(DeploymentEntity deployment) {
         Map<String, String> variables = deployment.getVariables() == null ? Map.of() : deployment.getVariables();
-        String workspace = variables.get("WORKSPACE");
-        if (TextKit.isNotBlank(workspace)) {
-            return Path.of(workspace);
-        }
         String root = variables.get("buildWorkspaceRoot");
         if (TextKit.isBlank(root)) {
             root = variables.get("workspaceRoot");
+        }
+        if (TextKit.isNotBlank(root) && deployment.getId() != null) {
+            Path sourceDir = Path.of(root).resolve("runs").resolve(String.valueOf(deployment.getId()));
+            if (Files.isDirectory(sourceDir.resolve(".git"))) {
+                return sourceDir;
+            }
+        }
+        String workspace = variables.get("WORKSPACE");
+        if (TextKit.isNotBlank(workspace)) {
+            return Path.of(workspace);
         }
         if (TextKit.isBlank(root) || deployment.getId() == null) {
             return null;

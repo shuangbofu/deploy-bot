@@ -73,7 +73,8 @@ public class DeploymentGitDiffAsyncService {
             );
             Path repoDir = tempDir.resolve("repo");
             runGit(tempDir, processConfig.environment(), "clone", "--filter=blob:none", "--no-checkout", processConfig.gitUrl(), repoDir.toString());
-            runGit(repoDir, processConfig.environment(), "fetch", "--depth=200", "origin", deployment.getCommitSha(), previousSha);
+            runGit(repoDir, processConfig.environment(), "fetch", "--depth=200", "origin", deployment.getCommitSha());
+            runGit(repoDir, processConfig.environment(), "fetch", "--depth=200", "origin", previousSha);
             String range = previousSha + ".." + deployment.getCommitSha();
             List<Map<String, Object>> commits = parseGitCommits(runGit(repoDir, Map.of(), "log", "--date=iso-strict", "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ad%x1f%s", range));
             snapshot.put("commits", commits);
@@ -140,6 +141,7 @@ public class DeploymentGitDiffAsyncService {
         command.addAll(List.of(args));
         ProcessBuilder processBuilder = ProcessKit.mergedBuilder(command)
                 .directory(directory.toFile());
+        processBuilder.redirectErrorStream(true);
         processBuilder.environment().putAll(environment);
         processBuilder.environment().put("GIT_TERMINAL_PROMPT", "0");
         processBuilder.environment().put("GIT_ASKPASS", "echo");
