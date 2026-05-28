@@ -11,7 +11,7 @@ import PortalLayoutShell from './PortalLayoutShell';
 const GITHUB_REPOSITORY_URL = 'https://github.com/shuangbofu/deploy-bot';
 
 /**
- * 管理端一级菜单配置。
+ * 完整工作台一级菜单配置。
  * 这里保持“仪表盘 -> 资源管理 -> 运行记录”的信息架构顺序。
  */
 const menuItems = [
@@ -27,7 +27,7 @@ const menuItems = [
 ];
 
 /**
- * 管理端整体布局。
+ * 完整工作台布局。
  * 负责头部导航、品牌区和子页面内容承载，不处理业务状态。
  */
 export default function AdminLayout() {

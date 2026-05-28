@@ -395,7 +395,7 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
                         onClick={() => setLayoutMode('side')}
                       >
                         <span className="settings-choice__title">左侧菜单</span>
-                        <span className="settings-choice__description">导航层级更稳定，适合管理端常驻操作。</span>
+                        <span className="settings-choice__description">导航层级更稳定，适合高频配置和日常部署。</span>
                       </button>
                     </div>
                   </Card>

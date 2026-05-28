@@ -51,7 +51,7 @@ type Props = {
 
 /**
  * 布局模式入口。
- * 管理端和用户端共用同一份状态，支持在顶部导航和左侧菜单之间切换。
+ * 工作台共用同一份状态，支持在顶部导航和左侧菜单之间切换。
  */
 export function LayoutModeProvider({ children }: Props) {
   const [mode, setModeState] = useState<LayoutMode>(() => readInitialMode());

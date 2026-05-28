@@ -216,7 +216,7 @@ function PipelineTableSkeleton() {
 }
 
 /**
- * 用户端流水线大厅。
+ * 流水线大厅。
  * 用户在这里只做三件事：选流水线、发部署、看记录。
  */
 type UserPipelinesPageProps = {
@@ -805,7 +805,7 @@ export default function UserPipelinesPage({
                 )
               ) : showHallEmpty ? (
                 <Card className="app-card">
-                  <EmptyPane description="当前没有可部署流水线，请先到管理端创建。" />
+                  <EmptyPane description="当前没有可部署流水线，请先创建或分配流水线。" />
                 </Card>
               ) : viewMode === 'card' ? (
                 filteredPipelineCards.length === 0 ? (

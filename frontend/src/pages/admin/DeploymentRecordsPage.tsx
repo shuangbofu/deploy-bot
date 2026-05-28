@@ -25,7 +25,7 @@ const emptyFilters: DeploymentRecordFilters = {
 };
 
 /**
- * 管理端部署记录页。
+ * 全量部署记录页。
  * 重点是全局筛选、查看耗时以及进入详情页继续排查。
  */
 export default function DeploymentRecordsPage() {

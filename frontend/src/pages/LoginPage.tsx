@@ -9,7 +9,7 @@ const GITHUB_REPOSITORY_URL = 'https://github.com/shuangbofu/deploy-bot';
 
 /**
  * 登录页。
- * 负责建立真实登录态，并根据角色跳转到管理端或用户端。
+ * 负责建立真实登录态，并根据角色跳转到对应工作台入口。
  */
 export default function LoginPage() {
   const { login } = useAuth();

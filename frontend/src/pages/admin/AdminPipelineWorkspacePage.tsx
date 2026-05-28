@@ -4,7 +4,7 @@ import PipelineAdminPage from './PipelineAdminPage';
 import UserPipelinesPage from '../user/UserPipelinesPage';
 
 /**
- * 管理端流水线工作区。
+ * 流水线工作区。
  * 管理员在同一个入口里切换“使用视角”和“配置视角”，避免在多个流水线入口之间来回跳。
  */
 export default function AdminPipelineWorkspacePage() {

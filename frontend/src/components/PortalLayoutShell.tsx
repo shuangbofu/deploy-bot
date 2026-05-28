@@ -15,7 +15,7 @@ type Props = {
 };
 
 /**
- * 管理端和用户端共用布局壳。
+ * 工作台共用布局壳。
  * 根据布局模式渲染顶部导航或左侧菜单，业务页面仍然只通过 Outlet 承载。
  */
 export default function PortalLayoutShell({ title, menuItems, selectedKey, actions, children }: Props) {

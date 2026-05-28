@@ -20,7 +20,7 @@ const phaseLabelClassName = (phase?: string | null) => `app-phase-label--${phase
  */
 /**
  * 模板变量编辑器。
- * 用于定义模板暴露给流水线和用户端的变量元信息。
+ * 用于定义模板暴露给流水线填写的变量元信息。
  */
 export default function TemplateVariablesEditor({
   value,
@@ -66,7 +66,7 @@ export default function TemplateVariablesEditor({
         <div>
           {title ? <Typography.Text strong>{title}</Typography.Text> : null}
           <Typography.Text className="block text-slate-500">
-            {description || '配置模板对外暴露的变量，流水线和用户端将基于这些变量进行填写或覆盖。'}
+            {description || '配置模板对外暴露的变量，流水线会基于这些变量进行填写或覆盖。'}
           </Typography.Text>
         </div>
         <Button icon={<PlusOutlined />} onClick={addVariable}>

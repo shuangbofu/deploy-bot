@@ -1359,7 +1359,7 @@ const selectedTemplateVariables = useMemo(
             {currentStepKey === 'basic' ? <Card title="基础信息" className="app-card">
               <Form layout="vertical">
                 <Form.Item label="流水线名称" required>
-                  <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="例如：fusb-app" />
+                  <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="例如：demo-service" />
                 </Form.Item>
                 <Form.Item label="描述">
                   <Input.TextArea rows={3} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="可选。说明这条流水线的用途。" />

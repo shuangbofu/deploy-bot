@@ -11,7 +11,7 @@ import PortalLayoutShell from './PortalLayoutShell';
 const GITHUB_REPOSITORY_URL = 'https://github.com/shuangbofu/deploy-bot';
 
 /**
- * 用户端菜单只保留用户真实需要的三个入口，避免出现配置感。
+ * 精简工作台菜单只保留普通用户真实需要的入口，避免出现配置感。
  */
 const menuItems = [
   { key: '/user/dashboard', icon: <NavIcon name="dashboard" tone="cyan" />, label: '仪表盘', shortLabel: '仪表' },
@@ -21,8 +21,8 @@ const menuItems = [
 ];
 
 /**
- * 用户端整体布局。
- * 用户端只关注部署、进度和记录，因此布局结构比管理端更轻。
+ * 精简工作台布局。
+ * 普通用户只关注部署、进度和记录，因此菜单结构更轻。
  */
 export default function UserLayout() {
   const location = useLocation();
@@ -34,7 +34,7 @@ export default function UserLayout() {
   return (
     <>
       <PortalLayoutShell
-        title="部署工作台"
+        title="部署平台"
         menuItems={menuItems}
         selectedKey={selectedKey}
         actions={(

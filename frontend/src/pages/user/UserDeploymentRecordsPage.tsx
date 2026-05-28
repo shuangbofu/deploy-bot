@@ -23,7 +23,7 @@ const emptyFilters: DeploymentRecordFilters = {
 };
 
 /**
- * 用户端全局部署记录页。
+ * 个人可见的部署记录页。
  * 用于快速回看所有历史部署，而不是只看单条流水线。
  */
 export default function UserDeploymentRecordsPage() {

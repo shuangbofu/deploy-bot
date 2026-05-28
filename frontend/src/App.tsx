@@ -31,7 +31,7 @@ function buildLoginRedirectTarget(location: ReturnType<typeof useLocation>) {
 
 /**
  * 前端路由总入口。
- * 管理端和用户端现在都会经过真实登录态与权限守卫。
+ * 所有工作台页面都会经过真实登录态与权限守卫。
  */
 function RouteLoading() {
   return (
