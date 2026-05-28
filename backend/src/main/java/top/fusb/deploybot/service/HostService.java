@@ -34,6 +34,8 @@ import java.util.Locale;
 @RequiredArgsConstructor
 public class HostService {
     private static final Logger log = LoggerFactory.getLogger(HostService.class);
+    private static final int REMOTE_SCRIPT_MAX_ATTEMPTS = 2;
+    private static final long REMOTE_SCRIPT_RETRY_DELAY_MILLIS = 500L;
 
     private final HostRepository hostRepository;
     private final PipelineRepository pipelineRepository;
@@ -207,36 +209,65 @@ public class HostService {
             throw new BusinessException(ErrorSubCode.SSH_ONLY_REMOTE_SCRIPT);
         }
 
-        Path tempDir = Files.createTempDirectory("deploybot-host-exec-");
-        try {
-            List<String> command = buildSshCommand(host, tempDir, timeoutSeconds);
-            log.info("Executing remote script on host {} with timeout {}s.", host.getName(), timeoutSeconds);
-            ProcessKit.ProcessResult result = ProcessKit.runAndCaptureWithStdin(
-                    ProcessKit.mergedBuilder(command),
-                    script,
-                    java.time.Duration.ofSeconds(Math.max(1, timeoutSeconds))
-            );
-            if (result.timedOut()) {
-                log.warn("主机 {} 的远程脚本执行超时，timeout={}s。", host.getName(), timeoutSeconds);
-                throw new BusinessException(ErrorSubCode.REMOTE_EXECUTION_FAILED, "远程命令执行超时。");
-            }
-            if (result.exitCode() != 0) {
-                log.warn(
-                        "主机 {} 的远程脚本执行失败，退出码={}，输出预览={}",
+        for (int attempt = 1; attempt <= REMOTE_SCRIPT_MAX_ATTEMPTS; attempt++) {
+            Path tempDir = Files.createTempDirectory("deploybot-host-exec-");
+            try {
+                List<String> command = buildSshCommand(host, tempDir, timeoutSeconds);
+                log.info("Executing remote script on host {} with timeout {}s, attempt {}/{}.", host.getName(), timeoutSeconds, attempt, REMOTE_SCRIPT_MAX_ATTEMPTS);
+                ProcessKit.ProcessResult result = ProcessKit.runAndCaptureWithStdin(
+                        ProcessKit.mergedBuilder(command),
+                        script,
+                        java.time.Duration.ofSeconds(Math.max(1, timeoutSeconds))
+                );
+                if (result.timedOut()) {
+                    log.warn("主机 {} 的远程脚本执行超时，timeout={}s。", host.getName(), timeoutSeconds);
+                    throw new BusinessException(ErrorSubCode.REMOTE_EXECUTION_FAILED, "远程命令执行超时。");
+                }
+                if (result.exitCode() != 0) {
+                    log.warn(
+                            "主机 {} 的远程脚本执行失败，退出码={}，attempt={}/{}，输出预览={}",
+                            host.getName(),
+                            result.exitCode(),
+                            attempt,
+                            REMOTE_SCRIPT_MAX_ATTEMPTS,
+                            previewOutput(result.output())
+                    );
+                    if (isRetryableSshFailure(result) && attempt < REMOTE_SCRIPT_MAX_ATTEMPTS) {
+                        sleepBeforeRemoteRetry(host, result.output());
+                        continue;
+                    }
+                    throw new BusinessException(ErrorSubCode.REMOTE_EXECUTION_FAILED, result.output().isBlank() ? null : result.output().trim());
+                }
+                log.info(
+                        "主机 {} 的远程脚本执行成功，输出预览={}",
                         host.getName(),
-                        result.exitCode(),
                         previewOutput(result.output())
                 );
-                throw new BusinessException(ErrorSubCode.REMOTE_EXECUTION_FAILED, result.output().isBlank() ? null : result.output().trim());
+                return result.output();
+            } finally {
+                deleteRecursively(tempDir);
             }
-            log.info(
-                    "主机 {} 的远程脚本执行成功，输出预览={}",
-                    host.getName(),
-                    previewOutput(result.output())
-            );
-            return result.output();
-        } finally {
-            deleteRecursively(tempDir);
+        }
+        throw new BusinessException(ErrorSubCode.REMOTE_EXECUTION_FAILED, "远程命令执行失败。");
+    }
+
+    private boolean isRetryableSshFailure(ProcessKit.ProcessResult result) {
+        if (result == null || result.exitCode() != 255) {
+            return false;
+        }
+        String output = result.output() == null ? "" : result.output();
+        return output.contains("kex_exchange_identification")
+                || output.contains("Connection closed by remote host")
+                || output.contains("Connection reset by peer")
+                || output.contains("Connection timed out");
+    }
+
+    private void sleepBeforeRemoteRetry(HostEntity host, String output) {
+        log.warn("主机 {} 遇到可重试 SSH 连接失败，准备短暂退避后重试。输出预览={}", host.getName(), previewOutput(output));
+        try {
+            Thread.sleep(REMOTE_SCRIPT_RETRY_DELAY_MILLIS);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
         }
     }
 

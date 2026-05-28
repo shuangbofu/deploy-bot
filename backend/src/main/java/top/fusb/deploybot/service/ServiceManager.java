@@ -58,6 +58,12 @@ public class ServiceManager {
     private final DeploymentRepository deploymentRepository;
     private final HostService hostService;
 
+    private enum HeartbeatProcessStatus {
+        RUNNING,
+        STOPPED,
+        UNKNOWN
+    }
+
     public List<ServiceEntity> findAll() {
         return serviceRepository.findAllByOrderByIdDesc();
     }
@@ -321,8 +327,13 @@ public class ServiceManager {
                 service.getLastDeployment() == null ? null : service.getLastDeployment().getMonitoredPid(),
                 service.getHeartbeatMissCount()
         );
-        boolean running = isAlive(pid, targetHost);
-        if (running) {
+        HeartbeatProcessStatus heartbeatStatus = detectHeartbeatProcessStatus(pid, targetHost);
+        if (heartbeatStatus == HeartbeatProcessStatus.UNKNOWN) {
+            service.setUpdatedAt(LocalDateTime.now());
+            heartbeatLog.warn("服务 {} 本次心跳无法确认 PID {} 状态，保持原状态不累计未命中。", service.getId(), pid);
+            return serviceRepository.save(service);
+        }
+        if (heartbeatStatus == HeartbeatProcessStatus.RUNNING) {
             service.setCurrentPid(pid);
             service.setStatus(ServiceStatus.RUNNING);
             if (service.getActiveSince() == null) {
@@ -455,23 +466,38 @@ public class ServiceManager {
         }
     }
 
-    private boolean isAlive(Long pid, HostEntity host) {
+    private HeartbeatProcessStatus detectHeartbeatProcessStatus(Long pid, HostEntity host) {
         if (pid == null) {
-            return false;
+            return HeartbeatProcessStatus.STOPPED;
         }
         if (host == null || host.getType() == HostType.LOCAL) {
-            return ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false);
+            return ProcessHandle.of(pid)
+                    .map(ProcessHandle::isAlive)
+                    .map(alive -> alive ? HeartbeatProcessStatus.RUNNING : HeartbeatProcessStatus.STOPPED)
+                    .orElse(HeartbeatProcessStatus.STOPPED);
         }
         try {
             String output = hostService.executeRemoteScript(
                     host.getId(),
-                    "if kill -0 " + pid + " >/dev/null 2>&1; then echo RUNNING; else echo STOPPED; fi\n",
+                    "if kill -0 " + pid + " >/dev/null 2>&1; then echo __DEPLOYBOT_PROCESS_RUNNING__; else echo __DEPLOYBOT_PROCESS_STOPPED__; fi\n",
                     8
             );
-            return output.contains("RUNNING");
+            if (output.contains("__DEPLOYBOT_PROCESS_RUNNING__")) {
+                return HeartbeatProcessStatus.RUNNING;
+            }
+            if (output.contains("__DEPLOYBOT_PROCESS_STOPPED__")) {
+                return HeartbeatProcessStatus.STOPPED;
+            }
+            heartbeatLog.warn("远程服务 PID {} 心跳输出无法识别：{}", pid, output == null ? "" : output.trim());
+            return HeartbeatProcessStatus.UNKNOWN;
         } catch (Exception ex) {
-            return false;
+            heartbeatLog.warn("远程服务 PID {} 心跳检测失败，保持服务原状态：{}", pid, ex.getMessage());
+            return HeartbeatProcessStatus.UNKNOWN;
         }
+    }
+
+    private boolean isAlive(Long pid, HostEntity host) {
+        return detectHeartbeatProcessStatus(pid, host) == HeartbeatProcessStatus.RUNNING;
     }
 
     private java.util.Optional<LocalDateTime> resolveProcessStartedAt(Long pid, HostEntity host) {
