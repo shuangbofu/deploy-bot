@@ -47,6 +47,7 @@ public abstract class AbstractDeploymentPlugin implements DeploymentPlugin {
             "targetDir",
             "workspaceRoot",
             "buildWorkspaceRoot",
+            "buildSourceDir",
             "deployWorkspaceRoot",
             "deploymentId",
             "artifactDir",

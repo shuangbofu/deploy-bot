@@ -403,10 +403,13 @@ public class DeploymentService {
         variables.put("deploymentId", entity.getId().toString());
         Path localArtifactDir = buildWorkspaceRoot.resolve(BUILD_ARTIFACT_DIR).resolve("deploy-" + entity.getId()).toAbsolutePath().normalize();
         Path targetArtifactDir = deployWorkspaceRoot.resolve(BUILD_ARTIFACT_DIR).resolve("deploy-" + entity.getId()).toAbsolutePath().normalize();
+        Path buildSourceDir = buildWorkspaceRoot.resolve("runs").resolve(entity.getId().toString()).toAbsolutePath().normalize();
+        variables.put("buildSourceDir", buildSourceDir.toString());
 
         Map<String, String> buildVariables = new LinkedHashMap<>(variables);
         buildVariables.put("artifactDir", localArtifactDir.toString());
         buildVariables.put("workspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
+        buildVariables.put("buildSourceDir", buildSourceDir.toString());
         applyBuildRuntimeEnvironmentVariables(buildVariables, pipeline);
         applyPluginVariableAssembly(
                 pipeline,
@@ -414,12 +417,17 @@ public class DeploymentService {
                 PluginVariableAssemblyPhase.BUILD,
                 resolveMavenSettingsFilePath(pipeline, buildWorkspaceRoot, entity.getId())
         );
+        buildVariables.put("buildWorkspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
+        buildVariables.put("buildSourceDir", buildSourceDir.toString());
 
         Map<String, String> deployVariables = new LinkedHashMap<>(variables);
         deployVariables.put("artifactDir", targetArtifactDir.toString());
         deployVariables.put("workspaceRoot", deployWorkspaceRoot.toAbsolutePath().normalize().toString());
+        deployVariables.put("buildSourceDir", buildSourceDir.toString());
         applyDeployRuntimeEnvironmentVariables(deployVariables, pipeline);
         applyPluginVariableAssembly(pipeline, deployVariables, PluginVariableAssemblyPhase.DEPLOY, null);
+        deployVariables.put("buildWorkspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
+        deployVariables.put("buildSourceDir", buildSourceDir.toString());
         putManagedStartScriptPath(deployVariables, entity.getId());
 
         String buildTemplate = resolveBuildScriptTemplate(pipeline);
@@ -1090,9 +1098,12 @@ public class DeploymentService {
         variables.put("deploymentId", entity.getId().toString());
         Path localArtifactDir = buildWorkspaceRoot.resolve(BUILD_ARTIFACT_DIR).resolve("deploy-" + entity.getId()).toAbsolutePath().normalize();
         Path targetArtifactDir = deployWorkspaceRoot.resolve(BUILD_ARTIFACT_DIR).resolve("deploy-" + entity.getId()).toAbsolutePath().normalize();
+        Path buildSourceDir = buildWorkspaceRoot.resolve("runs").resolve(entity.getId().toString()).toAbsolutePath().normalize();
+        variables.put("buildSourceDir", buildSourceDir.toString());
         Map<String, String> buildVariables = new LinkedHashMap<>(variables);
         buildVariables.put("artifactDir", localArtifactDir.toString());
         buildVariables.put("workspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
+        buildVariables.put("buildSourceDir", buildSourceDir.toString());
         applyBuildRuntimeEnvironmentVariables(buildVariables, pipeline);
         applyPluginVariableAssembly(
                 pipeline,
@@ -1100,12 +1111,17 @@ public class DeploymentService {
                 PluginVariableAssemblyPhase.BUILD,
                 resolveMavenSettingsFilePath(pipeline, buildWorkspaceRoot, entity.getId())
         );
+        buildVariables.put("buildWorkspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
+        buildVariables.put("buildSourceDir", buildSourceDir.toString());
 
         Map<String, String> deployVariables = new LinkedHashMap<>(variables);
         deployVariables.put("artifactDir", targetArtifactDir.toString());
         deployVariables.put("workspaceRoot", deployWorkspaceRoot.toAbsolutePath().normalize().toString());
+        deployVariables.put("buildSourceDir", buildSourceDir.toString());
         applyDeployRuntimeEnvironmentVariables(deployVariables, pipeline);
         applyPluginVariableAssembly(pipeline, deployVariables, PluginVariableAssemblyPhase.DEPLOY, null);
+        deployVariables.put("buildWorkspaceRoot", buildWorkspaceRoot.toAbsolutePath().normalize().toString());
+        deployVariables.put("buildSourceDir", buildSourceDir.toString());
         putManagedStartScriptPath(deployVariables, entity.getId());
 
         String deployTemplate = resolveDeployScriptTemplate(pipeline);

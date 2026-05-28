@@ -268,11 +268,11 @@ export default function ServiceManagementPage() {
     const switchRows = buildSwitchRows(history);
     return (
       <div className="space-y-3">
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-          <div className="text-base font-medium text-slate-800">
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/70">
+          <div className="text-base font-medium text-slate-800 dark:text-slate-100">
             <PipelineNameWithTags name={historyService.pipeline?.name || historyService.serviceName} importantTags={historyService.pipeline?.importantTags} fallback={`服务 #${historyService.id}`} />
           </div>
-          <div className="mt-1 text-sm text-slate-500">
+          <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             {historyService.pipeline?.project?.name || '-'} / <PipelineNameWithTags name={historyService.pipeline?.name} importantTags={historyService.pipeline?.importantTags} /> / {historyService.pipeline?.targetHost?.name || '本机'}
           </div>
         </div>
@@ -501,7 +501,7 @@ export default function ServiceManagementPage() {
           setProcesses([]);
         }}
       >
-        <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+        <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-300">
           当前拉取主机：{bindingService?.pipeline?.targetHost?.name || '本机'}。请选择这台主机上已经存在的服务进程进行绑定。
         </div>
         <div className="mb-3 flex items-center justify-between gap-3">

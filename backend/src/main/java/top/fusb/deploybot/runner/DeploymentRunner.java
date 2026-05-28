@@ -63,6 +63,7 @@ public class DeploymentRunner {
     private static final long DEFAULT_STARTUP_TIMEOUT_MILLIS = 30_000L;
     private static final long MONITOR_INTERVAL_MILLIS = 2_000L;
     private static final long PROCESS_STABLE_OBSERVE_MILLIS = 3_000L;
+    private static final long STARTUP_EXIT_LOG_FLUSH_WAIT_MILLIS = 800L;
     private static final int STARTUP_LOG_BUFFER_LIMIT = 256 * 1024;
 
     private final DeploymentRepository deploymentRepository;
@@ -524,6 +525,10 @@ public class DeploymentRunner {
 
     private Path resolveBuildSourceDir(DeploymentEntity deployment) {
         Map<String, String> variables = deployment.getVariables() == null ? Map.of() : deployment.getVariables();
+        String buildSourceDir = variables.get("buildSourceDir");
+        if (TextKit.isNotBlank(buildSourceDir)) {
+            return Path.of(buildSourceDir);
+        }
         String root = variables.get("buildWorkspaceRoot");
         if (TextKit.isBlank(root)) {
             root = variables.get("workspaceRoot");
@@ -1016,6 +1021,10 @@ public class DeploymentRunner {
             );
             boolean alive = isProcessAlive(targetHost, monitoredPid);
             if (!alive) {
+                waitForStartupExitLogFlush();
+                StartupLogReadResult exitLogReadResult = readRuntimeLogDelta(logCursor, targetHost);
+                appendRuntimeLogDelta(logFile, exitLogReadResult.content());
+                appendStartupOutput(startupOutputBuffer, exitLogReadResult.content());
                 try {
                     appendSystemLog(logFile, "启动观察失败：PID " + monitoredPid + " 已退出。");
                 } catch (Exception ignored) {
@@ -1085,6 +1094,14 @@ public class DeploymentRunner {
         }
         log.info("部署 {} 启动观察成功结束，PID={}。", deployment.getId(), monitoredPid);
         return monitoredPid;
+    }
+
+    private void waitForStartupExitLogFlush() {
+        try {
+            Thread.sleep(STARTUP_EXIT_LOG_FLUSH_WAIT_MILLIS);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private boolean matchesStartupJudge(String output, StartupJudgeResult startupJudge) {
