@@ -532,7 +532,7 @@ export default function ServiceManagementPage() {
             {
               title: '启动参数',
               dataIndex: 'commandLine',
-              render: (value) => <div className="whitespace-pre-wrap break-all font-mono text-xs leading-5 text-slate-600">{value || '-'}</div>,
+              render: (value) => <div className="whitespace-pre-wrap break-all font-mono text-xs leading-5 text-slate-600 dark:text-slate-300">{value || '-'}</div>,
             },
           ]}
         />

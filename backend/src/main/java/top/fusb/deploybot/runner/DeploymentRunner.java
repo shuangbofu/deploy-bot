@@ -63,7 +63,8 @@ public class DeploymentRunner {
     private static final long DEFAULT_STARTUP_TIMEOUT_MILLIS = 30_000L;
     private static final long MONITOR_INTERVAL_MILLIS = 2_000L;
     private static final long PROCESS_STABLE_OBSERVE_MILLIS = 3_000L;
-    private static final long STARTUP_EXIT_LOG_FLUSH_WAIT_MILLIS = 800L;
+    private static final long STARTUP_EXIT_LOG_DRAIN_TIMEOUT_MILLIS = 3_000L;
+    private static final long STARTUP_EXIT_LOG_DRAIN_INTERVAL_MILLIS = 500L;
     private static final int STARTUP_LOG_BUFFER_LIMIT = 256 * 1024;
 
     private final DeploymentRepository deploymentRepository;
@@ -85,6 +86,12 @@ public class DeploymentRunner {
     }
 
     private record StartupLogReadResult(StartupLogCursor cursor, String content) {
+    }
+
+    private enum ProcessAliveStatus {
+        RUNNING,
+        STOPPED,
+        UNKNOWN
     }
 
     @PostConstruct
@@ -1019,18 +1026,18 @@ public class DeploymentRunner {
                     startupOutputBuffer.length(),
                     logCursor == null ? null : logCursor.nextOffset()
             );
-            boolean alive = isProcessAlive(targetHost, monitoredPid);
-            if (!alive) {
-                waitForStartupExitLogFlush();
-                StartupLogReadResult exitLogReadResult = readRuntimeLogDelta(logCursor, targetHost);
-                appendRuntimeLogDelta(logFile, exitLogReadResult.content());
-                appendStartupOutput(startupOutputBuffer, exitLogReadResult.content());
+            ProcessAliveStatus aliveStatus = detectProcessAliveStatus(targetHost, monitoredPid);
+            if (aliveStatus == ProcessAliveStatus.STOPPED) {
+                drainRuntimeLogAfterProcessExit(logCursor, targetHost, logFile, startupOutputBuffer);
                 try {
                     appendSystemLog(logFile, "启动观察失败：PID " + monitoredPid + " 已退出。");
                 } catch (Exception ignored) {
                 }
                 log.warn("部署 {} 启动观察失败：PID {} 在第 {} 次检测时已退出。", deployment.getId(), monitoredPid, attempt);
                 return null;
+            }
+            if (aliveStatus == ProcessAliveStatus.UNKNOWN) {
+                log.warn("部署 {} 第 {} 次启动观察无法确认 PID {} 状态，将继续观察而不是直接清理进程。", deployment.getId(), attempt, monitoredPid);
             }
             if (keywordRequired && matchesStartupJudge(startupOutputBuffer.toString(), startupJudge)) {
                 try {
@@ -1096,9 +1103,36 @@ public class DeploymentRunner {
         return monitoredPid;
     }
 
-    private void waitForStartupExitLogFlush() {
+    private void drainRuntimeLogAfterProcessExit(
+            StartupLogCursor logCursor,
+            HostEntity targetHost,
+            Path logFile,
+            StringBuilder startupOutputBuffer
+    ) {
+        if (logCursor == null) {
+            return;
+        }
+        long deadline = System.currentTimeMillis() + STARTUP_EXIT_LOG_DRAIN_TIMEOUT_MILLIS;
+        int emptyReads = 0;
+        StartupLogCursor cursor = logCursor;
+        while (System.currentTimeMillis() <= deadline && emptyReads < 2) {
+            sleepQuietly(STARTUP_EXIT_LOG_DRAIN_INTERVAL_MILLIS);
+            StartupLogReadResult result = readRuntimeLogDelta(cursor, targetHost);
+            cursor = result.cursor();
+            String content = result.content();
+            if (TextKit.isBlank(content)) {
+                emptyReads++;
+                continue;
+            }
+            emptyReads = 0;
+            appendRuntimeLogDelta(logFile, content);
+            appendStartupOutput(startupOutputBuffer, content);
+        }
+    }
+
+    private void sleepQuietly(long millis) {
         try {
-            Thread.sleep(STARTUP_EXIT_LOG_FLUSH_WAIT_MILLIS);
+            Thread.sleep(millis);
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
         }
@@ -1133,22 +1167,33 @@ public class DeploymentRunner {
         }
     }
 
-    private boolean isProcessAlive(HostEntity targetHost, Long pid) {
+    private ProcessAliveStatus detectProcessAliveStatus(HostEntity targetHost, Long pid) {
         if (pid == null) {
-            return false;
+            return ProcessAliveStatus.STOPPED;
         }
         if (targetHost == null || targetHost.getType() == HostType.LOCAL) {
-            return ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false);
+            return ProcessHandle.of(pid)
+                    .map(ProcessHandle::isAlive)
+                    .map(alive -> alive ? ProcessAliveStatus.RUNNING : ProcessAliveStatus.STOPPED)
+                    .orElse(ProcessAliveStatus.STOPPED);
         }
         try {
             String output = hostService.executeRemoteScript(
                     targetHost.getId(),
-                    "if kill -0 " + pid + " >/dev/null 2>&1; then echo RUNNING; else echo STOPPED; fi\n",
+                    "if kill -0 " + pid + " >/dev/null 2>&1; then echo __DEPLOYBOT_PROCESS_RUNNING__; else echo __DEPLOYBOT_PROCESS_STOPPED__; fi\n",
                     8
             );
-            return output.contains("RUNNING");
+            if (output.contains("__DEPLOYBOT_PROCESS_RUNNING__")) {
+                return ProcessAliveStatus.RUNNING;
+            }
+            if (output.contains("__DEPLOYBOT_PROCESS_STOPPED__")) {
+                return ProcessAliveStatus.STOPPED;
+            }
+            log.warn("远程 PID {} 存活检测输出无法识别：{}", pid, output == null ? "" : output.trim());
+            return ProcessAliveStatus.UNKNOWN;
         } catch (Exception ex) {
-            return false;
+            log.warn("远程 PID {} 存活检测失败，将继续观察而不是直接判定退出：{}", pid, ex.getMessage());
+            return ProcessAliveStatus.UNKNOWN;
         }
     }
 

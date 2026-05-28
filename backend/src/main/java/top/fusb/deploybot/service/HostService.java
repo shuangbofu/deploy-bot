@@ -221,7 +221,12 @@ public class HostService {
                 throw new BusinessException(ErrorSubCode.REMOTE_EXECUTION_FAILED, "远程命令执行超时。");
             }
             if (result.exitCode() != 0) {
-                log.warn("主机 {} 的远程脚本执行失败，退出码={}。", host.getName(), result.exitCode());
+                log.warn(
+                        "主机 {} 的远程脚本执行失败，退出码={}，输出预览={}",
+                        host.getName(),
+                        result.exitCode(),
+                        previewOutput(result.output())
+                );
                 throw new BusinessException(ErrorSubCode.REMOTE_EXECUTION_FAILED, result.output().isBlank() ? null : result.output().trim());
             }
             log.info(

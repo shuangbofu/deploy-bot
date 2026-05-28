@@ -1702,25 +1702,231 @@ body {
   color: #d8e3f0 !important;
 }
 
+.service-process-table.ant-table-wrapper {
+  --app-table-border: rgba(226, 232, 240, 0.86);
+  --app-table-head-bg: rgba(241, 245, 249, 0.92);
+  --app-table-row-bg: #ffffff;
+  --app-table-row-hover-bg: rgba(239, 246, 255, 0.92);
+  --app-table-row-selected-bg: rgba(219, 234, 254, 0.72);
+  --app-table-row-selected-hover-bg: rgba(191, 219, 254, 0.72);
+  --app-table-text: #173055;
+  --app-table-muted: #64748b;
+  color: var(--app-table-text);
+}
+
+.service-process-table .ant-table {
+  border-radius: 16px;
+  background: transparent;
+  color: var(--app-table-text);
+}
+
+.service-process-table .ant-table-container {
+  overflow: hidden;
+  border: 1px solid var(--app-table-border);
+  border-radius: 16px;
+  background: var(--app-table-row-bg);
+}
+
+.service-process-table .ant-table-content,
+.service-process-table .ant-table-body {
+  background: var(--app-table-row-bg);
+  scrollbar-color: rgba(100, 116, 139, 0.45) transparent;
+  scrollbar-width: thin;
+}
+
+.service-process-table .ant-table-content::-webkit-scrollbar,
+.service-process-table .ant-table-body::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+.service-process-table .ant-table-content::-webkit-scrollbar-thumb,
+.service-process-table .ant-table-body::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+  background-color: rgba(100, 116, 139, 0.42);
+}
+
+.service-process-table .ant-table-thead > tr > th {
+  border-bottom: 1px solid var(--app-table-border);
+  background: var(--app-table-head-bg);
+  color: var(--app-table-muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.service-process-table .ant-table-thead > tr > th::before {
+  display: none;
+}
+
 .service-process-table .ant-table-tbody > tr > td {
+  border-bottom: 1px solid var(--app-table-border);
+  background: var(--app-table-row-bg);
+  color: var(--app-table-text);
   transition: background-color 0.16s ease, color 0.16s ease;
 }
 
+.service-process-table .ant-table-tbody > tr:last-child > td {
+  border-bottom: none;
+}
+
 .service-process-table .ant-table-tbody > tr:hover > td,
-.service-process-table .ant-table-tbody > tr.ant-table-row:hover > td {
-  background: #f1f7ff !important;
-  color: #173055 !important;
+.service-process-table .ant-table-tbody > tr.ant-table-row:hover > td,
+.service-process-table .ant-table-cell-row-hover {
+  background: var(--app-table-row-hover-bg) !important;
+  color: var(--app-table-text) !important;
 }
 
-.service-process-table .ant-table-tbody > tr.ant-table-row-selected > td,
-.service-process-table .ant-table-tbody > tr.ant-table-row-selected:hover > td {
-  background: #dbeafe !important;
-  color: #173055 !important;
+.service-process-table .ant-table-tbody > tr.ant-table-row-selected > td {
+  background: var(--app-table-row-selected-bg) !important;
+  color: var(--app-table-text) !important;
 }
 
-.service-process-table .ant-table-tbody > tr.ant-table-row-selected .text-slate-600,
-.service-process-table .ant-table-tbody > tr:hover .text-slate-600 {
-  color: #334155 !important;
+.service-process-table .ant-table-tbody > tr.ant-table-row-selected:hover > td,
+.service-process-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-row-hover {
+  background: var(--app-table-row-selected-hover-bg) !important;
+}
+
+.service-process-table .ant-empty {
+  margin: 28px 0;
+}
+
+.service-process-table .ant-empty-description,
+.service-process-table .ant-pagination-total-text,
+.service-process-table .ant-pagination .ant-pagination-jump-prev,
+.service-process-table .ant-pagination .ant-pagination-jump-next {
+  color: var(--app-table-muted);
+}
+
+.service-process-table .ant-pagination {
+  margin: 14px 0 0 !important;
+  align-items: center;
+  color: var(--app-table-text);
+}
+
+.service-process-table .ant-pagination-total-text {
+  margin-inline-end: auto;
+  font-size: 13px;
+}
+
+.service-process-table .ant-pagination .ant-pagination-item,
+.service-process-table .ant-pagination .ant-pagination-prev .ant-pagination-item-link,
+.service-process-table .ant-pagination .ant-pagination-next .ant-pagination-item-link {
+  min-width: 30px;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: rgba(241, 245, 249, 0.88);
+  color: var(--app-table-text);
+  line-height: 28px;
+  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+
+.service-process-table .ant-pagination .ant-pagination-item a {
+  color: inherit;
+}
+
+.service-process-table .ant-pagination .ant-pagination-item:hover,
+.service-process-table .ant-pagination .ant-pagination-prev:hover .ant-pagination-item-link,
+.service-process-table .ant-pagination .ant-pagination-next:hover .ant-pagination-item-link {
+  border-color: rgba(148, 163, 184, 0.38);
+  background: #e2e8f0;
+}
+
+.service-process-table .ant-pagination .ant-pagination-item-active {
+  border-color: rgba(16, 37, 66, 0.18);
+  background: #102542;
+}
+
+.service-process-table .ant-pagination .ant-pagination-item-active a {
+  color: #fff;
+}
+
+.service-process-table .ant-pagination .ant-pagination-disabled .ant-pagination-item-link,
+.service-process-table .ant-pagination .ant-pagination-disabled:hover .ant-pagination-item-link {
+  border-color: transparent;
+  background: rgba(241, 245, 249, 0.5);
+  color: #94a3b8;
+}
+
+.dark .service-process-table.ant-table-wrapper {
+  --app-table-border: rgba(51, 65, 85, 0.76);
+  --app-table-head-bg: rgba(21, 33, 54, 0.98);
+  --app-table-row-bg: #0d1828;
+  --app-table-row-hover-bg: rgba(30, 47, 73, 0.92);
+  --app-table-row-selected-bg: rgba(37, 99, 235, 0.18);
+  --app-table-row-selected-hover-bg: rgba(37, 99, 235, 0.26);
+  --app-table-text: #d8e3f0;
+  --app-table-muted: #94a3b8;
+}
+
+.dark .service-process-table .ant-table,
+.dark .service-process-table .ant-table-container,
+.dark .service-process-table .ant-table-content,
+.dark .service-process-table .ant-table-body {
+  background: var(--app-table-row-bg);
+}
+
+.dark .service-process-table .ant-table-thead > tr > th,
+.dark .service-process-table .ant-table-tbody > tr > td {
+  border-color: var(--app-table-border);
+}
+
+.dark .service-process-table .ant-table-thead > tr > th {
+  background: var(--app-table-head-bg);
+  color: var(--app-table-muted);
+}
+
+.dark .service-process-table .ant-table-tbody > tr > td {
+  background: var(--app-table-row-bg);
+  color: var(--app-table-text);
+}
+
+.dark .service-process-table .ant-table-tbody > tr:hover > td,
+.dark .service-process-table .ant-table-cell-row-hover {
+  background: var(--app-table-row-hover-bg) !important;
+}
+
+.dark .service-process-table .ant-table-tbody > tr.ant-table-row-selected > td {
+  background: var(--app-table-row-selected-bg) !important;
+}
+
+.dark .service-process-table .ant-table-tbody > tr.ant-table-row-selected:hover > td,
+.dark .service-process-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-row-hover {
+  background: var(--app-table-row-selected-hover-bg) !important;
+}
+
+.dark .service-process-table .ant-pagination .ant-pagination-item,
+.dark .service-process-table .ant-pagination .ant-pagination-prev .ant-pagination-item-link,
+.dark .service-process-table .ant-pagination .ant-pagination-next .ant-pagination-item-link {
+  border-color: rgba(71, 85, 105, 0.78);
+  background: rgba(15, 23, 42, 0.8);
+  color: #cbd5e1;
+}
+
+.dark .service-process-table .ant-pagination .ant-pagination-item:hover,
+.dark .service-process-table .ant-pagination .ant-pagination-prev:hover .ant-pagination-item-link,
+.dark .service-process-table .ant-pagination .ant-pagination-next:hover .ant-pagination-item-link {
+  border-color: rgba(100, 116, 139, 0.72);
+  background: rgba(30, 47, 73, 0.92);
+}
+
+.dark .service-process-table .ant-pagination .ant-pagination-item-active {
+  border-color: rgba(96, 165, 250, 0.76);
+  background: rgba(37, 99, 235, 0.34);
+}
+
+.dark .service-process-table .ant-pagination .ant-pagination-item-active a {
+  color: #dbeafe;
+}
+
+.dark .service-process-table .ant-pagination .ant-pagination-disabled .ant-pagination-item-link,
+.dark .service-process-table .ant-pagination .ant-pagination-disabled:hover .ant-pagination-item-link {
+  border-color: rgba(51, 65, 85, 0.5);
+  background: rgba(15, 23, 42, 0.42);
+  color: #475569;
 }
 
 .deployment-rollback-tag {
