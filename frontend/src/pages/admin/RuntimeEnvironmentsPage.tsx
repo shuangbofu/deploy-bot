@@ -10,6 +10,7 @@ import EmptyPane from '../../components/EmptyPane';
 import CodeEditor from '../../components/CodeEditor';
 import PageHeaderBar from '../../components/PageHeaderBar';
 import RefreshIconButton from '../../components/RefreshIconButton';
+import { useSseStream } from '../../hooks/useSseStream';
 import type { HostSummary, MavenSettingsSummary, RuntimeEnvironmentSummary, RuntimeEnvironmentType } from '../../types/domain';
 import { formatDateTime } from '../../utils/datetime';
 import { buildRuntimeEnvironmentTypeOptions, defaultRuntimeEnvironmentTypes, getRuntimeEnvironmentTypeLabel } from '../../utils/runtimeEnvironment';
@@ -192,15 +193,21 @@ export default function RuntimeEnvironmentsPage() {
     [installTasks],
   );
 
-  useEffect(() => {
-    if (activeInstallTasks.length === 0) {
-      return undefined;
-    }
-    const timer = window.setInterval(() => {
-      loadEnvironments().catch(() => undefined);
-    }, 3000);
-    return () => window.clearInterval(timer);
-  }, [activeInstallTasks.length, hostId]);
+  const installTaskStreamPath = hostId
+    ? `/runtime-environments/install-tasks/stream?hostId=${encodeURIComponent(hostId)}`
+    : '/runtime-environments/install-tasks/stream';
+  useSseStream<RuntimeEnvironmentInstallTaskStatus[]>({
+    enabled: activeInstallTasks.length > 0,
+    path: installTaskStreamPath,
+    eventName: 'install-tasks',
+    onData: (items) => {
+      setInstallTasks(items);
+      if (items.some((item) => item.status === 'SUCCESS')) {
+        runtimeEnvironmentsApi.list(hostId).then(setEnvironments).catch(() => undefined);
+      }
+    },
+    onError: () => {},
+  });
 
   const currentHost = useMemo(
     () => hosts.find((item) => String(item.id) === String(hostId)),

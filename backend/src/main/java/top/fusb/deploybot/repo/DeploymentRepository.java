@@ -2,6 +2,7 @@ package top.fusb.deploybot.repo;
 
 import top.fusb.deploybot.model.DeploymentEntity;
 import top.fusb.deploybot.model.DeploymentStatus;
+import top.fusb.deploybot.dto.PipelineLatestDeploymentSummary;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
@@ -43,6 +44,32 @@ public interface DeploymentRepository extends JpaRepository<DeploymentEntity, Lo
             """)
     List<String> findDistinctProjectNamesByTriggeredBy(@Param("triggeredBy") String triggeredBy);
     java.util.Optional<DeploymentEntity> findFirstByPipelineIdOrderByCreatedAtDesc(Long pipelineId);
+    @Query("""
+            select new top.fusb.deploybot.dto.PipelineLatestDeploymentSummary(
+                   d.id,
+                   p.id,
+                   d.branchName,
+                   d.triggeredBy,
+                   d.status,
+                   d.createdAt,
+                   d.startedAt,
+                   d.finishedAt,
+                   d.logPath,
+                   d.buildStepTotal,
+                   d.deployStepTotal,
+                   p.templateMonitorProcess,
+                   p.startupTimeoutSeconds
+            )
+              from DeploymentEntity d
+              join d.pipeline p
+             where p.id in :pipelineIds
+               and d.createdAt = (
+                   select max(latest.createdAt)
+                     from DeploymentEntity latest
+                    where latest.pipeline.id = p.id
+               )
+            """)
+    List<PipelineLatestDeploymentSummary> findLatestSummariesByPipelineIds(@Param("pipelineIds") List<Long> pipelineIds);
     List<DeploymentEntity> findTop10ByPipelineIdOrderByCreatedAtDesc(Long pipelineId);
     List<DeploymentEntity> findByPipelineIdAndStatusInOrderByCreatedAtDesc(Long pipelineId, List<DeploymentStatus> statuses);
     Optional<DeploymentEntity> findFirstByPipelineIdAndStatusOrderByCreatedAtDesc(Long pipelineId, DeploymentStatus status);

@@ -5,6 +5,7 @@
 
 <p align="center">
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-0f766e.svg" alt="MIT License" /></a>
+  <a href="https://fusb.top/deploy-bot"><img src="https://img.shields.io/badge/官网-fusb.top%2Fdeploy--bot-285fbd.svg" alt="介绍网站" /></a>
   <img src="https://img.shields.io/badge/java-17-f59e0b.svg" alt="Java 17" />
   <img src="https://img.shields.io/badge/backend-Spring%20Boot%203.3.5-111827.svg" alt="Spring Boot 3.3.5" />
   <img src="https://img.shields.io/badge/frontend-React%2018.3-2563eb.svg" alt="React 18.3" />

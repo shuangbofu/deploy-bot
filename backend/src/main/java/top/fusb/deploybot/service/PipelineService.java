@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.dto.PipelineBranchOption;
 import top.fusb.deploybot.dto.PipelineHallSummary;
+import top.fusb.deploybot.dto.PipelineLatestDeploymentSummary;
 import top.fusb.deploybot.dto.PipelineLockRequest;
 import top.fusb.deploybot.dto.PipelineRequest;
 import top.fusb.deploybot.exception.BusinessException;
@@ -16,6 +17,8 @@ import top.fusb.deploybot.model.TemplateEntity;
 import top.fusb.deploybot.model.RuntimeEnvironmentEntity;
 import top.fusb.deploybot.model.PipelineEntity;
 import top.fusb.deploybot.model.UserFavoritePipelineEntity;
+import top.fusb.deploybot.model.DeploymentEntity;
+import top.fusb.deploybot.model.DeploymentStatus;
 import top.fusb.deploybot.notification.dto.NotificationBinding;
 import top.fusb.deploybot.notification.repo.NotificationChannelRepository;
 import top.fusb.deploybot.repo.HostRepository;
@@ -37,6 +40,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
+import java.util.function.Function;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.HashSet;
@@ -45,6 +49,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.time.LocalDateTime;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 @Service
 @RequiredArgsConstructor
@@ -102,11 +108,18 @@ public class PipelineService {
         Set<Long> favoritePipelineIds = findFavoritePipelineIdSet(
                 pipelines.stream().map(PipelineEntity::getId).toList()
         );
+        Map<Long, PipelineLatestDeploymentSummary> latestDeploymentMap = deploymentRepository
+                .findLatestSummariesByPipelineIds(pipelines.stream().map(PipelineEntity::getId).toList())
+                .stream()
+                .collect(Collectors.toMap(
+                        PipelineLatestDeploymentSummary::pipelineId,
+                        Function.identity(),
+                        (left, right) -> left.createdAt().isAfter(right.createdAt()) ? left : right
+                ));
         return pipelines.stream()
                 .map(pipeline -> {
-                    var latestDeployment = deploymentRepository.findFirstByPipelineIdOrderByCreatedAtDesc(pipeline.getId())
-                            .map(this::enrichTriggeredByDisplayName)
-                            .orElse(null);
+                    var latestDeployment = latestDeploymentMap.get(pipeline.getId());
+                    var progress = resolveHallProgress(latestDeployment);
                     Long latestDeploymentOrder = latestDeployment == null ? null : deploymentRepository.countByPipelineId(pipeline.getId());
                     return new PipelineHallSummary(
                             pipeline.getId(),
@@ -121,25 +134,60 @@ public class PipelineService {
                             pipeline.getLockReason(),
                             pipeline.getLockStartAt(),
                             pipeline.getLockEndAt(),
-                            latestDeployment == null ? null : latestDeployment.getId(),
+                            latestDeployment == null ? null : latestDeployment.id(),
                             latestDeploymentOrder,
-                            latestDeployment == null || latestDeployment.getStatus() == null ? null : latestDeployment.getStatus().name(),
-                            latestDeployment == null ? null : latestDeployment.getBranchName(),
-                            latestDeployment == null ? null : latestDeployment.getTriggeredBy(),
-                            latestDeployment == null ? null : latestDeployment.getTriggeredByDisplayName(),
-                            latestDeployment == null ? null : resolveAvatar(latestDeployment.getTriggeredBy()),
-                            latestDeployment == null ? null : latestDeployment.getCreatedAt(),
-                            latestDeployment == null ? null : latestDeployment.getStartedAt(),
-                            latestDeployment == null ? null : latestDeployment.getFinishedAt(),
-                            latestDeployment == null ? null : latestDeployment.getProgressPercent(),
-                            latestDeployment == null ? null : latestDeployment.getProgressStage(),
-                            latestDeployment == null ? null : latestDeployment.getProgressCurrent(),
-                            latestDeployment == null ? null : latestDeployment.getProgressTotal(),
-                            latestDeployment == null ? pipeline.getId() : latestDeployment.getId(),
+                            latestDeployment == null || latestDeployment.status() == null ? null : latestDeployment.status().name(),
+                            latestDeployment == null ? null : latestDeployment.branchName(),
+                            latestDeployment == null ? null : latestDeployment.triggeredBy(),
+                            latestDeployment == null ? null : resolveDisplayName(latestDeployment.triggeredBy()),
+                            latestDeployment == null ? null : resolveAvatar(latestDeployment.triggeredBy()),
+                            latestDeployment == null ? null : latestDeployment.createdAt(),
+                            latestDeployment == null ? null : latestDeployment.startedAt(),
+                            latestDeployment == null ? null : latestDeployment.finishedAt(),
+                            progress.percent(),
+                            progress.stage(),
+                            progress.current(),
+                            progress.total(),
+                            latestDeployment == null ? pipeline.getId() : latestDeployment.id(),
                             favoritePipelineIds.contains(pipeline.getId())
                     );
                 })
                 .toList();
+    }
+
+    private HallProgress resolveHallProgress(PipelineLatestDeploymentSummary deployment) {
+        if (deployment == null || deployment.status() == null || deployment.status() == DeploymentStatus.PENDING) {
+            return new HallProgress(0, null, null, null);
+        }
+        if (deployment.status() == DeploymentStatus.SUCCESS) {
+            return new HallProgress(100, null, null, null);
+        }
+        DeploymentEntity probe = new DeploymentEntity();
+        probe.setStatus(deployment.status());
+        probe.setLogPath(deployment.logPath());
+        probe.setBuildStepTotal(deployment.buildStepTotal());
+        probe.setDeployStepTotal(deployment.deployStepTotal());
+        boolean startupObservationRequired = Boolean.TRUE.equals(deployment.monitorProcess());
+        DeploymentEntity.ProgressSnapshot snapshot = probe.readProgressSnapshot(
+                DeploymentEntity.resolveStartupObservationAttemptTotal(deployment.startupTimeoutSeconds())
+        );
+        if (snapshot == null) {
+            return new HallProgress(0, null, null, null);
+        }
+        return new HallProgress(
+                probe.progressPercent(snapshot, startupObservationRequired),
+                probe.progressStage(snapshot),
+                probe.progressCurrent(snapshot),
+                probe.progressTotal(snapshot)
+        );
+    }
+
+    private record HallProgress(
+            Integer percent,
+            String stage,
+            Integer current,
+            Integer total
+    ) {
     }
 
     public List<PipelineBranchOption> buildBranchOptions(Long pipelineId, List<String> branches) {

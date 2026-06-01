@@ -18,6 +18,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.ToString;
+import org.hibernate.annotations.DynamicUpdate;
 import top.fusb.deploybot.model.converter.ObjectMapJsonConverter;
 import top.fusb.deploybot.model.converter.StringListJsonConverter;
 import top.fusb.deploybot.model.converter.StringMapJsonConverter;
@@ -37,6 +38,7 @@ import java.util.regex.Pattern;
 @Data
 @Entity
 @Table(name = "deployments")
+@DynamicUpdate
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
 @ToString(exclude = {"pipeline", "renderedBuildScript", "renderedDeployScript"})
 public class DeploymentEntity {
@@ -140,6 +142,12 @@ public class DeploymentEntity {
     @Lob
     private String renderedDeployScript;
 
+    /** 构建阶段声明的步骤总数，供列表/大厅进度展示使用，避免摘要查询读取脚本 CLOB。 */
+    private Integer buildStepTotal;
+
+    /** 发布阶段声明的步骤总数，供列表/大厅进度展示使用，避免摘要查询读取脚本 CLOB。 */
+    private Integer deployStepTotal;
+
     /** 错误信息。 */
     @Column(length = 2000)
     private String errorMessage;
@@ -172,24 +180,30 @@ public class DeploymentEntity {
 
     @Transient
     public Integer getProgressPercent() {
-        if (status == null) {
+        return progressPercent(readProgressSnapshot());
+    }
+
+    public Integer progressPercent(ProgressSnapshot snapshot) {
+        if (status == null || status == DeploymentStatus.PENDING) {
             return 0;
         }
         if (status == DeploymentStatus.SUCCESS) {
             return 100;
         }
-        if (status == DeploymentStatus.PENDING) {
-            return 0;
-        }
-
-        ProgressSnapshot snapshot = readProgressSnapshot();
-        if (snapshot == null) {
-            return 0;
-        }
-        return calculateSnapshotProgressPercent(snapshot);
+        return snapshot == null ? 0 : calculateSnapshotProgressPercent(snapshot, requiresStartupObservation());
     }
 
-    private int calculateSnapshotProgressPercent(ProgressSnapshot snapshot) {
+    public Integer progressPercent(ProgressSnapshot snapshot, boolean startupObservationRequired) {
+        if (status == null || status == DeploymentStatus.PENDING) {
+            return 0;
+        }
+        if (status == DeploymentStatus.SUCCESS) {
+            return 100;
+        }
+        return snapshot == null ? 0 : calculateSnapshotProgressPercent(snapshot, startupObservationRequired);
+    }
+
+    private int calculateSnapshotProgressPercent(ProgressSnapshot snapshot, boolean startupObservationRequired) {
         Integer rollbackPercent = snapshot.rollbackProgressPercent(MAX_RUNNING_PROGRESS);
         if (rollbackPercent != null) {
             return rollbackPercent;
@@ -197,7 +211,7 @@ public class DeploymentEntity {
 
         int buildTotal = snapshot.getBuildTotal();
         int deployTotal = snapshot.getDeployTotal();
-        int startupStageWeight = requiresStartupObservation() ? 1 : 0;
+        int startupStageWeight = startupObservationRequired ? 1 : 0;
         int grandTotal = buildTotal + deployTotal + startupStageWeight;
         if (grandTotal <= 0) {
             return 0;
@@ -210,29 +224,35 @@ public class DeploymentEntity {
 
     @Transient
     public String getProgressStage() {
-        if (status == DeploymentStatus.SUCCESS || status == DeploymentStatus.PENDING) {
-            return null;
-        }
-        ProgressSnapshot snapshot = readProgressSnapshot();
-        return snapshot == null ? null : snapshot.getStage();
+        return progressStage(readProgressSnapshot());
+    }
+
+    public String progressStage(ProgressSnapshot snapshot) {
+        return status == DeploymentStatus.SUCCESS || status == DeploymentStatus.PENDING || snapshot == null ? null : snapshot.getStage();
     }
 
     @Transient
     public Integer getProgressCurrent() {
+        return progressCurrent(readProgressSnapshot());
+    }
+
+    public Integer progressCurrent(ProgressSnapshot snapshot) {
         if (status == DeploymentStatus.SUCCESS || status == DeploymentStatus.PENDING) {
             return null;
         }
-        ProgressSnapshot snapshot = readProgressSnapshot();
         ProgressStep step = resolveProgressStep(snapshot);
         return step == null ? null : step.getCurrent();
     }
 
     @Transient
     public Integer getProgressTotal() {
+        return progressTotal(readProgressSnapshot());
+    }
+
+    public Integer progressTotal(ProgressSnapshot snapshot) {
         if (status == DeploymentStatus.SUCCESS || status == DeploymentStatus.PENDING) {
             return null;
         }
-        ProgressSnapshot snapshot = readProgressSnapshot();
         ProgressStep step = resolveProgressStep(snapshot);
         return step == null ? null : step.getTotal();
     }
@@ -253,7 +273,11 @@ public class DeploymentEntity {
         return snapshot.getBuildStep();
     }
 
-    private ProgressSnapshot readProgressSnapshot() {
+    public ProgressSnapshot readProgressSnapshot() {
+        return readProgressSnapshot(resolveStartupObservationAttemptTotal());
+    }
+
+    public ProgressSnapshot readProgressSnapshot(int startupAttemptTotal) {
         if (logPath == null || logPath.isBlank()) {
             return null;
         }
@@ -267,8 +291,8 @@ public class DeploymentEntity {
             ProgressStep latestBuild = null;
             ProgressStep latestDeploy = null;
             ProgressStep latestRollback = null;
-            int buildTotal = extractDeclaredStepTotal(renderedBuildScript);
-            int deployTotal = extractDeclaredStepTotal(renderedDeployScript);
+            int buildTotal = buildStepTotal == null ? 0 : buildStepTotal;
+            int deployTotal = deployStepTotal == null ? 0 : deployStepTotal;
             int deployMarkerIndex = content.indexOf(DEPLOY_STAGE_MARKER);
             int rollbackMarkerIndex = content.indexOf(ROLLBACK_STAGE_MARKER);
             while (matcher.find()) {
@@ -303,7 +327,6 @@ public class DeploymentEntity {
                 stage = BUILD_STAGE;
             }
 
-            int startupAttemptTotal = resolveStartupObservationAttemptTotal();
             int startupAttemptCurrent = startupAttempt == null ? (STARTUP_STAGE.equals(stage) ? 1 : 0) : Math.min(startupAttempt, startupAttemptTotal);
             return new ProgressSnapshot(stage, latestBuild, latestDeploy, latestRollback, buildTotal, deployTotal, startupAttemptCurrent, startupAttemptTotal);
         } catch (IOException ignored) {
@@ -311,7 +334,7 @@ public class DeploymentEntity {
         }
     }
 
-    private int extractDeclaredStepTotal(String script) {
+    public int extractDeclaredStepTotal(String script) {
         if (script == null || script.isBlank()) {
             return 0;
         }
@@ -330,6 +353,10 @@ public class DeploymentEntity {
 
     private int resolveStartupObservationAttemptTotal() {
         Integer startupTimeoutSeconds = pipeline == null ? null : pipeline.getStartupTimeoutSeconds();
+        return resolveStartupObservationAttemptTotal(startupTimeoutSeconds);
+    }
+
+    public static int resolveStartupObservationAttemptTotal(Integer startupTimeoutSeconds) {
         if (startupTimeoutSeconds == null || startupTimeoutSeconds <= 0) {
             startupTimeoutSeconds = 30;
         }
@@ -339,7 +366,7 @@ public class DeploymentEntity {
 
     @Data
     @AllArgsConstructor
-    private static class ProgressSnapshot {
+    public static class ProgressSnapshot {
         private String stage;
         private ProgressStep buildStep;
         private ProgressStep deployStep;

@@ -12,6 +12,7 @@ import top.fusb.deploybot.security.AdminOnly;
 import top.fusb.deploybot.service.RuntimeEnvironmentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.util.List;
@@ -60,6 +62,15 @@ public class RuntimeEnvironmentController {
     @GetMapping("/install-tasks")
     public List<RuntimeEnvironmentInstallTaskStatus> installTasks(@RequestParam(required = false) Long hostId) {
         return service.listInstallTasks(hostId);
+    }
+
+    @GetMapping(value = "/install-tasks/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter installTasksStream(@RequestParam(required = false) Long hostId) {
+        return SseStreamSupport.stream(
+                "runtime-environment-install-tasks-stream",
+                "install-tasks",
+                () -> service.listInstallTasks(hostId)
+        );
     }
 
     /**

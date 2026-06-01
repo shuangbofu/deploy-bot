@@ -6,6 +6,7 @@ import top.fusb.deploybot.exception.ErrorCode;
 import top.fusb.deploybot.exception.ErrorSubCode;
 import top.fusb.deploybot.kit.JsonKit;
 import jakarta.servlet.http.HttpServletRequest;
+import org.apache.catalina.connector.ClientAbortException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -147,6 +148,15 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Result<Void>> handleUnexpected(Exception ex, HttpServletRequest request) {
+        if (isClientDisconnect(ex)) {
+            log.debug("API stream client disconnected on {} {}: {}", request.getMethod(), request.getRequestURI(), ex.getMessage());
+            return jsonFailure(
+                    ErrorCode.INTERNAL_ERROR.getCode(),
+                    ErrorCode.INTERNAL_ERROR.getDefaultMessage(),
+                    "SYS-CLIENT-DISCONNECT",
+                    "客户端连接已断开。"
+            );
+        }
         log.error("API unexpected error on {} {}", request.getMethod(), request.getRequestURI(), ex);
         return jsonFailure(
                 ErrorCode.INTERNAL_ERROR.getCode(),
@@ -160,5 +170,20 @@ public class GlobalExceptionHandler {
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(Result.failure(code, message, subCode, subMessage));
+    }
+
+    private boolean isClientDisconnect(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof ClientAbortException) {
+                return true;
+            }
+            String message = current.getMessage();
+            if (message != null && message.toLowerCase().contains("broken pipe")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 }

@@ -8,6 +8,7 @@ import PageHeaderBar from '../../components/PageHeaderBar';
 import RefreshIconButton from '../../components/RefreshIconButton';
 import PipelineNameWithTags from '../../components/PipelineNameWithTags';
 import StatusTag from '../../components/StatusTag';
+import { useSseStream } from '../../hooks/useSseStream';
 import type { ServicePidHistorySummary, ServiceProcessSummary, ServiceSummary } from '../../api/types';
 import { formatDateTime } from '../../utils/datetime';
 import { formatDurationSince } from '../../utils/duration';
@@ -60,12 +61,16 @@ export default function ServiceManagementPage() {
     loadServices().catch(() => message.error('加载服务失败'));
   }, []);
 
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      loadServices().catch((error) => setRefreshError(getRequestErrorMessage(error, '刷新服务失败')));
-    }, 15000);
-    return () => window.clearInterval(timer);
-  }, []);
+  useSseStream<ServiceSummary[]>({
+    enabled: true,
+    path: '/services/stream',
+    eventName: 'services',
+    onData: (items) => {
+      setServices(items);
+      setRefreshError('');
+    },
+    onError: () => setRefreshError('服务状态流连接失败，请手动刷新。'),
+  });
 
   const triggerAction = async (id, action, successText) => {
     setActingId(id);

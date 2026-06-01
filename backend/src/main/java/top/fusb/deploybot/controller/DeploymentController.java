@@ -5,6 +5,7 @@ import top.fusb.deploybot.dto.DeploymentFilterOptions;
 import top.fusb.deploybot.dto.DeploymentListSummary;
 import top.fusb.deploybot.dto.DeploymentPrecheckResult;
 import top.fusb.deploybot.dto.DeploymentPluginPlanSummary;
+import top.fusb.deploybot.dto.DeploymentStreamStatus;
 import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.model.DeploymentEntity;
 import top.fusb.deploybot.model.DeploymentStatus;
@@ -64,6 +65,25 @@ public class DeploymentController {
         return service.findPage(page, pageSize, projectName, pipelineName, triggeredBy, status, startTime, endTime, pipelineId);
     }
 
+    @GetMapping(value = "/page/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter pageStream(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int pageSize,
+            @RequestParam(required = false) String projectName,
+            @RequestParam(required = false) String pipelineName,
+            @RequestParam(required = false) String triggeredBy,
+            @RequestParam(required = false) DeploymentStatus status,
+            @RequestParam(required = false) Long startTime,
+            @RequestParam(required = false) Long endTime,
+            @RequestParam(required = false) Long pipelineId
+    ) {
+        return SseStreamSupport.stream(
+                "deployment-page-stream",
+                "deployments",
+                () -> service.findPage(page, pageSize, projectName, pipelineName, triggeredBy, status, startTime, endTime, pipelineId)
+        );
+    }
+
     @GetMapping("/mine/filter-options")
     public DeploymentFilterOptions mineFilterOptions() {
         return service.findMineFilterOptions();
@@ -88,6 +108,26 @@ public class DeploymentController {
             @RequestParam(required = false) Long pipelineId
     ) {
         return service.findMinePage(page, pageSize, projectName, pipelineName, triggeredBy, branchName, status, startTime, endTime, pipelineId);
+    }
+
+    @GetMapping(value = "/mine/page/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter minePageStream(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int pageSize,
+            @RequestParam(required = false) String projectName,
+            @RequestParam(required = false) String pipelineName,
+            @RequestParam(required = false) String triggeredBy,
+            @RequestParam(required = false) String branchName,
+            @RequestParam(required = false) DeploymentStatus status,
+            @RequestParam(required = false) Long startTime,
+            @RequestParam(required = false) Long endTime,
+            @RequestParam(required = false) Long pipelineId
+    ) {
+        return SseStreamSupport.stream(
+                "deployment-mine-page-stream",
+                "deployments",
+                () -> service.findMinePage(page, pageSize, projectName, pipelineName, triggeredBy, branchName, status, startTime, endTime, pipelineId)
+        );
     }
 
     /**
@@ -129,15 +169,15 @@ public class DeploymentController {
                 AuthContextHolder.set(currentUser);
                 boolean finished = false;
                 int idleAfterFinished = 0;
-                DeploymentStatus lastStatus = null;
+                DeploymentStreamStatus lastDeployment = null;
                 DeploymentProgressCursor lastProgressCursor = null;
                 while ((!finished || idleAfterFinished < 10) && !closed.get()) {
-                    DeploymentEntity deployment = service.findById(id);
+                    DeploymentStreamStatus deployment = service.findStreamStatus(id);
                     DeploymentProgressCursor progressCursor = DeploymentProgressCursor.from(deployment);
-                    if (deployment.getStatus() != lastStatus
+                    if (!Objects.equals(deployment, lastDeployment)
                             || !Objects.equals(progressCursor, lastProgressCursor)
-                            || finished != isFinished(deployment.getStatus())) {
-                        lastStatus = deployment.getStatus();
+                            || finished != isFinished(deployment.status())) {
+                        lastDeployment = deployment;
                         lastProgressCursor = progressCursor;
                         emitter.send(SseEmitter.event()
                                 .name("deployment")
@@ -196,12 +236,12 @@ public class DeploymentController {
             Integer current,
             Integer total
     ) {
-        private static DeploymentProgressCursor from(DeploymentEntity deployment) {
+        private static DeploymentProgressCursor from(DeploymentStreamStatus deployment) {
             return new DeploymentProgressCursor(
-                    deployment.getProgressPercent(),
-                    deployment.getProgressStage(),
-                    deployment.getProgressCurrent(),
-                    deployment.getProgressTotal()
+                    deployment.progressPercent(),
+                    deployment.progressStage(),
+                    deployment.progressCurrent(),
+                    deployment.progressTotal()
             );
         }
     }

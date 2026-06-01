@@ -19,6 +19,7 @@ import StatusTag from '../../components/StatusTag';
 import { ACTIVE_DEPLOYMENT_STATUSES } from '../../constants/deployment';
 import { usePipelineHallPreferences, type PipelineHallFilterMode } from '../../hooks/usePipelineHallPreferences';
 import { usePipelineHallStream } from '../../hooks/usePipelineHallStream';
+import { useSseStream } from '../../hooks/useSseStream';
 import type { PipelineBranchOption, PipelineHallRunningServiceSummary, PipelineHallSummary, PipelineSummary, UserRecentPipelineSummary } from '../../types/domain';
 import { formatDateTime } from '../../utils/datetime';
 import { formatDeploymentElapsed } from '../../utils/deploymentDuration';
@@ -232,8 +233,6 @@ export default function UserPipelinesPage({
   title = '流水线大厅',
   description = '查看可用流水线，选择分支并发起部署。',
 }: UserPipelinesPageProps) {
-  const IDLE_POLL_INTERVAL = 15000;
-  const ACTIVE_POLL_INTERVAL = 3000;
   const {
     viewMode,
     setViewMode,
@@ -296,7 +295,7 @@ export default function UserPipelinesPage({
     }
   };
 
-  /** 首次加载或慢轮询时同步刷新大厅卡片和最近部署统计。 */
+  /** 首次加载大厅卡片和最近部署统计，后续变化由 SSE 推送。 */
   const loadData = async (silent = false) => {
     if (!silent) {
       setHallLoading(true);
@@ -337,25 +336,6 @@ export default function UserPipelinesPage({
     await Promise.allSettled(tasks);
   };
 
-  const refreshActiveHallItems = async () => {
-    const activeIds = hallItems
-      .filter((item) => item.latestStatus && ACTIVE_DEPLOYMENT_STATUSES.includes(item.latestStatus))
-      .map((item) => item.pipelineId);
-    if (activeIds.length === 0) {
-      return;
-    }
-    const nextActiveItems = await pipelinesApi.listHallByIds(activeIds);
-    if (nextActiveItems.length === 0) {
-      return;
-    }
-    const nextActiveMap = new Map(nextActiveItems.map((item) => [item.pipelineId, item]));
-    setHallItems((current) => current.map((item) => nextActiveMap.get(item.pipelineId) ?? item));
-  };
-
-  const refreshRunningServices = async () => {
-    setRunningServices(await pipelinesApi.listRunningServices());
-  };
-
   const hasLiveRunningServices = runningServices.some((item) => item.status === 'RUNNING');
   const hallStreamVersion = useMemo(
     () => hallItems.reduce((max, item) => Math.max(max, item.version || item.latestDeploymentId || item.pipelineId || 0), 0),
@@ -373,28 +353,13 @@ export default function UserPipelinesPage({
     onError: () => {},
   });
 
-  useEffect(() => {
-    if (hallLoading && hallItems.length === 0 && recentLoading && runningLoading) {
-      return undefined;
-    }
-    const hasActiveDeployment = hallItems.some((item) => item.latestStatus && ACTIVE_DEPLOYMENT_STATUSES.includes(item.latestStatus));
-    const hasRunningServices = showRunningServices && hasLiveRunningServices;
-    const interval = window.setInterval(() => {
-      if (hasActiveDeployment) {
-        refreshActiveHallItems().catch(() => {});
-        if (hasRunningServices) {
-          refreshRunningServices().catch(() => {});
-        }
-        return;
-      }
-      if (hasRunningServices) {
-        refreshRunningServices().catch(() => {});
-        return;
-      }
-      loadData(true).catch(() => {});
-    }, hasActiveDeployment || hasRunningServices ? ACTIVE_POLL_INTERVAL : IDLE_POLL_INTERVAL);
-    return () => window.clearInterval(interval);
-  }, [hallItems, hallLoading, recentLoading, runningLoading, hasLiveRunningServices, showRunningServices]);
+  useSseStream<PipelineHallRunningServiceSummary[]>({
+    enabled: showRunningServices,
+    path: '/pipelines/hall/running-services/stream',
+    eventName: 'running-services',
+    onData: setRunningServices,
+    onError: () => {},
+  });
 
   useEffect(() => {
     const timer = window.setInterval(() => setTick(Date.now()), 1000);

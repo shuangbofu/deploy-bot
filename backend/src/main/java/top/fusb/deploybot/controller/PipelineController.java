@@ -9,8 +9,6 @@ import top.fusb.deploybot.dto.PipelineLockRequest;
 import top.fusb.deploybot.dto.PipelineRequest;
 import top.fusb.deploybot.model.PipelineEntity;
 import top.fusb.deploybot.security.AdminOnly;
-import top.fusb.deploybot.security.AuthContextHolder;
-import top.fusb.deploybot.security.AuthenticatedUser;
 import top.fusb.deploybot.service.GitBranchService;
 import top.fusb.deploybot.service.DeploymentPluginBridgeService;
 import top.fusb.deploybot.service.PipelineService;
@@ -31,8 +29,6 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 @RestController
 @RequestMapping("/api/pipelines")
@@ -69,47 +65,20 @@ public class PipelineController {
 
     @GetMapping(value = "/hall/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter hallStream(@RequestParam(required = false) Long version) {
-        service.findHallSummaries();
-        AuthenticatedUser currentUser = AuthContextHolder.get();
-        SseEmitter emitter = new SseEmitter(0L);
-        AtomicBoolean closed = new AtomicBoolean(false);
-        Thread thread = new Thread(() -> {
-            String lastSignature = null;
-            try {
-                AuthContextHolder.set(currentUser);
-                while (!Thread.currentThread().isInterrupted() && !closed.get()) {
-                    List<PipelineHallSummary> summaries = service.findHallSummaries();
-                    String nextSignature = hallSignature(summaries);
-                    Long nextVersion = (long) nextSignature.hashCode();
-                    if (!Objects.equals(nextSignature, lastSignature) && !Objects.equals(nextVersion, version)) {
-                        emitter.send(SseEmitter.event()
-                                .name("hall")
-                                .data(Map.of(
-                                        "version", nextVersion,
-                                        "items", summaries
-                                )));
-                        lastSignature = nextSignature;
-                    }
-                    Thread.sleep(1200L);
-                }
-            } catch (InterruptedException ex) {
-                Thread.currentThread().interrupt();
-            } catch (Exception ex) {
-                closed.set(true);
-            } finally {
-                AuthContextHolder.clear();
-            }
-        }, "pipeline-hall-stream");
-        thread.setDaemon(true);
-        Runnable closeStream = () -> {
-            closed.set(true);
-            thread.interrupt();
-        };
-        emitter.onCompletion(closeStream);
-        emitter.onTimeout(closeStream);
-        emitter.onError(ignored -> closeStream.run());
-        thread.start();
-        return emitter;
+        return SseStreamSupport.stream("pipeline-hall-stream", "hall", () -> {
+            List<PipelineHallSummary> summaries = service.findHallSummaries();
+            Long nextVersion = (long) hallSignature(summaries).hashCode();
+            return Map.of(
+                    "version", nextVersion,
+                    "items", summaries,
+                    "skipInitial", version != null && version.equals(nextVersion)
+            );
+        });
+    }
+
+    @GetMapping(value = "/hall/running-services/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter runningServicesStream() {
+        return SseStreamSupport.stream("pipeline-running-services-stream", "running-services", serviceManager::findRunningHallSummaries);
     }
 
     private String hallSignature(List<PipelineHallSummary> summaries) {

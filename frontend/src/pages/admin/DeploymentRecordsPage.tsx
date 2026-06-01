@@ -11,6 +11,7 @@ import PipelineNameWithTags from '../../components/PipelineNameWithTags';
 import StatusTag from '../../components/StatusTag';
 import { ACTIVE_DEPLOYMENT_STATUSES } from '../../constants/deployment';
 import { DEPLOYMENT_STATUS_OPTIONS } from '../../constants/deployment';
+import { useSseStream } from '../../hooks/useSseStream';
 import type { DeploymentRecordFilters, DeploymentSummary } from '../../types/domain';
 import { formatDateTime } from '../../utils/datetime';
 import { formatDeploymentElapsed } from '../../utils/deploymentDuration';
@@ -77,15 +78,28 @@ export default function DeploymentRecordsPage() {
     return () => window.clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    if (!deployments.some((item) => item.status && ACTIVE_DEPLOYMENT_STATUSES.includes(item.status))) {
-      return undefined;
-    }
-    const timer = window.setInterval(() => {
-      loadDeployments().catch(() => undefined);
-    }, 3000);
-    return () => window.clearInterval(timer);
-  }, [deployments, pagination.current, pagination.pageSize, filters]);
+  const streamQuery = new URLSearchParams();
+  streamQuery.set('page', String(pagination.current));
+  streamQuery.set('pageSize', String(pagination.pageSize));
+  if (filters.projectName) streamQuery.set('projectName', filters.projectName);
+  if (filters.pipelineName) streamQuery.set('pipelineName', filters.pipelineName);
+  if (filters.triggeredBy) streamQuery.set('triggeredBy', filters.triggeredBy);
+  if (filters.status) streamQuery.set('status', filters.status);
+  const streamStartTime = filters.timeRange?.[0]?.startOf('day')?.valueOf?.();
+  const streamEndTime = filters.timeRange?.[1]?.endOf('day')?.valueOf?.();
+  if (streamStartTime) streamQuery.set('startTime', String(streamStartTime));
+  if (streamEndTime) streamQuery.set('endTime', String(streamEndTime));
+
+  useSseStream<{ items: DeploymentSummary[]; total: number }>({
+    enabled: deployments.some((item) => item.status && ACTIVE_DEPLOYMENT_STATUSES.includes(item.status)),
+    path: `/deployments/page/stream?${streamQuery.toString()}`,
+    eventName: 'deployments',
+    onData: (result) => {
+      setDeployments(result.items);
+      setTotal(result.total);
+    },
+    onError: () => {},
+  });
 
   return (
     <>

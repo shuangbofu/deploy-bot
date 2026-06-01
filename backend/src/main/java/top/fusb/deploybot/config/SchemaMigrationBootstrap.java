@@ -31,6 +31,8 @@ public class SchemaMigrationBootstrap {
                 "ALTER TABLE IF EXISTS deployments ADD COLUMN IF NOT EXISTS pipeline_name VARCHAR(255)",
                 "ALTER TABLE IF EXISTS deployments ADD COLUMN IF NOT EXISTS project_name VARCHAR(255)",
                 "ALTER TABLE IF EXISTS deployments ADD COLUMN IF NOT EXISTS stopped_by VARCHAR(1000)",
+                "ALTER TABLE IF EXISTS deployments ADD COLUMN IF NOT EXISTS build_step_total INTEGER",
+                "ALTER TABLE IF EXISTS deployments ADD COLUMN IF NOT EXISTS deploy_step_total INTEGER",
                 "ALTER TABLE IF EXISTS templates ADD COLUMN IF NOT EXISTS plugin_id VARCHAR(100)",
                 "ALTER TABLE IF EXISTS pipelines ALTER COLUMN template_id BIGINT NULL",
                 "ALTER TABLE IF EXISTS pipelines ADD COLUMN IF NOT EXISTS template_plugin_id VARCHAR(100)",

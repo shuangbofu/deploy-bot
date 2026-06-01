@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import top.fusb.deploybot.dto.DeploymentRequest;
 import top.fusb.deploybot.dto.DeploymentPrecheckResult;
 import top.fusb.deploybot.dto.DeploymentPrecheckMissingItem;
+import top.fusb.deploybot.dto.DeploymentStreamStatus;
 import top.fusb.deploybot.dto.DeploymentFilterOptions;
 import top.fusb.deploybot.dto.DeploymentListSummary;
 import top.fusb.deploybot.dto.PageResult;
@@ -327,6 +328,26 @@ public class DeploymentService {
         return enrichTriggeredByDisplayName(entity);
     }
 
+    public DeploymentStreamStatus findStreamStatus(Long id) {
+        DeploymentEntity entity = deploymentRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.DEPLOYMENT_NOT_FOUND));
+        ensureDeploymentReadable(entity);
+        DeploymentEntity.ProgressSnapshot snapshot = entity.readProgressSnapshot();
+        return new DeploymentStreamStatus(
+                entity.getId(),
+                entity.getStatus(),
+                entity.getStartedAt(),
+                entity.getFinishedAt(),
+                entity.getErrorMessage(),
+                entity.getMonitoredPid(),
+                entity.getCommitSha(),
+                entity.progressPercent(snapshot),
+                entity.progressStage(snapshot),
+                entity.progressCurrent(snapshot),
+                entity.progressTotal(snapshot)
+        );
+    }
+
     @Transactional
     public DeploymentEntity create(DeploymentRequest request) {
         // 1. 读取并校验流水线。
@@ -445,6 +466,8 @@ public class DeploymentService {
         entity.setArtifactPath(localArtifactDir.toString());
         entity.setRenderedBuildScript(buildRuntimeEnvironmentPreamble(buildVariables, pipeline, true) + renderedBuildScript);
         entity.setRenderedDeployScript(renderedDeployScript == null ? null : buildRuntimeEnvironmentPreamble(deployVariables, pipeline, false) + renderedDeployScript);
+        entity.setBuildStepTotal(entity.extractDeclaredStepTotal(renderedBuildScript));
+        entity.setDeployStepTotal(entity.extractDeclaredStepTotal(renderedDeployScript));
         entity.setVariables(deployVariables);
         entity.setExecutionSnapshot(buildExecutionSnapshot(pipeline, branch, deployVariables));
         entity = deploymentRepository.save(entity);
@@ -1126,10 +1149,13 @@ public class DeploymentService {
 
         String deployTemplate = resolveDeployScriptTemplate(pipeline);
         String renderedDeployScript = deployTemplate == null ? null : renderDeploymentScriptTemplate(deployTemplate, deployVariables);
+        String renderedBuildScript = buildReplayScript(buildVariables);
 
         entity.setArtifactPath(localArtifactDir.toString());
-        entity.setRenderedBuildScript(buildRuntimeEnvironmentPreamble(buildVariables, pipeline, true) + buildReplayScript(buildVariables));
+        entity.setRenderedBuildScript(buildRuntimeEnvironmentPreamble(buildVariables, pipeline, true) + renderedBuildScript);
         entity.setRenderedDeployScript(renderedDeployScript == null ? null : buildRuntimeEnvironmentPreamble(deployVariables, pipeline, false) + renderedDeployScript);
+        entity.setBuildStepTotal(entity.extractDeclaredStepTotal(renderedBuildScript));
+        entity.setDeployStepTotal(entity.extractDeclaredStepTotal(renderedDeployScript));
         entity.setVariables(deployVariables);
         entity.setExecutionSnapshot(buildExecutionSnapshot(pipeline, source.getBranchName(), deployVariables));
         entity = deploymentRepository.save(entity);
