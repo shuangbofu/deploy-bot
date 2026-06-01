@@ -31,6 +31,7 @@ export default function DeploymentDetailPage({ scope }: Props) {
   const [detailLoading, setDetailLoading] = useState(true);
   const [logLoading, setLogLoading] = useState(true);
   const [logOffset, setLogOffset] = useState(0);
+  const [logInitialLoaded, setLogInitialLoaded] = useState(false);
   const [lastLogUpdateAt, setLastLogUpdateAt] = useState(() => Date.now());
   const [logStreamClosing, setLogStreamClosing] = useState(false);
   const [plugins, setPlugins] = useState<DeploymentPluginDefinitionSummary[]>([]);
@@ -65,6 +66,7 @@ export default function DeploymentDetailPage({ scope }: Props) {
       setLogContent(log.content);
       setLogOffset(new TextEncoder().encode(log.content || '').length);
       setLastLogUpdateAt(Date.now());
+      setLogInitialLoaded(true);
     } finally {
       if (!options?.silent) {
         setLogLoading(false);
@@ -73,6 +75,10 @@ export default function DeploymentDetailPage({ scope }: Props) {
   };
 
   useEffect(() => {
+    setLogInitialLoaded(false);
+    setLogContent('');
+    setLogOffset(0);
+    setLogStreamClosing(false);
     loadDeploymentDetail().catch(() => message.error('加载部署详情失败'));
     loadDeploymentLog().catch(() => message.error('加载部署日志失败'));
     deploymentPluginsApi.list().then(setPlugins).catch(() => setPlugins([]));
@@ -85,7 +91,11 @@ export default function DeploymentDetailPage({ scope }: Props) {
 
   useDeploymentLogStream({
     deploymentId,
-    enabled: Boolean(deploymentId && (deployment?.status && ACTIVE_DEPLOYMENT_STATUSES.includes(deployment.status) || logStreamClosing)),
+    enabled: Boolean(
+      deploymentId
+        && logInitialLoaded
+        && (deployment?.status && ACTIVE_DEPLOYMENT_STATUSES.includes(deployment.status) || logStreamClosing),
+    ),
     offset: logOffset,
     onLog: (payload) => {
       if (payload.content) {

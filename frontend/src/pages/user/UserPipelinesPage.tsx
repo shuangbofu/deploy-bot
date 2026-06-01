@@ -1243,7 +1243,7 @@ export default function UserPipelinesPage({
             onChange={setSelectedBranch}
             placeholder="请选择分支"
             showSearch
-            optionFilterProp="label"
+            optionFilterProp="value"
           />
         </div>
       </Modal>
