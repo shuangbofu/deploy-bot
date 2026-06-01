@@ -1,0 +1,19 @@
+services:
+  deploy-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: deploy-bot:local
+    container_name: deploy-bot
+    restart: unless-stopped
+    ports:
+      - "${DEPLOY_BOT_PORT:-8080}:8080"
+    environment:
+      TZ: Asia/Shanghai
+      DEPLOYBOT_BASE_URL: "${DEPLOYBOT_BASE_URL:-http://localhost:${DEPLOY_BOT_PORT:-8080}}"
+      DEPLOYBOT_WORKSPACE_ROOT: /app/runtime
+      SPRING_DATASOURCE_URL: jdbc:h2:file:/app/runtime/deploy-bot-db
+      LOGGING_FILE_NAME: /app/runtime/logs/deploy-bot-app.log
+      JAVA_OPTS: "${JAVA_OPTS:-}"
+    volumes:
+      - ./runtime:/app/runtime
