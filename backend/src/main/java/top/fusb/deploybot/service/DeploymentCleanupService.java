@@ -27,6 +27,8 @@ import java.util.List;
 public class DeploymentCleanupService {
     private static final Logger log = LoggerFactory.getLogger(DeploymentCleanupService.class);
     private static final String RUNS_DIR = "runs";
+    private static final String SCRIPT_DIR = "scripts";
+    private static final String SSH_DIR = "ssh";
 
     private final DeploymentRepository deploymentRepository;
     private final SystemSettingsService systemSettingsService;
@@ -37,6 +39,7 @@ public class DeploymentCleanupService {
         if (deployment == null || deployment.getId() == null || buildWorkspaceRoot == null) {
             return;
         }
+        cleanupDeploymentTemporaryFiles(deployment, buildWorkspaceRoot);
         SystemSettingsEntity settings = systemSettingsService.get();
         if (!systemSettingsService.isCleanupEnabled(settings)) {
             return;
@@ -46,6 +49,12 @@ public class DeploymentCleanupService {
         List<Long> expiredSuccessfulDeploymentIds = findExpiredSuccessfulDeploymentIds(deployment, settings);
         cleanupRemoteArtifacts(deployment, buildWorkspaceRoot, expiredSuccessfulDeploymentIds);
         cleanupPipelineArtifacts(deployment, expiredSuccessfulDeploymentIds);
+    }
+
+    private void cleanupDeploymentTemporaryFiles(DeploymentEntity deployment, Path buildWorkspaceRoot) {
+        deleteDirectory(buildWorkspaceRoot.resolve(SSH_DIR).resolve("deploy-" + deployment.getId()));
+        deleteFile(buildWorkspaceRoot.resolve(SCRIPT_DIR).resolve("deploy-" + deployment.getId() + "-build.sh"));
+        deleteFile(buildWorkspaceRoot.resolve(SCRIPT_DIR).resolve("deploy-" + deployment.getId() + "-deploy.sh"));
     }
 
     private void cleanupRunWorkspace(DeploymentEntity deployment, Path buildWorkspaceRoot, SystemSettingsEntity settings) {
@@ -127,6 +136,17 @@ public class DeploymentCleanupService {
             return;
         }
         deleteDirectory(Path.of(path));
+    }
+
+    private void deleteFile(Path path) {
+        try {
+            if (path == null) {
+                return;
+            }
+            Files.deleteIfExists(path);
+        } catch (Exception ex) {
+            log.warn("清理部署临时文件失败：{} -> {}", path, ex.getMessage());
+        }
     }
 
     private void deleteDirectory(Path path) {

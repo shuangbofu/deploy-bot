@@ -180,7 +180,7 @@ public class DeploymentController {
                         lastDeployment = deployment;
                         lastProgressCursor = progressCursor;
                         emitter.send(SseEmitter.event()
-                                .name("deployment")
+                                .name("deployment-status")
                                 .data(deployment));
                     }
                     DeploymentService.LogChunk chunk = service.readAuthorizedLogChunk(id, currentOffset);

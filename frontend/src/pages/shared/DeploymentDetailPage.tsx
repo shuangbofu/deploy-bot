@@ -110,7 +110,25 @@ export default function DeploymentDetailPage({ scope }: Props) {
         loadDeploymentDetail({ silent: true }).catch(() => undefined);
       }
     },
-    onDeployment: setDeployment,
+    onDeploymentStatus: (streamStatus) => {
+      setDeployment((previous) => (
+        previous
+          ? {
+            ...previous,
+            status: streamStatus.status,
+            startedAt: streamStatus.startedAt,
+            finishedAt: streamStatus.finishedAt,
+            errorMessage: streamStatus.errorMessage,
+            monitoredPid: streamStatus.monitoredPid,
+            commitSha: streamStatus.commitSha,
+            progressPercent: streamStatus.progressPercent,
+            progressStage: streamStatus.progressStage,
+            progressCurrent: streamStatus.progressCurrent,
+            progressTotal: streamStatus.progressTotal,
+          }
+          : previous
+      ));
+    },
     onDone: () => {
       setLogStreamClosing(false);
       loadDeploymentDetail({ silent: true }).catch(() => undefined);

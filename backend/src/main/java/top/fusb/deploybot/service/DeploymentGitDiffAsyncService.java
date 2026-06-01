@@ -72,7 +72,7 @@ public class DeploymentGitDiffAsyncService {
                     tempDir
             );
             Path repoDir = tempDir.resolve("repo");
-            runGit(tempDir, processConfig.environment(), "clone", "--filter=blob:none", "--no-checkout", processConfig.gitUrl(), repoDir.toString());
+            cloneTemporaryRepo(tempDir, processConfig, repoDir);
             fetchBranchHistory(repoDir, processConfig.environment(), deployment.getBranchName());
             fetchCommitIfMissing(repoDir, processConfig.environment(), deployment.getCommitSha());
             fetchCommitIfMissing(repoDir, processConfig.environment(), previousSha);
@@ -89,6 +89,25 @@ public class DeploymentGitDiffAsyncService {
         } finally {
             deleteDirectory(tempDir);
         }
+    }
+
+    private void cloneTemporaryRepo(Path tempDir, GitCredentialService.GitProcessConfig processConfig, Path repoDir) throws IOException, InterruptedException {
+        try {
+            runGit(tempDir, processConfig.environment(), "clone", "--filter=blob:none", "--no-checkout", processConfig.gitUrl(), repoDir.toString());
+        } catch (IllegalStateException ex) {
+            if (!isUnsupportedPartialClone(ex)) {
+                throw ex;
+            }
+            log.warn("当前 Git 版本不支持 partial clone，部署差异生成降级为普通 no-checkout clone。");
+            runGit(tempDir, processConfig.environment(), "clone", "--no-checkout", processConfig.gitUrl(), repoDir.toString());
+        }
+    }
+
+    private boolean isUnsupportedPartialClone(Exception ex) {
+        String message = ex == null ? "" : String.valueOf(ex.getMessage());
+        return message.contains("unknown option `filter=blob:none'")
+                || message.contains("unknown option 'filter=blob:none'")
+                || message.contains("unknown option: filter=blob:none");
     }
 
     private void fetchBranchHistory(Path repoDir, Map<String, String> environment, String branchName) throws IOException, InterruptedException {
@@ -185,9 +204,36 @@ public class DeploymentGitDiffAsyncService {
         }
         int exitCode = process.waitFor();
         if (exitCode != 0) {
-            throw new IllegalStateException("git " + String.join(" ", args) + " exited with code " + exitCode + ": " + output);
+            throw new IllegalStateException("git " + maskCommandArgs(args) + " exited with code " + exitCode + ": " + output);
         }
         return output == null ? "" : output.trim();
+    }
+
+    private String maskCommandArgs(String... args) {
+        return String.join(" ", List.of(args).stream().map(this::maskGitUrl).toList());
+    }
+
+    private String maskGitUrl(String value) {
+        if (value == null || value.isBlank()) {
+            return value;
+        }
+        try {
+            java.net.URI uri = java.net.URI.create(value);
+            if (uri.getUserInfo() == null || uri.getUserInfo().isBlank()) {
+                return value;
+            }
+            return new java.net.URI(
+                    uri.getScheme(),
+                    "***",
+                    uri.getHost(),
+                    uri.getPort(),
+                    uri.getPath(),
+                    uri.getQuery(),
+                    uri.getFragment()
+            ).toString();
+        } catch (Exception ignored) {
+            return value.replaceAll("://([^/@:]+):([^/@]+)@", "://$1:***@");
+        }
     }
 
     private String runGitBestEffort(Path directory, Map<String, String> environment, String... args) {

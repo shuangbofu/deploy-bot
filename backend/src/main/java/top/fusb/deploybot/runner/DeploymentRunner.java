@@ -66,6 +66,7 @@ public class DeploymentRunner {
     private static final long STARTUP_EXIT_LOG_DRAIN_TIMEOUT_MILLIS = 3_000L;
     private static final long STARTUP_EXIT_LOG_DRAIN_INTERVAL_MILLIS = 500L;
     private static final int STARTUP_LOG_BUFFER_LIMIT = 256 * 1024;
+    private static final int REMOTE_PROCESS_MAX_ATTEMPTS = 3;
 
     private final DeploymentRepository deploymentRepository;
     private final ServiceManager serviceManager;
@@ -166,6 +167,7 @@ public class DeploymentRunner {
                     logFile,
                     deploymentId
             );
+            cleanupGitSshCredentials(sshDir);
             log.info("部署 {} 构建阶段结束，退出码={}.", deploymentId, exitCode);
             deployment = refreshDeploymentState(deployment);
             recordCurrentCommit(deployment, logFile);
@@ -202,11 +204,13 @@ public class DeploymentRunner {
                     syncArtifactsToRemote(targetHost, artifactsDir, remoteArtifactDir, sshDir, logFile, deploymentId);
                     log.info("部署 {} 构建产物同步完成。目标主机='{}'，远端产物目录='{}'。", deploymentId, targetHost.getHostname(), remoteArtifactDir);
                     prepareManagedStartScriptIfPresent(deployment, targetHost, sshDir, logFile, deploymentId);
-                    exitCode = runProcess(
-                            buildRemoteDeployProcessBuilder(targetHost, sshDir),
+                    exitCode = runRemoteProcessWithRetry(
+                            targetHost,
+                            () -> buildRemoteDeployProcessBuilder(targetHost, sshDir),
                             deployment.getRenderedDeployScript(),
                             logFile,
-                            deploymentId
+                            deploymentId,
+                            "执行远程发布脚本"
                     );
                 } else {
                     prepareManagedStartScriptIfPresent(deployment, targetHost, sshDir, logFile, deploymentId);
@@ -383,11 +387,13 @@ public class DeploymentRunner {
         script.append("mkdir -p \"").append(escapedArtifactDir).append("\"\n");
 
         appendSystemLog(logFile, "准备远程目录：" + remoteArtifactDir);
-        int prepareExitCode = runProcess(
-                ProcessKit.mergedBuilder(buildSshCommand(targetHost, sshDir)),
+        int prepareExitCode = runRemoteProcessWithRetry(
+                targetHost,
+                () -> ProcessKit.mergedBuilder(buildSshCommand(targetHost, sshDir)),
                 script.toString(),
                 logFile,
-                deploymentId
+                deploymentId,
+                "准备远程目录"
         );
         log.info("Remote directory preparation finished for deployment {} with exit code {}.", deploymentId, prepareExitCode);
         if (prepareExitCode != 0) {
@@ -691,6 +697,23 @@ public class DeploymentRunner {
         Files.writeString(privateKey, keyContent.replace("\r\n", "\n").trim() + "\n", StandardCharsets.UTF_8);
         try {
             Files.setPosixFilePermissions(privateKey, java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"));
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void cleanupGitSshCredentials(Path sshDir) {
+        if (sshDir == null) {
+            return;
+        }
+        deleteFileQuietly(sshDir.resolve("id_deploybot"));
+        deleteFileQuietly(sshDir.resolve("id_deploybot.pub"));
+        deleteFileQuietly(sshDir.resolve("known_hosts"));
+        deleteFileQuietly(sshDir.resolve(GitCredentialService.GIT_SSH_WRAPPER_NAME));
+    }
+
+    private void deleteFileQuietly(Path path) {
+        try {
+            Files.deleteIfExists(path);
         } catch (Exception ignored) {
         }
     }
@@ -1371,6 +1394,50 @@ public class DeploymentRunner {
         }
     }
 
+    private int runRemoteProcessWithRetry(
+            HostEntity targetHost,
+            ProcessBuilderFactory processBuilderFactory,
+            String stdin,
+            Path logFile,
+            Long deploymentId,
+            String action
+    ) throws Exception {
+        int lastExitCode = -1;
+        for (int attempt = 1; attempt <= REMOTE_PROCESS_MAX_ATTEMPTS; attempt++) {
+            int exitCode = runProcess(processBuilderFactory.create(), stdin, logFile, deploymentId);
+            if (exitCode == 0 || !isRetryableSshExitCode(exitCode)) {
+                return exitCode;
+            }
+            lastExitCode = exitCode;
+            if (attempt >= REMOTE_PROCESS_MAX_ATTEMPTS) {
+                break;
+            }
+            long backoffMillis = 800L * attempt;
+            appendSystemLog(logFile, action + "时 SSH 连接失败，退出码=" + exitCode + "，第 " + attempt + " 次尝试未成功，准备第 " + (attempt + 1) + " 次重连。");
+            log.warn(
+                    "部署 {} {} 遇到可重试 SSH 连接失败，目标主机={}，退出码={}，attempt={}/{}，{}ms 后重试。",
+                    deploymentId,
+                    action,
+                    targetHost == null ? null : targetHost.getHostname(),
+                    exitCode,
+                    attempt,
+                    REMOTE_PROCESS_MAX_ATTEMPTS,
+                    backoffMillis
+            );
+            Thread.sleep(backoffMillis);
+        }
+        return lastExitCode;
+    }
+
+    private boolean isRetryableSshExitCode(int exitCode) {
+        return exitCode == 255;
+    }
+
+    @FunctionalInterface
+    private interface ProcessBuilderFactory {
+        ProcessBuilder create() throws Exception;
+    }
+
     private boolean isStopInterruption(Long deploymentId, IOException ex) {
         if (ex == null || ex.getMessage() == null) {
             return false;
@@ -1560,11 +1627,13 @@ public class DeploymentRunner {
                 __DEPLOYBOT_MANAGED_START__
                 chmod 700 "$START_SCRIPT"
                 """.formatted(ShellKit.singleQuote(startScriptPath), startScript.stripTrailing());
-        int exitCode = runProcess(
-                ProcessKit.mergedBuilder(buildSshCommand(targetHost, sshDir)),
+        int exitCode = runRemoteProcessWithRetry(
+                targetHost,
+                () -> ProcessKit.mergedBuilder(buildSshCommand(targetHost, sshDir)),
                 script,
                 logFile,
-                deploymentId
+                deploymentId,
+                "写入远程托管启动脚本"
         );
         if (exitCode != 0) {
             throw new BusinessException(ErrorSubCode.REMOTE_DIRECTORY_PREPARE_FAILED, "托管进程启动脚本写入失败。");
@@ -1615,11 +1684,13 @@ public class DeploymentRunner {
     ) throws Exception {
         appendSystemLog(logFile, "开始同步构建产物到远程主机：" + remoteArtifactDir);
         log.info("部署 {} 开始同步构建产物到远端目录 {}。", deploymentId, remoteArtifactDir);
-        int copyExitCode = runProcess(
-                ProcessKit.mergedBuilder(buildArtifactSyncCommand(targetHost, sshDir, localArtifactDir, remoteArtifactDir.toString())),
+        int copyExitCode = runRemoteProcessWithRetry(
+                targetHost,
+                () -> ProcessKit.mergedBuilder(buildArtifactSyncCommand(targetHost, sshDir, localArtifactDir, remoteArtifactDir.toString())),
                 null,
                 logFile,
-                deploymentId
+                deploymentId,
+                "同步构建产物到远程主机"
         );
         log.info("部署 {} 的构建产物同步进程结束，退出码={}。", deploymentId, copyExitCode);
         if (copyExitCode != 0) {

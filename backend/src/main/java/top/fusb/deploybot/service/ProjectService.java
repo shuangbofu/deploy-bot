@@ -107,7 +107,7 @@ public class ProjectService {
                 log.info(
                         "项目仓库连通性测试已生成 Git 进程配置：project='{}', resolvedGitUrl='{}', hasSshWrapper={}.",
                         project.getName(),
-                        processConfig.gitUrl(),
+                        maskGitUrl(processConfig.gitUrl()),
                         processConfig.environment().containsKey("GIT_SSH")
                 );
                 ProcessBuilder processBuilder = ProcessKit.mergedBuilder(
@@ -119,9 +119,9 @@ public class ProjectService {
                 processBuilder.directory(tempDir.toFile());
                 processBuilder.environment().putAll(processConfig.environment());
                 log.info(
-                        "执行 Git 连通性测试命令：project='{}', command='{}', workdir='{}'.",
+                        "执行 Git 连通性测试命令：project='{}', executable='{}', workdir='{}'.",
                         project.getName(),
-                        String.join(" ", processBuilder.command()),
+                        gitCredentialService.getGitExecutable(),
                         tempDir.toAbsolutePath().normalize()
                 );
 
@@ -244,6 +244,29 @@ public class ProjectService {
             }
         }
         return null;
+    }
+
+    private String maskGitUrl(String gitUrl) {
+        if (gitUrl == null || gitUrl.isBlank()) {
+            return gitUrl;
+        }
+        try {
+            java.net.URI uri = java.net.URI.create(gitUrl);
+            if (uri.getUserInfo() == null || uri.getUserInfo().isBlank()) {
+                return gitUrl;
+            }
+            return new java.net.URI(
+                    uri.getScheme(),
+                    "***",
+                    uri.getHost(),
+                    uri.getPort(),
+                    uri.getPath(),
+                    uri.getQuery(),
+                    uri.getFragment()
+            ).toString();
+        } catch (Exception ignored) {
+            return gitUrl.replaceAll("://([^/@:]+):([^/@]+)@", "://$1:***@");
+        }
     }
 
     private record SshTarget(String host, Integer port, String username) {

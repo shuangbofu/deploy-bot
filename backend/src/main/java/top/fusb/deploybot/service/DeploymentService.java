@@ -768,7 +768,6 @@ public class DeploymentService {
             script.append(buildRuntimeCommandDiagnostics(requiredTypes, false));
         }
 
-        script.append(buildGitSshPreamble(pipeline, variables));
         script.append("\n");
         return script.toString();
     }
@@ -973,62 +972,6 @@ public class DeploymentService {
                 # Activate %s environment
                 %s
                 """.formatted(prefix, activationScript);
-    }
-
-    /**
-     * Git 使用 SSH 拉代码时，这段脚本负责在工作目录内准备临时密钥、known_hosts 与 ssh 包装器。
-     */
-    private String buildGitSshPreamble(PipelineEntity pipeline, Map<String, String> variables) {
-        if (pipeline == null || pipeline.getProject() == null || pipeline.getProject().getGitAuthType() != GitAuthType.SSH) {
-            return "";
-        }
-        String workspaceRoot = valueOf(variables, "workspaceRoot");
-        if (TextKit.isBlank(workspaceRoot)) {
-            return "";
-        }
-        String gitSshDir = Path.of(workspaceRoot).resolve("ssh").resolve("git").toString();
-        String privateKey = systemSettingsService.get().getGitSshPrivateKey();
-        if (TextKit.isBlank(privateKey)) {
-            return "";
-        }
-        String publicKey = systemSettingsService.get().getGitSshPublicKey();
-        String knownHosts = systemSettingsService.get().getGitSshKnownHosts();
-
-        StringBuilder script = new StringBuilder();
-        script.append("# Prepare Git SSH credentials\n");
-        script.append("mkdir -p \"").append(ShellKit.escapeDoubleQuoted(gitSshDir)).append("\"\n");
-        script.append(ShellKit.writeLiteralFile(gitSshDir + "/id_deploybot", privateKey, ShellHeredocMarker.GIT_PRIVATE_KEY));
-        if (TextKit.isNotBlank(publicKey)) {
-            script.append(ShellKit.writeLiteralFile(gitSshDir + "/id_deploybot.pub", publicKey, ShellHeredocMarker.GIT_PUBLIC_KEY));
-        }
-        if (TextKit.isNotBlank(knownHosts)) {
-            script.append(ShellKit.writeLiteralFile(gitSshDir + "/known_hosts", knownHosts, ShellHeredocMarker.GIT_KNOWN_HOSTS));
-            script.append(ShellKit.writeLiteralFile(
-                    gitSshDir + "/git-ssh-wrapper.sh",
-                    """
-                    #!/usr/bin/env bash
-                    set -e
-                    exec ssh -i "%s/id_deploybot" -o IdentitiesOnly=yes -o PreferredAuthentications=publickey -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no -o StrictHostKeyChecking=yes -o UserKnownHostsFile="%s/known_hosts" "$@"
-                    """.formatted(ShellKit.escapeDoubleQuoted(gitSshDir), ShellKit.escapeDoubleQuoted(gitSshDir)),
-                    ShellHeredocMarker.GIT_SSH_WRAPPER
-            ));
-        } else {
-            script.append(ShellKit.writeLiteralFile(
-                    gitSshDir + "/git-ssh-wrapper.sh",
-                    """
-                    #!/usr/bin/env bash
-                    set -e
-                    exec ssh -i "%s/id_deploybot" -o IdentitiesOnly=yes -o PreferredAuthentications=publickey -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no -o StrictHostKeyChecking=no "$@"
-                    """.formatted(ShellKit.escapeDoubleQuoted(gitSshDir)),
-                    ShellHeredocMarker.GIT_SSH_WRAPPER
-            ));
-        }
-        script.append("chmod 600 \"").append(ShellKit.escapeDoubleQuoted(gitSshDir)).append("/id_deploybot\" || true\n");
-        script.append("chmod 700 \"").append(ShellKit.escapeDoubleQuoted(gitSshDir)).append("/git-ssh-wrapper.sh\" || true\n");
-        script.append("export GIT_SSH=\"").append(ShellKit.escapeDoubleQuoted(gitSshDir)).append("/git-ssh-wrapper.sh\"\n");
-        script.append("export GIT_TERMINAL_PROMPT=0\n");
-        script.append("export GIT_ASKPASS=echo\n");
-        return script.toString();
     }
 
     private String resolveBuildScriptTemplate(PipelineEntity pipeline) {

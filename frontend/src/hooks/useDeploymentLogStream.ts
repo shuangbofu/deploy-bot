@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { API_BASE_URL, handleAuthExpired } from '../api/client';
 import { authStorage } from '../auth/authStorage';
-import type { DeploymentSummary } from '../types/domain';
+import type { DeploymentStatus } from '../types/domain';
 
 type LogStreamPayload = {
   content?: string;
@@ -10,12 +10,26 @@ type LogStreamPayload = {
   finished?: boolean;
 };
 
+type DeploymentStreamStatus = {
+  id: number;
+  status?: DeploymentStatus;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  errorMessage?: string | null;
+  monitoredPid?: number | null;
+  commitSha?: string | null;
+  progressPercent?: number | null;
+  progressStage?: string | null;
+  progressCurrent?: number | null;
+  progressTotal?: number | null;
+};
+
 type Options = {
   deploymentId?: number | string;
   enabled: boolean;
   offset: number;
   onLog: (payload: LogStreamPayload) => void;
-  onDeployment?: (deployment: DeploymentSummary) => void;
+  onDeploymentStatus?: (deployment: DeploymentStreamStatus) => void;
   onDone?: () => void;
   onError?: () => void;
 };
@@ -58,20 +72,20 @@ const decodeBase64Utf8 = (value: string) => {
   return new TextDecoder().decode(bytes);
 };
 
-export function useDeploymentLogStream({ deploymentId, enabled, offset, onLog, onDeployment, onDone, onError }: Options) {
+export function useDeploymentLogStream({ deploymentId, enabled, offset, onLog, onDeploymentStatus, onDone, onError }: Options) {
   const offsetRef = useRef(offset);
   const onLogRef = useRef(onLog);
-  const onDeploymentRef = useRef(onDeployment);
+  const onDeploymentStatusRef = useRef(onDeploymentStatus);
   const onDoneRef = useRef(onDone);
   const onErrorRef = useRef(onError);
 
   useEffect(() => {
     offsetRef.current = offset;
     onLogRef.current = onLog;
-    onDeploymentRef.current = onDeployment;
+    onDeploymentStatusRef.current = onDeploymentStatus;
     onDoneRef.current = onDone;
     onErrorRef.current = onError;
-  }, [offset, onDeployment, onDone, onError, onLog]);
+  }, [offset, onDeploymentStatus, onDone, onError, onLog]);
 
   useEffect(() => {
     if (!enabled || !deploymentId) {
@@ -117,9 +131,9 @@ export function useDeploymentLogStream({ deploymentId, enabled, offset, onLog, o
               onDoneRef.current?.();
               return;
             }
-            if (item.event === 'deployment' && item.data) {
+            if (item.event === 'deployment-status' && item.data) {
               try {
-                onDeploymentRef.current?.(JSON.parse(item.data) as DeploymentSummary);
+                onDeploymentStatusRef.current?.(JSON.parse(item.data) as DeploymentStreamStatus);
               } catch {
                 // 忽略单条状态事件解析失败，日志流本身继续读取。
               }

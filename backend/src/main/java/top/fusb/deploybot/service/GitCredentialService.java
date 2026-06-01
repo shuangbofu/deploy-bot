@@ -28,7 +28,7 @@ public class GitCredentialService {
     public record GitProcessConfig(String gitUrl, Map<String, String> environment) {
     }
 
-    private static final String GIT_SSH_WRAPPER_NAME = "git-ssh-wrapper.sh";
+    public static final String GIT_SSH_WRAPPER_NAME = "git-ssh-wrapper.sh";
 
     private final SystemSettingsService systemSettingsService;
 
@@ -148,14 +148,11 @@ public class GitCredentialService {
         ensureExecutablePermissions(sshWrapper);
 
         log.info(
-                "Git SSH 凭据准备完成：privateKeyExists={}, publicKeyExists={}, knownHostsExists={}, privateKeyPath='{}', publicKeyPath='{}', sshWrapperPath='{}', sshCommand='{}'.",
+                "Git SSH 凭据准备完成：privateKeyExists={}, publicKeyExists={}, knownHostsExists={}, sshWrapperPath='{}'.",
                 Files.exists(privateKey),
                 Files.exists(publicKey),
                 Files.exists(knownHosts),
-                privateKey.toAbsolutePath().normalize(),
-                publicKey.toAbsolutePath().normalize(),
-                sshWrapper.toAbsolutePath().normalize(),
-                sshCommand
+                sshWrapper.toAbsolutePath().normalize()
         );
 
         Map<String, String> environment = new LinkedHashMap<>();
