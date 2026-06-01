@@ -184,6 +184,7 @@ scripts/    一次性维护脚本或迁移脚本
 - [Deploy Bot 使用介绍 07：流水线怎么拼出完整部署流程](./docs/articles/07-pipeline-setup.md)
 - [Deploy Bot 使用介绍 08：怎么发起部署、查看记录与详情](./docs/articles/08-deployments-and-history.md)
 - [Deploy Bot 使用介绍 09：服务、通知与系统设置怎么用](./docs/articles/09-ops-and-settings.md)
+- [Docker 快速启动](./docs/docker-quick-start.md)
 
 ## 本地快速部署到云端
 
@@ -211,6 +212,20 @@ Deploy Bot 自己这类前后端一体项目，一条常见的流水线配置可
 按这套方式配好流水线之后，直接点击部署，就可以先把“部署平台”本身发到云端。后面再部署其他项目时，就不需要继续依赖本地环境了。
 
 ## 快速开始
+
+如果只想先把 Deploy Bot 平台跑起来，可以直接使用 Docker：
+
+```bash
+docker compose up -d --build
+```
+
+默认访问地址：
+
+```text
+http://localhost:8080
+```
+
+运行数据会挂载到项目根目录的 `runtime`，升级或重建容器时保留这个目录即可。更多端口、访问地址和 JVM 参数配置见 [Docker 快速启动](./docs/docker-quick-start.md)。
 
 ### 1. 启动后端
 

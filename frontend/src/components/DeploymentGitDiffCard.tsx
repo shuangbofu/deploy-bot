@@ -34,6 +34,7 @@ export default function DeploymentGitDiffCard({ loading, commitSha, gitDiffSnaps
   const previousShortCommit = stringValue(snapshot.previousShortCommit);
   const commitCount = Number(snapshot.commitCount ?? commits.length);
   const stat = stringValue(snapshot.stat);
+  const error = stringValue(snapshot.error);
 
   const content = !commitSha && !currentShortCommit ? (
     <EmptyPane description="这次部署还没有记录 Git 提交。" />
@@ -54,6 +55,7 @@ export default function DeploymentGitDiffCard({ loading, commitSha, gitDiffSnaps
             </div>
           </div>
           {message ? <div className="deployment-git-diff__message">{message}</div> : null}
+          {error ? <div className="deployment-git-diff__message deployment-git-diff__message--error">{error}</div> : null}
           {commits.length > 0 ? (
             <Timeline
               className="deployment-git-diff__timeline"

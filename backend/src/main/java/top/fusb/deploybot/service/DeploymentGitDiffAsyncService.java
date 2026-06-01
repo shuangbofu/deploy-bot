@@ -73,20 +73,53 @@ public class DeploymentGitDiffAsyncService {
             );
             Path repoDir = tempDir.resolve("repo");
             runGit(tempDir, processConfig.environment(), "clone", "--filter=blob:none", "--no-checkout", processConfig.gitUrl(), repoDir.toString());
-            runGit(repoDir, processConfig.environment(), "fetch", "--depth=200", "origin", deployment.getCommitSha());
-            runGit(repoDir, processConfig.environment(), "fetch", "--depth=200", "origin", previousSha);
+            fetchBranchHistory(repoDir, processConfig.environment(), deployment.getBranchName());
+            fetchCommitIfMissing(repoDir, processConfig.environment(), deployment.getCommitSha());
+            fetchCommitIfMissing(repoDir, processConfig.environment(), previousSha);
             String range = previousSha + ".." + deployment.getCommitSha();
             List<Map<String, Object>> commits = parseGitCommits(runGit(repoDir, Map.of(), "log", "--date=iso-strict", "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ad%x1f%s", range));
             snapshot.put("commits", commits);
             snapshot.put("commitCount", commits.size());
             snapshot.put("files", parseGitFiles(runGit(repoDir, Map.of(), "diff", "--name-status", range)));
-            snapshot.put("stat", runGit(repoDir, Map.of(), "diff", "--stat", "--summary", range));
+            snapshot.put("stat", runGitBestEffort(repoDir, Map.of(), "diff", "--stat", "--summary", range));
         } catch (Exception ex) {
             snapshot.put("message", "部署差异生成失败，可能是浅历史、rebase、force push 或仓库暂时不可访问。");
             snapshot.put("error", ex.getMessage());
             log.warn("部署 {} 后台生成 Git 差异失败：{}", deployment.getId(), ex.getMessage());
         } finally {
             deleteDirectory(tempDir);
+        }
+    }
+
+    private void fetchBranchHistory(Path repoDir, Map<String, String> environment, String branchName) throws IOException, InterruptedException {
+        if (TextKit.isBlank(branchName)) {
+            return;
+        }
+        String branch = branchName.trim();
+        try {
+            runGit(repoDir, environment, "fetch", "--depth=500", "origin", branch);
+            runGit(repoDir, environment, "branch", "deploybot-diff-base", "FETCH_HEAD");
+        } catch (Exception ex) {
+            log.warn("部署差异拉取分支历史失败，branch={}，原因={}", branch, ex.getMessage());
+        }
+    }
+
+    private void fetchCommitIfMissing(Path repoDir, Map<String, String> environment, String commitSha) throws IOException, InterruptedException {
+        if (TextKit.isBlank(commitSha)) {
+            return;
+        }
+        if (commitExists(repoDir, commitSha)) {
+            return;
+        }
+        runGit(repoDir, environment, "fetch", "--depth=500", "origin", commitSha);
+    }
+
+    private boolean commitExists(Path repoDir, String commitSha) {
+        try {
+            runGit(repoDir, Map.of(), "cat-file", "-e", commitSha + "^{commit}");
+            return true;
+        } catch (Exception ignored) {
+            return false;
         }
     }
 
@@ -155,6 +188,15 @@ public class DeploymentGitDiffAsyncService {
             throw new IllegalStateException("git " + String.join(" ", args) + " exited with code " + exitCode + ": " + output);
         }
         return output == null ? "" : output.trim();
+    }
+
+    private String runGitBestEffort(Path directory, Map<String, String> environment, String... args) {
+        try {
+            return runGit(directory, environment, args);
+        } catch (Exception ex) {
+            log.warn("执行可选 Git 命令失败：git {}，原因={}", String.join(" ", args), ex.getMessage());
+            return "";
+        }
     }
 
     private void deleteDirectory(Path path) {
