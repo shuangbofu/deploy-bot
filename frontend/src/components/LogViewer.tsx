@@ -156,6 +156,8 @@ const LogViewer = forwardRef<LogViewerHandle, LogViewerProps>(function LogViewer
     () => lines.slice(visibleRange.start, visibleRange.end),
     [lines, visibleRange.end, visibleRange.start],
   );
+  const totalHeight = lines.length * LOG_LINE_HEIGHT + 24;
+  const contentTop = 12;
 
   useEffect(() => {
     const previousContent = previousContentRef.current;
@@ -181,10 +183,12 @@ const LogViewer = forwardRef<LogViewerHandle, LogViewerProps>(function LogViewer
       return;
     }
     if (autoScroll) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+      const bottomTop = Math.max(0, totalHeight - containerRef.current.clientHeight);
+      setScrollTop(bottomTop);
+      containerRef.current.scrollTop = bottomTop;
     }
     updateScrollButtons(containerRef.current);
-  }, [autoScroll, idleHint, lines.length]);
+  }, [autoScroll, idleHint, lines.length, totalHeight]);
 
   useLayoutEffect(() => {
     if (!autoScrollAvailable) {
@@ -218,7 +222,14 @@ const LogViewer = forwardRef<LogViewerHandle, LogViewerProps>(function LogViewer
     if (!containerRef.current) {
       return;
     }
-    containerRef.current.scrollTo({ top: lines.length * LOG_LINE_HEIGHT, behavior: 'smooth' });
+    const bottomTop = Math.max(0, totalHeight - containerRef.current.clientHeight);
+    setScrollTop(bottomTop);
+    window.requestAnimationFrame(() => {
+      if (containerRef.current) {
+        containerRef.current.scrollTop = bottomTop;
+        updateScrollButtons(containerRef.current);
+      }
+    });
   };
   const toggleAutoScroll = () => {
     const nextAutoScroll = !autoScroll;
@@ -228,7 +239,7 @@ const LogViewer = forwardRef<LogViewerHandle, LogViewerProps>(function LogViewer
     }
   };
   const scrollToLine = (lineIndex: number) => {
-    containerRef.current?.scrollTo({ top: Math.max(0, lineIndex * LOG_LINE_HEIGHT - LOG_LINE_HEIGHT * 6), behavior: 'smooth' });
+    containerRef.current?.scrollTo({ top: Math.max(0, contentTop + lineIndex * LOG_LINE_HEIGHT - LOG_LINE_HEIGHT * 6), behavior: 'smooth' });
   };
 
   useImperativeHandle(ref, () => ({
@@ -249,38 +260,42 @@ const LogViewer = forwardRef<LogViewerHandle, LogViewerProps>(function LogViewer
         style={maxHeight ? { maxHeight } : undefined}
         onScroll={(event) => updateScrollButtons(event.currentTarget)}
       >
-        <div style={{ height: visibleRange.start * LOG_LINE_HEIGHT }} />
-        {visibleLines.map((line, index) => {
-          const lineIndex = visibleRange.start + index;
-          const lowerLine = line.toLowerCase();
-          const isSystemLine = line.startsWith('[系统]');
-          const isCommandLine = /^\+{1,3}\s/.test(line);
-          // 这里优先照顾运维排查体验，对常见错误关键词做红色高亮。
-          const isErrorLine = ERROR_LINE_PATTERN.test(lowerLine);
-          const lineClassName = [
-            'log-line',
-            isSystemLine ? 'log-line-system' : '',
-            isCommandLine ? 'log-line-command' : '',
-            isErrorLine ? 'log-line-error' : '',
-          ].filter(Boolean).join(' ');
+        <div className="log-viewer-virtual-space" style={{ height: totalHeight }}>
+          <div
+            className="log-viewer-visible-lines"
+            style={{ transform: `translateY(${contentTop + visibleRange.start * LOG_LINE_HEIGHT}px)` }}
+          >
+            {visibleLines.map((line, index) => {
+              const lineIndex = visibleRange.start + index;
+              const lowerLine = line.toLowerCase();
+              const isSystemLine = line.startsWith('[系统]');
+              const isCommandLine = /^\+{1,3}\s/.test(line);
+              // 这里优先照顾运维排查体验，对常见错误关键词做红色高亮。
+              const isErrorLine = ERROR_LINE_PATTERN.test(lowerLine);
+              const lineClassName = [
+                'log-line',
+                isSystemLine ? 'log-line-system' : '',
+                isCommandLine ? 'log-line-command' : '',
+                isErrorLine ? 'log-line-error' : '',
+              ].filter(Boolean).join(' ');
 
-          return (
-            <div
-              key={`${index}-${line}`}
-              className={lineClassName}
-              data-log-line={lineIndex}
-              style={{ minHeight: LOG_LINE_HEIGHT }}
-            >
-              {line || ' '}
-            </div>
-          );
-        })}
-        <div style={{ height: Math.max(0, (lines.length - visibleRange.end) * LOG_LINE_HEIGHT) }} />
-        {idleHint ? (
-          <div className="log-line log-line-idle-hint">
-            {idleHint}
+              return (
+                <div
+                  key={lineIndex}
+                  className={lineClassName}
+                  data-log-line={lineIndex}
+                >
+                  {line || ' '}
+                </div>
+              );
+            })}
           </div>
-        ) : null}
+          {idleHint ? (
+            <div className="log-line log-line-idle-hint log-viewer-idle-hint">
+              {idleHint}
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   );
