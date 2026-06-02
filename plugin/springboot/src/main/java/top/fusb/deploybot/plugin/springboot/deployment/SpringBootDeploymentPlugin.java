@@ -317,10 +317,11 @@ public class SpringBootDeploymentPlugin extends AbstractManagedServiceDeployment
         }
         String targetDir = TextKit.trimToNull(variables.get("targetDir"));
         String serviceName = TextKit.trimToNull(variables.get("serviceName"));
+        String deploymentId = TextKit.trimToNull(variables.get("deploymentId"));
         if (targetDir == null || serviceName == null) {
             return;
         }
-        variables.put("runtimeLogPath", targetDir + "/" + serviceName + ".log");
+        variables.put("runtimeLogPath", targetDir + "/" + "deploy-" + deploymentId + ".log");
     }
 
     /**

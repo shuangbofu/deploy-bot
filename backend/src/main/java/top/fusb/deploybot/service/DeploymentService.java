@@ -2,6 +2,7 @@ package top.fusb.deploybot.service;
 
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
+import top.fusb.deploybot.dto.DeploymentDetailSummary;
 import top.fusb.deploybot.dto.DeploymentRequest;
 import top.fusb.deploybot.dto.DeploymentPrecheckResult;
 import top.fusb.deploybot.dto.DeploymentPrecheckMissingItem;
@@ -327,6 +328,10 @@ public class DeploymentService {
                 .orElseThrow(() -> new BusinessException(ErrorSubCode.DEPLOYMENT_NOT_FOUND));
         ensureDeploymentReadable(entity);
         return enrichTriggeredByDisplayName(entity);
+    }
+
+    public DeploymentDetailSummary findDetail(Long id) {
+        return toDeploymentDetailSummary(findById(id));
     }
 
     public DeploymentStreamStatus findStreamStatus(Long id) {
@@ -1263,6 +1268,39 @@ public class DeploymentService {
         );
     }
 
+    private DeploymentDetailSummary toDeploymentDetailSummary(DeploymentEntity entity) {
+        enrichTriggeredByDisplayName(entity);
+        DeploymentEntity.ProgressSnapshot snapshot = entity.readProgressSnapshot();
+        return new DeploymentDetailSummary(
+                entity.getId(),
+                entity.getBranchName(),
+                entity.getTriggeredBy(),
+                entity.getTriggeredByDisplayName(),
+                entity.getStoppedBy(),
+                entity.getStoppedByDisplayName(),
+                entity.getStatus(),
+                entity.getCreatedAt(),
+                entity.getStartedAt(),
+                entity.getFinishedAt(),
+                entity.getLogPath(),
+                entity.getErrorMessage(),
+                entity.progressPercent(snapshot),
+                entity.progressStage(snapshot),
+                entity.progressCurrent(snapshot),
+                entity.progressTotal(snapshot),
+                resolveDeploymentPipelineName(entity),
+                resolveDeploymentPipelineImportantTags(entity),
+                resolveDeploymentProjectName(entity),
+                toPipelineRef(entity),
+                entity.getArtifactPath(),
+                entity.getExecutionSnapshot(),
+                entity.getRollbackFromDeploymentId(),
+                entity.getMonitoredPid(),
+                entity.getCommitSha(),
+                entity.getGitDiffSnapshot()
+        );
+    }
+
     private DeploymentListSummary.PipelineRef toPipelineRef(DeploymentEntity entity) {
         if (entity.getPipeline() == null) {
             return null;
@@ -1274,6 +1312,12 @@ public class DeploymentService {
                 entity.getPipeline().getProject() == null ? null : new DeploymentListSummary.ProjectRef(
                         entity.getPipeline().getProject().getId(),
                         entity.getPipeline().getProject().getName()
+                ),
+                entity.getPipeline().getTemplatePluginId(),
+                entity.getPipeline().getTemplate() == null ? null : new DeploymentListSummary.TemplateRef(
+                        entity.getPipeline().getTemplate().getId(),
+                        entity.getPipeline().getTemplate().getName(),
+                        entity.getPipeline().getTemplate().getPluginId()
                 )
         );
     }

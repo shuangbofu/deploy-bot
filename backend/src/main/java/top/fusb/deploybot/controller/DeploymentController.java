@@ -1,6 +1,7 @@
 package top.fusb.deploybot.controller;
 
 import top.fusb.deploybot.dto.DeploymentRequest;
+import top.fusb.deploybot.dto.DeploymentDetailSummary;
 import top.fusb.deploybot.dto.DeploymentFilterOptions;
 import top.fusb.deploybot.dto.DeploymentListSummary;
 import top.fusb.deploybot.dto.DeploymentPrecheckResult;
@@ -134,8 +135,8 @@ public class DeploymentController {
      * 查询单条部署详情。
      */
     @GetMapping("/{id}")
-    public DeploymentEntity detail(@PathVariable Long id) {
-        return service.findById(id);
+    public DeploymentDetailSummary detail(@PathVariable Long id) {
+        return service.findDetail(id);
     }
 
     /**

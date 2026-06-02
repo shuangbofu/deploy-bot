@@ -21,6 +21,34 @@ type Props = {
   scope: 'admin' | 'user';
 };
 
+const LOG_RENDER_MAX_LINES = 2500;
+
+const buildVisibleLog = (content: string) => {
+  if (!content) {
+    return { content: '', truncatedLineCount: 0 };
+  }
+  let lineCount = 0;
+  let cutIndex = 0;
+  for (let index = content.length - 1; index >= 0; index -= 1) {
+    if (content[index] === '\n') {
+      lineCount += 1;
+      if (lineCount >= LOG_RENDER_MAX_LINES) {
+        cutIndex = index + 1;
+        break;
+      }
+    }
+  }
+  if (lineCount < LOG_RENDER_MAX_LINES) {
+    return { content, truncatedLineCount: 0 };
+  }
+  const hiddenContent = content.slice(0, cutIndex);
+  const hiddenLineCount = hiddenContent.split('\n').length - 1;
+  return {
+    content: content.slice(cutIndex),
+    truncatedLineCount: hiddenLineCount,
+  };
+};
+
 export default function DeploymentDetailPage({ scope }: Props) {
   const { deploymentId } = useParams();
   const location = useLocation();
@@ -140,6 +168,7 @@ export default function DeploymentDetailPage({ scope }: Props) {
   const logIdleHint = logStreaming && !logLoading && tick - lastLogUpdateAt > 5000
     ? '任务仍在运行，等待新的日志输出...'
     : undefined;
+  const visibleLog = useMemo(() => buildVisibleLog(logContent), [logContent]);
   const rollbackable = Boolean(
     deployment?.artifactPath
       && deployment?.status
@@ -365,7 +394,8 @@ export default function DeploymentDetailPage({ scope }: Props) {
               ) : (
                 <LogViewer
                   ref={logViewerRef}
-                  content={logContent}
+                  content={visibleLog.content}
+                  truncatedLineCount={visibleLog.truncatedLineCount}
                   autoScrollAvailable={logStreaming}
                   idleHint={logIdleHint}
                   onControlStateChange={() => setLogControlTick((current) => current + 1)}

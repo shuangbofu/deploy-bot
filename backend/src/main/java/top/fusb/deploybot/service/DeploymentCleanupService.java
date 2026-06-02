@@ -7,6 +7,7 @@ import top.fusb.deploybot.model.HostEntity;
 import top.fusb.deploybot.model.HostType;
 import top.fusb.deploybot.model.SystemSettingsEntity;
 import top.fusb.deploybot.repo.DeploymentRepository;
+import top.fusb.deploybot.kit.TextKit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -18,6 +19,7 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 清理部署产生的临时工作区和过期构建产物。
@@ -40,6 +42,7 @@ public class DeploymentCleanupService {
             return;
         }
         cleanupDeploymentTemporaryFiles(deployment, buildWorkspaceRoot);
+        cleanupRuntimeLogFile(deployment);
         SystemSettingsEntity settings = systemSettingsService.get();
         if (!systemSettingsService.isCleanupEnabled(settings)) {
             return;
@@ -55,6 +58,24 @@ public class DeploymentCleanupService {
         deleteDirectory(buildWorkspaceRoot.resolve(SSH_DIR).resolve("deploy-" + deployment.getId()));
         deleteFile(buildWorkspaceRoot.resolve(SCRIPT_DIR).resolve("deploy-" + deployment.getId() + "-build.sh"));
         deleteFile(buildWorkspaceRoot.resolve(SCRIPT_DIR).resolve("deploy-" + deployment.getId() + "-deploy.sh"));
+    }
+
+    private void cleanupRuntimeLogFile(DeploymentEntity deployment) {
+        String runtimeLogPath = resolveRuntimeLogPath(deployment);
+        if (runtimeLogPath == null) {
+            return;
+        }
+        HostEntity targetHost = deployment.getPipeline() == null ? null : deployment.getPipeline().getTargetHost();
+        if (targetHost != null && targetHost.getType() == HostType.SSH) {
+            deleteRemoteFile(targetHost, runtimeLogPath);
+            return;
+        }
+        deleteFile(Path.of(runtimeLogPath));
+    }
+
+    private String resolveRuntimeLogPath(DeploymentEntity deployment) {
+        Map<String, String> variables = deployment.getVariables() == null ? Map.of() : deployment.getVariables();
+        return TextKit.trimToNull(variables.get("runtimeLogPath"));
     }
 
     private void cleanupRunWorkspace(DeploymentEntity deployment, Path buildWorkspaceRoot, SystemSettingsEntity settings) {
@@ -186,6 +207,19 @@ public class DeploymentCleanupService {
             log.info("已清理远程部署目录：{} -> {}", targetHost.getName(), path.toAbsolutePath().normalize());
         } catch (Exception ex) {
             log.warn("清理远程部署目录失败：{} -> {} -> {}", targetHost.getName(), path, ex.getMessage());
+        }
+    }
+
+    private void deleteRemoteFile(HostEntity targetHost, String path) {
+        try {
+            hostService.executeRemoteScript(
+                    targetHost.getId(),
+                    "rm -f \"" + path.replace("\"", "\\\"") + "\"\n",
+                    30
+            );
+            log.info("已清理远程运行临时日志：{} -> {}", targetHost.getName(), path);
+        } catch (Exception ex) {
+            log.warn("清理远程运行临时日志失败：{} -> {} -> {}", targetHost.getName(), path, ex.getMessage());
         }
     }
 }

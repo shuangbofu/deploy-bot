@@ -6,7 +6,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
-public record DeploymentListSummary(
+public record DeploymentDetailSummary(
         Long id,
         String branchName,
         String triggeredBy,
@@ -19,36 +19,19 @@ public record DeploymentListSummary(
         LocalDateTime finishedAt,
         String logPath,
         String errorMessage,
+        Integer progressPercent,
+        String progressStage,
+        Integer progressCurrent,
+        Integer progressTotal,
         String pipelineName,
         List<String> pipelineImportantTags,
         String projectName,
-        PipelineRef pipeline,
+        DeploymentListSummary.PipelineRef pipeline,
         String artifactPath,
+        Map<String, Object> executionSnapshot,
         Long rollbackFromDeploymentId,
         Long monitoredPid,
         String commitSha,
         Map<String, Object> gitDiffSnapshot
 ) {
-    public record PipelineRef(
-            Long id,
-            String name,
-            List<String> importantTags,
-            ProjectRef project,
-            String templatePluginId,
-            TemplateRef template
-    ) {
-    }
-
-    public record ProjectRef(
-            Long id,
-            String name
-    ) {
-    }
-
-    public record TemplateRef(
-            Long id,
-            String name,
-            String pluginId
-    ) {
-    }
 }

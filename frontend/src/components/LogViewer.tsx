@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 export type LogAnchor = {
   index: number;
@@ -57,6 +57,9 @@ const normalizeTerminalLogLines = (content: string) => {
 const ERROR_LINE_PATTERN = /(error|failed|fatal|exception|denied|refused|timed out|BUILD FAILURE|npm ERR|认证失败|失败|报错|错误)/i;
 
 const STACK_TRACE_LINE_PATTERN = /^\s*(at\s|Caused by:|Suppressed:|\.\.\. \d+ more)/;
+const LOG_LINE_HEIGHT = 22;
+const LOG_RENDER_OVERSCAN = 24;
+const LOG_ANCHOR_SCAN_LIMIT = 5000;
 
 const isFlowAnchorLine = (line: string) => /^\[步骤\s*\d+\/\d+]/.test(line)
   || /^\[完成]/.test(line)
@@ -90,6 +93,26 @@ const buildLogAnchors = (lines: string[]) => {
   }));
 };
 
+const appendLogContentToLines = (currentLines: string[], delta: string, reset: boolean) => {
+  const nextLines = reset ? [] : currentLines.slice(0, Math.max(0, currentLines.length - 1));
+  let currentLine = reset ? '' : (currentLines[currentLines.length - 1] || '');
+  for (let index = 0; index < delta.length; index += 1) {
+    const char = delta[index];
+    if (char === '\r') {
+      currentLine = '';
+      continue;
+    }
+    if (char === '\n') {
+      nextLines.push(currentLine);
+      currentLine = '';
+      continue;
+    }
+    currentLine += char;
+  }
+  nextLines.push(currentLine);
+  return nextLines.length === 0 ? ['暂无日志输出。'] : nextLines;
+};
+
 /**
  * 日志查看器。
  * 负责高亮命令追踪和错误行，并把页面滚动限制在日志容器内部。
@@ -99,19 +122,59 @@ const LogViewer = forwardRef<LogViewerHandle, LogViewerProps>(function LogViewer
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const previousContentRef = useRef('');
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [showBackToBottom, setShowBackToBottom] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
+  const [lines, setLines] = useState<string[]>(() => normalizeTerminalLogLines(content));
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(0);
   const onControlStateChangeRef = useRef(onControlStateChange);
   const onAnchorsChangeRef = useRef(onAnchorsChange);
-  const lines = useMemo(() => normalizeTerminalLogLines(content), [content]);
-  const anchors = useMemo(() => buildLogAnchors(lines), [lines]);
+  const anchorStartIndex = Math.max(0, lines.length - LOG_ANCHOR_SCAN_LIMIT);
+  const anchors = useMemo(() => (
+    buildLogAnchors(lines.slice(anchorStartIndex))
+      .map((anchor) => ({ ...anchor, index: anchor.index + anchorStartIndex }))
+  ), [anchorStartIndex, lines]);
   const anchorSignature = useMemo(() => anchors.map((anchor) => `${anchor.index}:${anchor.label}`).join('|'), [anchors]);
   const updateScrollButtons = (element: HTMLDivElement) => {
     const bottomDistance = element.scrollHeight - element.scrollTop - element.clientHeight;
+    setScrollTop(element.scrollTop);
+    setViewportHeight(element.clientHeight);
     setShowBackToTop(element.scrollTop > 120);
     setShowBackToBottom(bottomDistance > 80);
   };
+  const visibleRange = useMemo(() => {
+    const start = Math.max(0, Math.floor(scrollTop / LOG_LINE_HEIGHT) - LOG_RENDER_OVERSCAN);
+    const end = Math.min(
+      lines.length,
+      Math.ceil((scrollTop + viewportHeight) / LOG_LINE_HEIGHT) + LOG_RENDER_OVERSCAN,
+    );
+    return { start, end: Math.max(start + 1, end) };
+  }, [lines.length, scrollTop, viewportHeight]);
+  const visibleLines = useMemo(
+    () => lines.slice(visibleRange.start, visibleRange.end),
+    [lines, visibleRange.end, visibleRange.start],
+  );
+
+  useEffect(() => {
+    const previousContent = previousContentRef.current;
+    if (!content) {
+      previousContentRef.current = '';
+      setLines(['暂无日志输出。']);
+      return;
+    }
+    if (previousContent && content.startsWith(previousContent)) {
+      const delta = content.slice(previousContent.length);
+      previousContentRef.current = content;
+      if (delta) {
+        setLines((current) => appendLogContentToLines(current, delta, false));
+      }
+      return;
+    }
+    previousContentRef.current = content;
+    setLines(appendLogContentToLines([], content, true));
+  }, [content]);
 
   useLayoutEffect(() => {
     if (!containerRef.current) {
@@ -121,7 +184,7 @@ const LogViewer = forwardRef<LogViewerHandle, LogViewerProps>(function LogViewer
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
     updateScrollButtons(containerRef.current);
-  }, [autoScroll, content, idleHint]);
+  }, [autoScroll, idleHint, lines.length]);
 
   useLayoutEffect(() => {
     if (!autoScrollAvailable) {
@@ -155,7 +218,7 @@ const LogViewer = forwardRef<LogViewerHandle, LogViewerProps>(function LogViewer
     if (!containerRef.current) {
       return;
     }
-    containerRef.current.scrollTo({ top: containerRef.current.scrollHeight, behavior: 'smooth' });
+    containerRef.current.scrollTo({ top: lines.length * LOG_LINE_HEIGHT, behavior: 'smooth' });
   };
   const toggleAutoScroll = () => {
     const nextAutoScroll = !autoScroll;
@@ -165,8 +228,7 @@ const LogViewer = forwardRef<LogViewerHandle, LogViewerProps>(function LogViewer
     }
   };
   const scrollToLine = (lineIndex: number) => {
-    const element = containerRef.current?.querySelector<HTMLElement>(`[data-log-line="${lineIndex}"]`);
-    element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    containerRef.current?.scrollTo({ top: Math.max(0, lineIndex * LOG_LINE_HEIGHT - LOG_LINE_HEIGHT * 6), behavior: 'smooth' });
   };
 
   useImperativeHandle(ref, () => ({
@@ -187,7 +249,9 @@ const LogViewer = forwardRef<LogViewerHandle, LogViewerProps>(function LogViewer
         style={maxHeight ? { maxHeight } : undefined}
         onScroll={(event) => updateScrollButtons(event.currentTarget)}
       >
-        {lines.map((line, index) => {
+        <div style={{ height: visibleRange.start * LOG_LINE_HEIGHT }} />
+        {visibleLines.map((line, index) => {
+          const lineIndex = visibleRange.start + index;
           const lowerLine = line.toLowerCase();
           const isSystemLine = line.startsWith('[系统]');
           const isCommandLine = /^\+{1,3}\s/.test(line);
@@ -204,12 +268,14 @@ const LogViewer = forwardRef<LogViewerHandle, LogViewerProps>(function LogViewer
             <div
               key={`${index}-${line}`}
               className={lineClassName}
-              data-log-line={index}
+              data-log-line={lineIndex}
+              style={{ minHeight: LOG_LINE_HEIGHT }}
             >
               {line || ' '}
             </div>
           );
         })}
+        <div style={{ height: Math.max(0, (lines.length - visibleRange.end) * LOG_LINE_HEIGHT) }} />
         {idleHint ? (
           <div className="log-line log-line-idle-hint">
             {idleHint}
