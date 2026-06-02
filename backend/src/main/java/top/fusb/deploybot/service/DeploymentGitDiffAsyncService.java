@@ -77,7 +77,7 @@ public class DeploymentGitDiffAsyncService {
             fetchCommitIfMissing(repoDir, processConfig.environment(), deployment.getCommitSha());
             fetchCommitIfMissing(repoDir, processConfig.environment(), previousSha);
             String range = previousSha + ".." + deployment.getCommitSha();
-            List<Map<String, Object>> commits = parseGitCommits(runGit(repoDir, Map.of(), "log", "--date=iso-strict", "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ad%x1f%s", range));
+            List<Map<String, Object>> commits = parseGitCommits(runGit(repoDir, Map.of(), "log", "--date=iso", "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%ad%x1f%s", range));
             snapshot.put("commits", commits);
             snapshot.put("commitCount", commits.size());
             snapshot.put("files", parseGitFiles(runGit(repoDir, Map.of(), "diff", "--name-status", range)));

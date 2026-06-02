@@ -198,7 +198,9 @@ public class DeploymentController {
                     if (finished) {
                         idleAfterFinished = chunk.content() != null && !chunk.content().isEmpty() ? 0 : idleAfterFinished + 1;
                     }
-                    Thread.sleep(200L);
+                    if (chunk.content() == null || chunk.content().isEmpty()) {
+                        Thread.sleep(200L);
+                    }
                 }
                 if (!closed.get()) {
                     emitter.send(SseEmitter.event().name("done").data(Map.of("offset", currentOffset)));

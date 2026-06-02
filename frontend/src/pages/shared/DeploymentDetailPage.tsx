@@ -31,7 +31,7 @@ export default function DeploymentDetailPage({ scope }: Props) {
   const [detailLoading, setDetailLoading] = useState(true);
   const [logLoading, setLogLoading] = useState(true);
   const [logOffset, setLogOffset] = useState(0);
-  const [logInitialLoaded, setLogInitialLoaded] = useState(false);
+  const [logStreamEnabled, setLogStreamEnabled] = useState(false);
   const [lastLogUpdateAt, setLastLogUpdateAt] = useState(() => Date.now());
   const [logStreamClosing, setLogStreamClosing] = useState(false);
   const [plugins, setPlugins] = useState<DeploymentPluginDefinitionSummary[]>([]);
@@ -53,36 +53,29 @@ export default function DeploymentDetailPage({ scope }: Props) {
     } finally {
       if (!options?.silent) {
         setDetailLoading(false);
-      }
-    }
-  };
-
-  const loadDeploymentLog = async (options?: { silent?: boolean }) => {
-    if (!options?.silent) {
-      setLogLoading(true);
-    }
-    try {
-      const log = await deploymentsApi.getLog(deploymentId || '');
-      setLogContent(log.content);
-      setLogOffset(new TextEncoder().encode(log.content || '').length);
-      setLastLogUpdateAt(Date.now());
-      setLogInitialLoaded(true);
-    } finally {
-      if (!options?.silent) {
         setLogLoading(false);
       }
     }
   };
 
   useEffect(() => {
-    setLogInitialLoaded(false);
     setLogContent('');
     setLogOffset(0);
+    setLogLoading(true);
+    setLogStreamEnabled(Boolean(deploymentId));
     setLogStreamClosing(false);
     loadDeploymentDetail().catch(() => message.error('加载部署详情失败'));
-    loadDeploymentLog().catch(() => message.error('加载部署日志失败'));
     deploymentPluginsApi.list().then(setPlugins).catch(() => setPlugins([]));
   }, [deploymentId]);
+
+  const reloadDeploymentLog = () => {
+    setLogContent('');
+    setLogOffset(0);
+    setLogLoading(true);
+    setLogStreamClosing(false);
+    setLogStreamEnabled(false);
+    window.setTimeout(() => setLogStreamEnabled(Boolean(deploymentId)), 0);
+  };
 
   useEffect(() => {
     const timer = window.setInterval(() => setTick(Date.now()), 1000);
@@ -93,8 +86,7 @@ export default function DeploymentDetailPage({ scope }: Props) {
     deploymentId,
     enabled: Boolean(
       deploymentId
-        && logInitialLoaded
-        && (deployment?.status && ACTIVE_DEPLOYMENT_STATUSES.includes(deployment.status) || logStreamClosing),
+        && logStreamEnabled,
     ),
     offset: logOffset,
     onLog: (payload) => {
@@ -102,6 +94,7 @@ export default function DeploymentDetailPage({ scope }: Props) {
         setLogContent((previous) => `${previous}${payload.content}`);
         setLastLogUpdateAt(Date.now());
       }
+      setLogLoading(false);
       if (typeof payload.offset === 'number') {
         setLogOffset(payload.offset);
       }
@@ -111,6 +104,7 @@ export default function DeploymentDetailPage({ scope }: Props) {
       }
     },
     onDeploymentStatus: (streamStatus) => {
+      setLogLoading(false);
       setDeployment((previous) => (
         previous
           ? {
@@ -130,14 +124,13 @@ export default function DeploymentDetailPage({ scope }: Props) {
       ));
     },
     onDone: () => {
+      setLogLoading(false);
       setLogStreamClosing(false);
+      setLogStreamEnabled(false);
       loadDeploymentDetail({ silent: true }).catch(() => undefined);
-      loadDeploymentLog({ silent: true }).catch(() => undefined);
     },
     onError: () => {
-      if (deployment?.status && ACTIVE_DEPLOYMENT_STATUSES.includes(deployment.status)) {
-        loadDeploymentLog({ silent: true }).catch(() => undefined);
-      }
+      setLogLoading(false);
     },
   });
 
@@ -240,7 +233,8 @@ export default function DeploymentDetailPage({ scope }: Props) {
               cancelText="取消"
               onConfirm={() => deploymentsApi.stop(deploymentId || '').then(() => {
                 message.success('部署已停止');
-                return Promise.all([loadDeploymentDetail(), loadDeploymentLog()]);
+                reloadDeploymentLog();
+                return loadDeploymentDetail();
               }).catch(() => message.error('停止部署失败'))}
             >
               <Button danger>停止部署</Button>
@@ -248,7 +242,7 @@ export default function DeploymentDetailPage({ scope }: Props) {
           ) : null,
           <RefreshIconButton key="refresh" onClick={() => {
             loadDeploymentDetail().catch(() => message.error('刷新详情失败'));
-            loadDeploymentLog().catch(() => message.error('刷新日志失败'));
+            reloadDeploymentLog();
           }} />,
         ]}
       />

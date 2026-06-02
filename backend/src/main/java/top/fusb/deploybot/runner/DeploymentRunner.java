@@ -22,6 +22,7 @@ import top.fusb.deploybot.service.HostService;
 import top.fusb.deploybot.service.DeploymentCleanupService;
 import top.fusb.deploybot.service.DeploymentGitDiffAsyncService;
 import top.fusb.deploybot.service.DeploymentPluginBridgeService;
+import top.fusb.deploybot.service.PipelineHallEventService;
 import top.fusb.deploybot.service.ServiceManager;
 import top.fusb.deploybot.service.SystemSettingsService;
 import top.fusb.deploybot.plugin.api.process.ProcessLocatorResult;
@@ -77,6 +78,7 @@ public class DeploymentRunner {
     private final DeploymentGitDiffAsyncService deploymentGitDiffAsyncService;
     private final DeploymentNotificationAsyncService deploymentNotificationAsyncService;
     private final DeploymentPluginBridgeService deploymentPluginBridgeService;
+    private final PipelineHallEventService pipelineHallEventService;
     private final Map<Long, Process> runningProcesses = new ConcurrentHashMap<>();
     private final Map<Long, String> stopRequests = new ConcurrentHashMap<>();
     @Value("${deploybot.workspace-root:./runtime}")
@@ -150,6 +152,7 @@ public class DeploymentRunner {
             deployment.setStartedAt(LocalDateTime.now());
             deployment.setLogPath(logFile.toAbsolutePath().toString());
             deploymentRepository.save(deployment);
+            publishHallChange();
             deploymentNotificationAsyncService.notifyAsync(deployment.getId(), NotificationEventType.DEPLOYMENT_STARTED);
             appendSystemLog(logFile, "部署任务已开始，日志文件：" + logFile.toAbsolutePath().normalize());
             appendDeploymentPluginLog(logFile, deployment);
@@ -161,16 +164,17 @@ public class DeploymentRunner {
 
             appendSystemLog(logFile, "开始本机构建阶段。");
             log.info("部署 {} 构建阶段开始。", deploymentId);
+            ProcessBuilder buildProcessBuilder = buildLocalBuildProcessBuilder(deployment, buildWorkspaceRoot, buildScriptFile, sshDir);
             int exitCode = runProcess(
-                    buildLocalBuildProcessBuilder(deployment, buildWorkspaceRoot, buildScriptFile, sshDir),
+                    buildProcessBuilder,
                     null,
                     logFile,
                     deploymentId
             );
-            cleanupGitSshCredentials(sshDir);
             log.info("部署 {} 构建阶段结束，退出码={}.", deploymentId, exitCode);
             deployment = refreshDeploymentState(deployment);
-            recordCurrentCommit(deployment, logFile);
+            recordCurrentCommit(deployment, logFile, buildProcessBuilder.environment());
+            cleanupGitSshCredentials(sshDir);
             if (isStopRequested(deploymentId) || deployment.getStatus() == DeploymentStatus.STOPPED) {
                 deployment.setStatus(DeploymentStatus.STOPPED);
                 if (deployment.getFinishedAt() == null) {
@@ -178,6 +182,7 @@ public class DeploymentRunner {
                 }
                 appendSystemLog(logFile, "部署已停止。");
                 deploymentRepository.save(deployment);
+                publishHallChange();
                 deploymentCleanupService.cleanupAfterDeployment(deployment, buildWorkspaceRoot);
                 return;
             }
@@ -230,6 +235,7 @@ public class DeploymentRunner {
                     }
                     appendSystemLog(logFile, "部署已停止。");
                     deploymentRepository.save(deployment);
+                    publishHallChange();
                     deploymentCleanupService.cleanupAfterDeployment(deployment, buildWorkspaceRoot);
                     return;
                 }
@@ -242,6 +248,7 @@ public class DeploymentRunner {
                 deployment.setStatus(DeploymentStatus.STOPPED);
                 appendSystemLog(logFile, "部署已停止。");
                 deploymentRepository.save(deployment);
+                publishHallChange();
                 deploymentCleanupService.cleanupAfterDeployment(deployment, buildWorkspaceRoot);
                 return;
             }
@@ -260,6 +267,7 @@ public class DeploymentRunner {
                         deployment.setStatus(DeploymentStatus.STOPPED);
                         appendSystemLog(logFile, "部署已停止。");
                         deploymentRepository.save(deployment);
+                        publishHallChange();
                         deploymentCleanupService.cleanupAfterDeployment(deployment, buildWorkspaceRoot);
                         return;
                     }
@@ -320,6 +328,7 @@ public class DeploymentRunner {
                 }
             }
             deploymentRepository.save(deployment);
+            publishHallChange();
             deploymentGitDiffAsyncService.generateAsync(deployment.getId());
             deploymentCleanupService.cleanupAfterDeployment(deployment, buildWorkspaceRoot);
             deploymentNotificationAsyncService.notifyAsync(deployment.getId(), NotificationEventType.DEPLOYMENT_FINISHED);
@@ -342,6 +351,7 @@ public class DeploymentRunner {
                         deployment.setFinishedAt(LocalDateTime.now());
                     }
                     deploymentRepository.save(deployment);
+                    publishHallChange();
                     deploymentCleanupService.cleanupAfterDeployment(deployment, resolveLocalWorkspaceRoot());
                     return;
                 }
@@ -361,6 +371,7 @@ public class DeploymentRunner {
                     stopRuntimeProcessQuietly(deployment, resolvedLogFile, "部署异常结束，正在清理本次启动出来的进程。");
                 }
                 deploymentRepository.save(deployment);
+                publishHallChange();
                 deploymentCleanupService.cleanupAfterDeployment(deployment, resolveLocalWorkspaceRoot());
                 deploymentNotificationAsyncService.notifyAsync(deployment.getId(), NotificationEventType.DEPLOYMENT_FINISHED);
             });
@@ -421,6 +432,7 @@ public class DeploymentRunner {
                 }
             }
             deploymentRepository.saveAndFlush(deployment);
+            publishHallChange();
             runningProcesses.computeIfPresent(deploymentId, (id, process) -> {
                 process.destroy();
                 try {
@@ -517,7 +529,7 @@ public class DeploymentRunner {
         return processBuilder;
     }
 
-    private void recordCurrentCommit(DeploymentEntity deployment, Path logFile) {
+    private void recordCurrentCommit(DeploymentEntity deployment, Path logFile, Map<String, String> gitEnvironment) {
         Path sourceDir = resolveBuildSourceDir(deployment);
         if (sourceDir == null || !Files.isDirectory(sourceDir.resolve(".git"))) {
             log.info("部署 {} 未找到 Git 工作目录，跳过 commit 记录。sourceDir={}", deployment.getId(), sourceDir);
@@ -531,8 +543,32 @@ public class DeploymentRunner {
             deployment.setCommitSha(currentSha.trim());
             deploymentRepository.save(deployment);
             appendSystemLog(logFile, "已记录本次 Git 提交：" + shortCommit(currentSha) + "。");
+            appendRemoteBranchHeadLog(deployment, sourceDir, logFile, currentSha.trim(), gitEnvironment);
         } catch (Exception ex) {
             log.warn("部署 {} 记录 Git commit 失败：{}", deployment.getId(), ex.getMessage());
+        }
+    }
+
+    private void appendRemoteBranchHeadLog(DeploymentEntity deployment, Path sourceDir, Path logFile, String currentSha, Map<String, String> gitEnvironment) {
+        if (deployment == null || TextKit.isBlank(deployment.getBranchName())) {
+            return;
+        }
+        try {
+            String branch = deployment.getBranchName().trim();
+            String remoteHead = runGit(sourceDir, gitEnvironment, "ls-remote", "origin", "refs/heads/" + branch);
+            String remoteSha = "";
+            if (TextKit.isNotBlank(remoteHead)) {
+                remoteSha = remoteHead.trim().split("\\s+")[0];
+            }
+            if (TextKit.isBlank(remoteSha)) {
+                appendSystemLog(logFile, "本次构建分支：" + branch + "，未能读取远端分支最新提交。");
+                return;
+            }
+            String matched = remoteSha.equals(currentSha) ? "一致" : "不一致";
+            appendSystemLog(logFile, "本次构建分支：" + branch + "，工作区 HEAD=" + shortCommit(currentSha)
+                    + "，远端 HEAD=" + shortCommit(remoteSha) + "，状态=" + matched + "。");
+        } catch (Exception ex) {
+            log.warn("部署 {} 读取远端分支 HEAD 失败：{}", deployment.getId(), ex.getMessage());
         }
     }
 
@@ -571,11 +607,16 @@ public class DeploymentRunner {
     }
 
     private String runGit(Path sourceDir, String... args) throws IOException, InterruptedException {
+        return runGit(sourceDir, Map.of(), args);
+    }
+
+    private String runGit(Path sourceDir, Map<String, String> environment, String... args) throws IOException, InterruptedException {
         List<String> command = new ArrayList<>();
         command.add(gitCredentialService.getGitExecutable());
         command.addAll(List.of(args));
         ProcessBuilder processBuilder = ProcessKit.mergedBuilder(command.toArray(String[]::new))
                 .directory(sourceDir.toFile());
+        processBuilder.environment().putAll(environment);
         processBuilder.environment().put("GIT_TERMINAL_PROMPT", "0");
         processBuilder.environment().put("GIT_ASKPASS", "echo");
         Process process = processBuilder.start();
@@ -718,6 +759,14 @@ public class DeploymentRunner {
         }
     }
 
+    private void publishHallChange() {
+        pipelineHallEventService.publishChange();
+    }
+
+    private void publishHallProgressChange(Long deploymentId) {
+        pipelineHallEventService.publishDeploymentLogChange(deploymentId);
+    }
+
     private void appendSystemLog(Path logFile, String message) throws Exception {
         Files.writeString(
                 logFile,
@@ -726,6 +775,7 @@ public class DeploymentRunner {
                 StandardOpenOption.CREATE,
                 StandardOpenOption.APPEND
         );
+        publishHallChange();
     }
 
     private void appendDeploymentPluginLog(Path logFile, DeploymentEntity deployment) {
@@ -786,6 +836,7 @@ public class DeploymentRunner {
                     StandardOpenOption.CREATE,
                     StandardOpenOption.APPEND
             );
+            publishHallChange();
         } catch (Exception ignored) {
         }
     }
@@ -798,6 +849,7 @@ public class DeploymentRunner {
                 StandardOpenOption.CREATE,
                 StandardOpenOption.APPEND
         );
+        publishHallChange();
         for (StackTraceElement element : ex.getStackTrace()) {
             Files.writeString(
                     logFile,
@@ -1348,6 +1400,7 @@ public class DeploymentRunner {
                     StandardOpenOption.CREATE,
                     StandardOpenOption.APPEND
             );
+            publishHallChange();
         } catch (Exception ignored) {
         }
     }
@@ -1379,6 +1432,7 @@ public class DeploymentRunner {
                     (buffer, offset, length) -> {
                         writer.write(buffer, offset, length);
                         writer.flush();
+                        publishHallProgressChange(deploymentId);
                     },
                     ex -> {
                         if (isStopInterruption(deploymentId, ex)) {

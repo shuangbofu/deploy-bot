@@ -45,6 +45,7 @@ export default function ServiceManagementPage() {
   const [switchPagination, setSwitchPagination] = useState({ current: 1, pageSize: 8 });
   const [eventPagination, setEventPagination] = useState({ current: 1, pageSize: 8 });
   const [refreshError, setRefreshError] = useState('');
+  const [streamEnabled, setStreamEnabled] = useState(false);
   const navigate = useNavigate();
 
   const loadServices = async () => {
@@ -52,6 +53,7 @@ export default function ServiceManagementPage() {
     try {
       setServices(await servicesApi.list());
       setRefreshError('');
+      setStreamEnabled(true);
     } finally {
       setLoading(false);
     }
@@ -62,7 +64,7 @@ export default function ServiceManagementPage() {
   }, []);
 
   useSseStream<ServiceSummary[]>({
-    enabled: true,
+    enabled: streamEnabled,
     path: '/services/stream',
     eventName: 'services',
     onData: (items) => {

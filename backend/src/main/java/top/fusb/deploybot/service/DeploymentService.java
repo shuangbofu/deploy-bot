@@ -78,6 +78,7 @@ public class DeploymentService {
     private static final String DEFAULT_TRIGGER_USER = "anonymous";
     private static final String BUILD_ARTIFACT_DIR = "artifacts";
     private static final long LOG_READ_TIMEOUT_MILLIS = 1500L;
+    private static final int LOG_CHUNK_MAX_BYTES = 64 * 1024;
     private static final List<RuntimeEnvironmentBinding> BUILD_RUNTIME_BINDINGS = List.of(
             new RuntimeEnvironmentBinding(
                     "JAVA",
@@ -1192,10 +1193,20 @@ public class DeploymentService {
         if (size == safeOffset) {
             return new LogChunk("", size, isDeploymentFinished(entity));
         }
+        int chunkSize = (int) Math.min(LOG_CHUNK_MAX_BYTES, size - safeOffset);
+        byte[] buffer = new byte[chunkSize];
         try (var inputStream = Files.newInputStream(path)) {
-            inputStream.skip(safeOffset);
-            String content = new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
-            return new LogChunk(content, size, isDeploymentFinished(entity));
+            long skipped = inputStream.skip(safeOffset);
+            if (skipped < safeOffset) {
+                return new LogChunk("", skipped, isDeploymentFinished(entity));
+            }
+            int read = inputStream.read(buffer);
+            if (read <= 0) {
+                return new LogChunk("", safeOffset, isDeploymentFinished(entity));
+            }
+            long nextOffset = safeOffset + read;
+            String content = new String(buffer, 0, read, StandardCharsets.UTF_8);
+            return new LogChunk(content, nextOffset, isDeploymentFinished(entity) && nextOffset >= size);
         }
     }
 

@@ -8,9 +8,12 @@ import top.fusb.deploybot.dto.PipelineHallSummary;
 import top.fusb.deploybot.dto.PipelineLockRequest;
 import top.fusb.deploybot.dto.PipelineRequest;
 import top.fusb.deploybot.model.PipelineEntity;
+import top.fusb.deploybot.security.AuthContextHolder;
+import top.fusb.deploybot.security.AuthenticatedUser;
 import top.fusb.deploybot.security.AdminOnly;
 import top.fusb.deploybot.service.GitBranchService;
 import top.fusb.deploybot.service.DeploymentPluginBridgeService;
+import top.fusb.deploybot.service.PipelineHallEventService;
 import top.fusb.deploybot.service.PipelineService;
 import top.fusb.deploybot.service.ServiceManager;
 import jakarta.validation.Valid;
@@ -29,15 +32,18 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @RestController
 @RequestMapping("/api/pipelines")
 @RequiredArgsConstructor
 public class PipelineController {
+    private static final long HALL_IDLE_WAIT_MILLIS = 15_000L;
 
     private final PipelineService service;
     private final GitBranchService gitBranchService;
     private final ServiceManager serviceManager;
+    private final PipelineHallEventService pipelineHallEventService;
     private final DeploymentPluginBridgeService deploymentPluginBridgeService;
 
     /**
@@ -65,15 +71,49 @@ public class PipelineController {
 
     @GetMapping(value = "/hall/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter hallStream(@RequestParam(required = false) Long version) {
-        return SseStreamSupport.stream("pipeline-hall-stream", "hall", () -> {
-            List<PipelineHallSummary> summaries = service.findHallSummaries();
-            Long nextVersion = (long) hallSignature(summaries).hashCode();
-            return Map.of(
-                    "version", nextVersion,
-                    "items", summaries,
-                    "skipInitial", version != null && version.equals(nextVersion)
-            );
-        });
+        AuthenticatedUser currentUser = AuthContextHolder.get();
+        SseEmitter emitter = new SseEmitter(0L);
+        AtomicBoolean closed = new AtomicBoolean(false);
+        Thread thread = new Thread(() -> {
+            String lastSignature = null;
+            long observedVersion = pipelineHallEventService.currentVersion();
+            try {
+                AuthContextHolder.set(currentUser);
+                while (!Thread.currentThread().isInterrupted() && !closed.get()) {
+                    List<PipelineHallSummary> summaries = service.findHallSummaries();
+                    String signature = hallSignature(summaries);
+                    Long nextVersion = (long) signature.hashCode();
+                    boolean changed = !signature.equals(lastSignature);
+                    if (changed && !(lastSignature == null && version != null && version.equals(nextVersion))) {
+                        emitter.send(SseEmitter.event().name("hall").data(Map.of(
+                                "version", nextVersion,
+                                "items", summaries
+                        )));
+                    } else if (pipelineHallEventService.currentVersion() == observedVersion) {
+                        emitter.send(SseEmitter.event().comment("heartbeat"));
+                    }
+                    lastSignature = signature;
+                    observedVersion = pipelineHallEventService.currentVersion();
+                    observedVersion = pipelineHallEventService.awaitChange(observedVersion, HALL_IDLE_WAIT_MILLIS);
+                }
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            } catch (Exception ex) {
+                closed.set(true);
+            } finally {
+                AuthContextHolder.clear();
+            }
+        }, "pipeline-hall-stream");
+        thread.setDaemon(true);
+        Runnable closeStream = () -> {
+            closed.set(true);
+            thread.interrupt();
+        };
+        emitter.onCompletion(closeStream);
+        emitter.onTimeout(closeStream);
+        emitter.onError(ignored -> closeStream.run());
+        thread.start();
+        return emitter;
     }
 
     @GetMapping(value = "/hall/running-services/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

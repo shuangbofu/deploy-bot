@@ -70,6 +70,7 @@ public class PipelineService {
     private final UserFavoritePipelineRepository userFavoritePipelineRepository;
     private final ServicePidHistoryRepository servicePidHistoryRepository;
     private final PipelineTemplateResolverService pipelineTemplateResolverService;
+    private final PipelineHallEventService pipelineHallEventService;
 
     @Transactional
     public List<PipelineEntity> findAll() {
@@ -234,13 +235,17 @@ public class PipelineService {
         entity.setPipeline(pipeline);
         entity.setCreatedAt(LocalDateTime.now());
         userFavoritePipelineRepository.save(entity);
+        pipelineHallEventService.publishChange();
     }
 
     @Transactional
     public void unfavorite(Long pipelineId) {
         AuthenticatedUser currentUser = requireCurrentUser();
         userFavoritePipelineRepository.findByUserIdAndPipelineId(currentUser.id(), pipelineId)
-                .ifPresent(userFavoritePipelineRepository::delete);
+                .ifPresent(entity -> {
+                    userFavoritePipelineRepository.delete(entity);
+                    pipelineHallEventService.publishChange();
+                });
     }
 
     @Transactional
@@ -250,7 +255,9 @@ public class PipelineService {
         entity.setLockReason(TextKit.trimToNull(request == null ? null : request.reason()));
         entity.setLockStartAt(request == null ? null : request.startAt());
         entity.setLockEndAt(request == null ? null : request.endAt());
-        return pipelineRepository.save(entity);
+        PipelineEntity saved = pipelineRepository.save(entity);
+        pipelineHallEventService.publishChange();
+        return saved;
     }
 
     @Transactional
@@ -260,7 +267,9 @@ public class PipelineService {
         entity.setLockReason(null);
         entity.setLockStartAt(null);
         entity.setLockEndAt(null);
-        return pipelineRepository.save(entity);
+        PipelineEntity saved = pipelineRepository.save(entity);
+        pipelineHallEventService.publishChange();
+        return saved;
     }
 
     private top.fusb.deploybot.model.DeploymentEntity enrichTriggeredByDisplayName(top.fusb.deploybot.model.DeploymentEntity entity) {
@@ -360,7 +369,9 @@ public class PipelineService {
         pipeline.setLockReason(null);
         pipeline.setLockStartAt(null);
         pipeline.setLockEndAt(null);
-        return pipelineRepository.save(pipeline);
+        PipelineEntity saved = pipelineRepository.save(pipeline);
+        pipelineHallEventService.publishChange();
+        return saved;
     }
 
     public List<String> findAllTags() {
@@ -407,7 +418,9 @@ public class PipelineService {
         entity.setStartupKeyword(TextKit.trimToNull(request.startupKeyword()));
         entity.setStartupTimeoutSeconds(normalizeStartupTimeout(request.startupTimeoutSeconds()));
         entity.setNotificationBindings(normalizeNotificationBindings(request.notificationBindings()));
-        return pipelineRepository.save(entity);
+        PipelineEntity saved = pipelineRepository.save(entity);
+        pipelineHallEventService.publishChange();
+        return saved;
     }
 
     private Map<String, String> normalizePluginConfig(Map<String, String> pluginConfig) {
@@ -491,6 +504,7 @@ public class PipelineService {
         serviceRepository.deleteByPipelineId(id);
         deploymentRepository.detachPipeline(id);
         pipelineRepository.deleteById(id);
+        pipelineHallEventService.publishChange();
     }
 
     /**
