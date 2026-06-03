@@ -8,6 +8,15 @@ import type { PageResult, PipelineHallRunningServiceSummary, PipelineHallSummary
 export const pipelinesApi = {
   list: async () => (await client.get<PipelineSummary[]>('/pipelines')).data,
   listHall: async () => (await client.get<PipelineHallSummary[]>('/pipelines/hall')).data,
+  listHallPage: async (params: {
+    page: number;
+    pageSize: number;
+    keyword?: string;
+    tags?: string[];
+    filterMode?: string;
+    selectedPipelineId?: number;
+    pinActivePipelines?: boolean;
+  }) => (await client.get<PageResult<PipelineHallSummary>>('/pipelines/hall/page', { params })).data,
   listHallByIds: async (ids: number[]) => (await client.get<PipelineHallSummary[]>('/pipelines/hall/by-ids', { params: { ids } })).data,
   listRunningServices: async () => (await client.get<PipelineHallRunningServiceSummary[]>('/pipelines/hall/running-services')).data,
   listFavorites: async () => (await client.get<number[]>('/pipelines/favorites')).data,

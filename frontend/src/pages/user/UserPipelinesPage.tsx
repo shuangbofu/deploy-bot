@@ -245,9 +245,13 @@ export default function UserPipelinesPage({
     hideStoppedServices,
   } = usePipelineHallPreferences();
   const [hallItems, setHallItems] = useState<PipelineHallSummary[]>([]);
+  const [tableItems, setTableItems] = useState<PipelineHallSummary[]>([]);
+  const [tableTotal, setTableTotal] = useState(0);
+  const [tablePagination, setTablePagination] = useState({ current: 1, pageSize: 10 });
   const [recentPipelines, setRecentPipelines] = useState<UserRecentPipelineSummary[]>([]);
   const [runningServices, setRunningServices] = useState<PipelineHallRunningServiceSummary[]>([]);
   const [hallLoading, setHallLoading] = useState(false);
+  const [tableLoading, setTableLoading] = useState(false);
   const [recentLoading, setRecentLoading] = useState(false);
   const [runningLoading, setRunningLoading] = useState(false);
   const [submittingId, setSubmittingId] = useState<number>();
@@ -261,6 +265,7 @@ export default function UserPipelinesPage({
   const [tagFilter, setTagFilter] = useState<string[]>();
   const [selectedPipelineId, setSelectedPipelineId] = useState<number>();
   const [cardColumnLimit, setCardColumnLimit] = useState(1);
+  const [hallStreamVersion, setHallStreamVersion] = useState<number>();
   const navigate = useNavigate();
   const hallContentBodyRef = useRef<HTMLDivElement>(null);
 
@@ -295,23 +300,55 @@ export default function UserPipelinesPage({
     }
   };
 
+  const loadHallItems = async (silent = false) => {
+    if (!silent) {
+      setHallLoading(true);
+    }
+    try {
+      const items = await pipelinesApi.listHall();
+      setHallItems(items);
+      setHallStreamVersion(items.reduce((max, item) => Math.max(max, item.version || item.latestDeploymentId || item.pipelineId || 0), 0));
+    } finally {
+      if (!silent) {
+        setHallLoading(false);
+      }
+    }
+  };
+
+  const loadTablePage = async (silent = false, page = tablePagination.current, pageSize = tablePagination.pageSize) => {
+    if (!silent) {
+      setTableLoading(true);
+    }
+    try {
+      const result = await pipelinesApi.listHallPage({
+        page,
+        pageSize,
+        keyword: keyword.trim() || undefined,
+        tags: tagFilter,
+        filterMode: hallView,
+        selectedPipelineId,
+        pinActivePipelines,
+      });
+      setTableItems(result.items);
+      setTableTotal(result.total);
+      setTablePagination({ current: result.page, pageSize: result.pageSize });
+    } finally {
+      if (!silent) {
+        setTableLoading(false);
+      }
+    }
+  };
+
   /** 首次加载大厅卡片和最近部署统计，后续变化由 SSE 推送。 */
   const loadData = async (silent = false) => {
     if (!silent) {
-      setHallLoading(true);
       setRecentLoading(true);
       if (showRunningServices) {
         setRunningLoading(true);
       }
     }
     const tasks: Promise<unknown>[] = [
-      pipelinesApi.listHall()
-        .then(setHallItems)
-        .finally(() => {
-          if (!silent) {
-            setHallLoading(false);
-          }
-        }),
+      loadHallItems(silent),
       deploymentsApi.listMineRecentPipelines()
         .then(setRecentPipelines)
         .finally(() => {
@@ -333,23 +370,39 @@ export default function UserPipelinesPage({
     } else if (!silent) {
       setRunningLoading(false);
     }
+    if (viewMode === 'table') {
+      tasks.push(loadTablePage(silent));
+    }
     await Promise.allSettled(tasks);
   };
 
   const hasLiveRunningServices = runningServices.some((item) => item.status === 'RUNNING');
-  const hallStreamVersion = useMemo(
-    () => hallItems.reduce((max, item) => Math.max(max, item.version || item.latestDeploymentId || item.pipelineId || 0), 0),
-    [hallItems],
-  );
 
   useEffect(() => {
     loadData().catch(() => message.error('加载流水线失败'));
   }, [showRunningServices]);
 
+  useEffect(() => {
+    setTablePagination((current) => (current.current === 1 ? current : { ...current, current: 1 }));
+  }, [hallView, keyword, pinActivePipelines, selectedPipelineId, tagFilter]);
+
+  useEffect(() => {
+    if (viewMode !== 'table') {
+      return;
+    }
+    loadTablePage().catch(() => message.error('加载流水线失败'));
+  }, [hallView, keyword, pinActivePipelines, selectedPipelineId, tagFilter, tablePagination.current, tablePagination.pageSize, viewMode]);
+
   usePipelineHallStream({
-    enabled: hallItems.length > 0,
+    enabled: true,
     version: hallStreamVersion,
-    onUpdate: setHallItems,
+    onUpdate: (version) => {
+      setHallStreamVersion(version);
+      loadHallItems(true).catch(() => undefined);
+      if (viewMode === 'table') {
+        loadTablePage(true).catch(() => undefined);
+      }
+    },
     onError: () => {},
   });
 
@@ -512,6 +565,7 @@ export default function UserPipelinesPage({
       await pipelinesApi.favorite(pipelineId);
     }
     setHallItems((current) => current.map((item) => item.pipelineId === pipelineId ? { ...item, favorited: !favorited } : item));
+    setTableItems((current) => current.map((item) => item.pipelineId === pipelineId ? { ...item, favorited: !favorited } : item));
     setRecentPipelines((current) => [...current]);
   };
 
@@ -969,14 +1023,17 @@ export default function UserPipelinesPage({
 	                  <Table
 	                    className="pipeline-hall-table"
 	                    rowKey="pipelineId"
-	                    loading={hallLoading && filteredPipelineCards.length > 0}
-	                    dataSource={filteredPipelineCards}
+	                    loading={tableLoading && tableItems.length > 0}
+	                    dataSource={tableItems}
 	                    rowClassName={(row) => row.latestStatus === 'FAILED' ? 'pipeline-hall-table-row--failed' : ''}
 	                    locale={{ emptyText: <EmptyPane description="当前筛选条件下没有可部署流水线。" /> }}
                     pagination={{
-                      pageSize: 10,
+                      current: tablePagination.current,
+                      pageSize: tablePagination.pageSize,
+                      total: tableTotal,
                       showSizeChanger: true,
                       showTotal: (total) => `共 ${total} 条`,
+                      onChange: (page, pageSize) => setTablePagination({ current: page, pageSize }),
                     }}
                     columns={[
                     {

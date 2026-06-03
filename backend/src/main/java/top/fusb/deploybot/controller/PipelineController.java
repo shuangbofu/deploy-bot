@@ -4,7 +4,9 @@ import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.dto.DeploymentPluginPlanSummary;
 import top.fusb.deploybot.dto.PipelineBranchOption;
 import top.fusb.deploybot.dto.PipelineHallRunningServiceSummary;
+import top.fusb.deploybot.dto.PipelineHallPageRequest;
 import top.fusb.deploybot.dto.PipelineHallSummary;
+import top.fusb.deploybot.dto.PipelineHallStreamEvent;
 import top.fusb.deploybot.dto.PipelineLockRequest;
 import top.fusb.deploybot.dto.PipelineRequest;
 import top.fusb.deploybot.model.PipelineEntity;
@@ -31,7 +33,6 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @RestController
@@ -59,6 +60,27 @@ public class PipelineController {
         return service.findHallSummaries();
     }
 
+    @GetMapping("/hall/page")
+    public PageResult<PipelineHallSummary> hallPage(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int pageSize,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) List<String> tags,
+            @RequestParam(defaultValue = "all") String filterMode,
+            @RequestParam(required = false) Long selectedPipelineId,
+            @RequestParam(defaultValue = "false") boolean pinActivePipelines
+    ) {
+        return service.findHallPage(new PipelineHallPageRequest(
+                page,
+                pageSize,
+                keyword,
+                tags,
+                filterMode,
+                selectedPipelineId,
+                pinActivePipelines
+        ));
+    }
+
     @GetMapping("/hall/by-ids")
     public List<PipelineHallSummary> hallByIds(@RequestParam List<Long> ids) {
         return service.findHallSummariesByIds(ids);
@@ -75,26 +97,20 @@ public class PipelineController {
         SseEmitter emitter = new SseEmitter(0L);
         AtomicBoolean closed = new AtomicBoolean(false);
         Thread thread = new Thread(() -> {
-            String lastSignature = null;
             long observedVersion = pipelineHallEventService.currentVersion();
             try {
                 AuthContextHolder.set(currentUser);
+                if (version == null || version < observedVersion) {
+                    emitter.send(SseEmitter.event().name("hall").data(new PipelineHallStreamEvent(observedVersion)));
+                }
                 while (!Thread.currentThread().isInterrupted() && !closed.get()) {
-                    List<PipelineHallSummary> summaries = service.findHallSummaries();
-                    String signature = hallSignature(summaries);
-                    Long nextVersion = (long) signature.hashCode();
-                    boolean changed = !signature.equals(lastSignature);
-                    if (changed && !(lastSignature == null && version != null && version.equals(nextVersion))) {
-                        emitter.send(SseEmitter.event().name("hall").data(Map.of(
-                                "version", nextVersion,
-                                "items", summaries
-                        )));
-                    } else if (pipelineHallEventService.currentVersion() == observedVersion) {
+                    long nextVersion = pipelineHallEventService.awaitChange(observedVersion, HALL_IDLE_WAIT_MILLIS);
+                    if (nextVersion != observedVersion) {
+                        observedVersion = nextVersion;
+                        emitter.send(SseEmitter.event().name("hall").data(new PipelineHallStreamEvent(observedVersion)));
+                    } else {
                         emitter.send(SseEmitter.event().comment("heartbeat"));
                     }
-                    lastSignature = signature;
-                    observedVersion = pipelineHallEventService.currentVersion();
-                    observedVersion = pipelineHallEventService.awaitChange(observedVersion, HALL_IDLE_WAIT_MILLIS);
                 }
             } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
@@ -119,22 +135,6 @@ public class PipelineController {
     @GetMapping(value = "/hall/running-services/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter runningServicesStream() {
         return SseStreamSupport.stream("pipeline-running-services-stream", "running-services", serviceManager::findRunningHallSummaries);
-    }
-
-    private String hallSignature(List<PipelineHallSummary> summaries) {
-        return summaries.stream()
-                .map(item -> String.join(":",
-                        String.valueOf(item.pipelineId()),
-                        String.valueOf(item.latestDeploymentId()),
-                        String.valueOf(item.latestStatus()),
-                        String.valueOf(item.latestProgressPercent()),
-                        String.valueOf(item.latestProgressStage()),
-                        String.valueOf(item.latestProgressCurrent()),
-                        String.valueOf(item.latestProgressTotal()),
-                        String.valueOf(item.latestFinishedAt()),
-                        String.valueOf(item.favorited())
-                ))
-                .reduce("", (left, right) -> left + "|" + right);
     }
 
     @GetMapping("/page")

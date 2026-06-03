@@ -1,17 +1,15 @@
 import { useEffect, useRef } from 'react';
 import { API_BASE_URL, handleAuthExpired } from '../api/client';
 import { authStorage } from '../auth/authStorage';
-import type { PipelineHallSummary } from '../types/domain';
 
 type HallStreamPayload = {
   version?: number;
-  items?: PipelineHallSummary[];
 };
 
 type Options = {
   enabled: boolean;
   version?: number;
-  onUpdate: (items: PipelineHallSummary[]) => void;
+  onUpdate: (version: number) => void;
   onError?: () => void;
 };
 
@@ -103,8 +101,8 @@ export function usePipelineHallStream({ enabled, version, onUpdate, onError }: O
               return;
             }
             const payload = JSON.parse(item.data) as HallStreamPayload;
-            if (Array.isArray(payload.items)) {
-              onUpdateRef.current(payload.items);
+            if (typeof payload.version === 'number') {
+              onUpdateRef.current(payload.version);
             }
           });
         }

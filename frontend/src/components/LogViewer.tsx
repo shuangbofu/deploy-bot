@@ -32,7 +32,7 @@ export type LogViewerHandle = {
 };
 
 const normalizeTerminalLogLines = (content: string) => {
-  const text = content || '暂无日志输出。';
+  const text = content || '';
   const lines: string[] = [];
   let currentLine = '';
   for (let index = 0; index < text.length; index += 1) {
@@ -48,7 +48,7 @@ const normalizeTerminalLogLines = (content: string) => {
     }
     currentLine += char;
   }
-  if (currentLine || lines.length === 0) {
+  if (currentLine || lines.length > 0) {
     lines.push(currentLine);
   }
   return lines;
@@ -110,7 +110,7 @@ const appendLogContentToLines = (currentLines: string[], delta: string, reset: b
     currentLine += char;
   }
   nextLines.push(currentLine);
-  return nextLines.length === 0 ? ['暂无日志输出。'] : nextLines;
+  return nextLines;
 };
 
 /**
@@ -163,7 +163,7 @@ const LogViewer = forwardRef<LogViewerHandle, LogViewerProps>(function LogViewer
     const previousContent = previousContentRef.current;
     if (!content) {
       previousContentRef.current = '';
-      setLines(['暂无日志输出。']);
+      setLines([]);
       return;
     }
     if (previousContent && content.startsWith(previousContent)) {

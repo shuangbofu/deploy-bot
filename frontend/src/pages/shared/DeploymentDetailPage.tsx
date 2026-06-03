@@ -58,6 +58,7 @@ export default function DeploymentDetailPage({ scope }: Props) {
   const [logContent, setLogContent] = useState('');
   const [detailLoading, setDetailLoading] = useState(true);
   const [logLoading, setLogLoading] = useState(true);
+  const [logResolved, setLogResolved] = useState(false);
   const [logOffset, setLogOffset] = useState(0);
   const [logStreamEnabled, setLogStreamEnabled] = useState(false);
   const [lastLogUpdateAt, setLastLogUpdateAt] = useState(() => Date.now());
@@ -81,7 +82,6 @@ export default function DeploymentDetailPage({ scope }: Props) {
     } finally {
       if (!options?.silent) {
         setDetailLoading(false);
-        setLogLoading(false);
       }
     }
   };
@@ -90,6 +90,7 @@ export default function DeploymentDetailPage({ scope }: Props) {
     setLogContent('');
     setLogOffset(0);
     setLogLoading(true);
+    setLogResolved(false);
     setLogStreamEnabled(Boolean(deploymentId));
     setLogStreamClosing(false);
     loadDeploymentDetail().catch(() => message.error('加载部署详情失败'));
@@ -100,6 +101,7 @@ export default function DeploymentDetailPage({ scope }: Props) {
     setLogContent('');
     setLogOffset(0);
     setLogLoading(true);
+    setLogResolved(false);
     setLogStreamClosing(false);
     setLogStreamEnabled(false);
     window.setTimeout(() => setLogStreamEnabled(Boolean(deploymentId)), 0);
@@ -118,6 +120,7 @@ export default function DeploymentDetailPage({ scope }: Props) {
     ),
     offset: logOffset,
     onLog: (payload) => {
+      setLogResolved(true);
       if (payload.content) {
         setLogContent((previous) => `${previous}${payload.content}`);
         setLastLogUpdateAt(Date.now());
@@ -132,7 +135,6 @@ export default function DeploymentDetailPage({ scope }: Props) {
       }
     },
     onDeploymentStatus: (streamStatus) => {
-      setLogLoading(false);
       setDeployment((previous) => (
         previous
           ? {
@@ -152,12 +154,14 @@ export default function DeploymentDetailPage({ scope }: Props) {
       ));
     },
     onDone: () => {
+      setLogResolved(true);
       setLogLoading(false);
       setLogStreamClosing(false);
       setLogStreamEnabled(false);
       loadDeploymentDetail({ silent: true }).catch(() => undefined);
     },
     onError: () => {
+      setLogResolved(true);
       setLogLoading(false);
     },
   });
@@ -394,7 +398,7 @@ export default function DeploymentDetailPage({ scope }: Props) {
               ) : (
                 <LogViewer
                   ref={logViewerRef}
-                  content={visibleLog.content}
+                  content={visibleLog.content || (logResolved ? '暂无日志输出。' : '')}
                   truncatedLineCount={visibleLog.truncatedLineCount}
                   autoScrollAvailable={logStreaming}
                   idleHint={logIdleHint}

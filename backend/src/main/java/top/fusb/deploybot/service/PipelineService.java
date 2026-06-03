@@ -3,6 +3,8 @@ package top.fusb.deploybot.service;
 import lombok.RequiredArgsConstructor;
 import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.dto.PipelineBranchOption;
+import top.fusb.deploybot.dto.PipelineHallFilterMode;
+import top.fusb.deploybot.dto.PipelineHallPageRequest;
 import top.fusb.deploybot.dto.PipelineHallSummary;
 import top.fusb.deploybot.dto.PipelineLatestDeploymentSummary;
 import top.fusb.deploybot.dto.PipelineLockRequest;
@@ -88,6 +90,12 @@ public class PipelineService {
         return buildHallSummaries(normalizeLockStates(pipelineRepository.findAll(Sort.by(Sort.Order.desc("id")))));
     }
 
+    @Transactional
+    public PageResult<PipelineHallSummary> findHallPage(PipelineHallPageRequest request) {
+        List<PipelineHallSummary> filtered = filterHallSummaries(findHallSummaries(), request);
+        return PageResult.of(filtered, request.page(), request.pageSize());
+    }
+
     public List<PipelineHallSummary> findHallSummariesByIds(List<Long> pipelineIds) {
         if (pipelineIds == null || pipelineIds.isEmpty()) {
             return List.of();
@@ -154,6 +162,61 @@ public class PipelineService {
                     );
                 })
                 .toList();
+    }
+
+    private List<PipelineHallSummary> filterHallSummaries(List<PipelineHallSummary> summaries, PipelineHallPageRequest request) {
+        PipelineHallFilterMode mode = PipelineHallFilterMode.fromValue(request.filterMode());
+        Set<Long> recentPipelineIds = mode == PipelineHallFilterMode.RECENT
+                ? deploymentRepository.findTop30ByTriggeredByOrderByCreatedAtDesc(requireCurrentUser().username()).stream()
+                .map(DeploymentEntity::getPipeline)
+                .filter(java.util.Objects::nonNull)
+                .map(PipelineEntity::getId)
+                .collect(Collectors.toCollection(LinkedHashSet::new))
+                : Set.of();
+        String normalizedKeyword = TextKit.isBlank(request.keyword()) ? null : request.keyword().trim().toLowerCase();
+        List<String> requiredTags = request.tags() == null
+                ? List.of()
+                : request.tags().stream().filter(TextKit::isNotBlank).map(String::trim).toList();
+        List<PipelineHallSummary> filtered = summaries.stream()
+                .filter(item -> request.selectedPipelineId() == null || request.selectedPipelineId().equals(item.pipelineId()))
+                .filter(item -> matchesHallMode(item, mode, recentPipelineIds))
+                .filter(item -> matchesHallKeyword(item, normalizedKeyword))
+                .filter(item -> requiredTags.isEmpty() || item.tags().containsAll(requiredTags))
+                .toList();
+        if (!request.pinActivePipelines()) {
+            return filtered;
+        }
+        return filtered.stream()
+                .sorted(Comparator.comparing((PipelineHallSummary item) -> !isActiveHallItem(item)))
+                .toList();
+    }
+
+    private boolean matchesHallMode(PipelineHallSummary item, PipelineHallFilterMode mode, Set<Long> recentPipelineIds) {
+        return switch (mode) {
+            case FAVORITES -> Boolean.TRUE.equals(item.favorited());
+            case RUNNING -> isActiveHallItem(item);
+            case FAILED -> DeploymentStatus.FAILED.name().equals(item.latestStatus());
+            case RECENT -> recentPipelineIds.contains(item.pipelineId());
+            case ALL -> true;
+        };
+    }
+
+    private boolean matchesHallKeyword(PipelineHallSummary item, String normalizedKeyword) {
+        if (normalizedKeyword == null) {
+            return true;
+        }
+        return List.of(item.pipelineName(), item.pipelineDescription(), item.projectName(), item.defaultBranch()).stream()
+                .filter(TextKit::isNotBlank)
+                .anyMatch(value -> value.toLowerCase().contains(normalizedKeyword))
+                || item.tags().stream().anyMatch(tag -> tag.toLowerCase().contains(normalizedKeyword));
+    }
+
+    private boolean isActiveHallItem(PipelineHallSummary item) {
+        if (item.latestStatus() == null) {
+            return false;
+        }
+        return DeploymentStatus.PENDING.name().equals(item.latestStatus())
+                || DeploymentStatus.RUNNING.name().equals(item.latestStatus());
     }
 
     private HallProgress resolveHallProgress(PipelineLatestDeploymentSummary deployment) {
