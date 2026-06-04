@@ -45,7 +45,6 @@ public abstract class AbstractDeploymentPlugin implements DeploymentPlugin {
             "pipelineName",
             "serviceName",
             "targetDir",
-            "workspaceRoot",
             "buildWorkspaceRoot",
             "buildSourceDir",
             "deployWorkspaceRoot",

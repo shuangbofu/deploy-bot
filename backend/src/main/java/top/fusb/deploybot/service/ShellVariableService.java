@@ -26,7 +26,6 @@ public class ShellVariableService {
             "pipelineTags",
             "serviceName",
             "targetDir",
-            "workspaceRoot",
             "buildWorkspaceRoot",
             "buildSourceDir",
             "deployWorkspaceRoot",
@@ -36,7 +35,6 @@ public class ShellVariableService {
     );
 
     private static final List<ShellVariableSummary> VARIABLES = List.of(
-            platform("WORKSPACE", "本次阶段的工作目录。构建阶段通常是代码工作目录，发布阶段通常是目标主机发布工作根目录。", "ALL", null),
             context("BRANCH", "本次部署选择的 Git 分支。", "ALL", "branch"),
             context("GIT_URL", "平台处理认证后的 Git 拉取地址。", "BUILD", "gitUrl"),
             context("GIT_REPOSITORY_URL", "项目原始仓库地址。", "BUILD", "gitRepositoryUrl"),
@@ -48,11 +46,10 @@ public class ShellVariableService {
             context("SERVICE_NAME", "平台根据流水线名称生成的服务名，用于产物命名和日志。", "ALL", "serviceName"),
             context("TARGET_DIR", "流水线目标主机步骤填写的部署目录。", "DEPLOY", "targetDir"),
             context("DEPLOYMENT_ID", "本次部署编号。", "ALL", "deploymentId"),
-            context("BUILD_WORKSPACE_ROOT", "本机构建工作根目录。", "BUILD", "buildWorkspaceRoot"),
-            context("BUILD_SOURCE_DIR", "本次部署的代码检出目录。", "BUILD", "buildSourceDir"),
-            context("DEPLOY_WORKSPACE_ROOT", "目标主机发布工作根目录。", "DEPLOY", "deployWorkspaceRoot"),
-            context("WORKSPACE_ROOT", "当前阶段工作根目录。", "ALL", "workspaceRoot"),
-            context("ARTIFACT_DIR", "本次构建或发布产物目录。", "ALL", "artifactDir"),
+            context("BUILD_WORKSPACE_ROOT", "部署平台本机构建工作根目录，用于缓存、源码检出和构建产物暂存。", "BUILD", "buildWorkspaceRoot"),
+            context("BUILD_SOURCE_DIR", "部署平台本机检出的 Git 源码目录，仅构建脚本可直接读取。", "BUILD", "buildSourceDir"),
+            context("DEPLOY_WORKSPACE_ROOT", "发布脚本所在机器的工作根目录。SSH 发布时是目标主机工作根目录，本机发布时是本机工作根目录。", "DEPLOY", "deployWorkspaceRoot"),
+            context("ARTIFACT_DIR", "当前阶段产物目录：构建阶段写入本地产物目录，发布阶段读取目标主机上的同步产物目录。", "ALL", "artifactDir"),
             context("SOURCE_ARTIFACT_PATH", "回滚时的历史产物目录；普通部署为空。", "DEPLOY", "sourceArtifactPath"),
             plugin("RUNTIME_CONFIG_YAML_BASE64", "插件根据运行配置生成的 application.yml Base64 内容。", "DEPLOY"),
             plugin("RUNTIME_CONFIG_FILE_PATH", "平台为本次部署生成的运行配置文件路径。", "DEPLOY"),

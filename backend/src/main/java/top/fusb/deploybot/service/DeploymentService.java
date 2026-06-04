@@ -810,10 +810,37 @@ public class DeploymentService {
     }
 
     private void putScriptEnvironmentAliases(Map<String, String> variables, boolean buildStage) {
-        for (String key : shellVariableService.contextKeys()) {
-            putEnvAlias(variables, shellEnvName(key), key);
-        }
-        putWorkspaceAlias(variables, buildStage);
+        List<String> stageKeys = buildStage
+                ? List.of(
+                "branch",
+                "gitUrl",
+                "gitRepositoryUrl",
+                "projectId",
+                "projectName",
+                "pipelineId",
+                "pipelineName",
+                "pipelineTags",
+                "serviceName",
+                "deploymentId",
+                "buildWorkspaceRoot",
+                "buildSourceDir",
+                "artifactDir"
+        )
+                : List.of(
+                "branch",
+                "projectId",
+                "projectName",
+                "pipelineId",
+                "pipelineName",
+                "pipelineTags",
+                "serviceName",
+                "targetDir",
+                "deploymentId",
+                "deployWorkspaceRoot",
+                "artifactDir",
+                "sourceArtifactPath"
+        );
+        stageKeys.forEach(key -> putEnvAlias(variables, shellEnvName(key), key));
     }
 
     private String shellEnvName(String sourceKey) {
@@ -825,20 +852,6 @@ public class DeploymentService {
         if (TextKit.isNotBlank(value)) {
             variables.put(envKey, value);
         }
-    }
-
-    private void putWorkspaceAlias(Map<String, String> variables, boolean buildStage) {
-        String root = buildStage ? variables.get("buildWorkspaceRoot") : variables.get("deployWorkspaceRoot");
-        if (TextKit.isBlank(root)) {
-            root = variables.get("workspaceRoot");
-        }
-        String deploymentId = variables.get("deploymentId");
-        if (TextKit.isBlank(root)) {
-            return;
-        }
-        variables.put("WORKSPACE", buildStage && TextKit.isNotBlank(deploymentId)
-                ? Path.of(root).resolve("runs").resolve(deploymentId).toString()
-                : root);
     }
 
     private void putManagedStartScriptPath(Map<String, String> variables, Long deploymentId) {

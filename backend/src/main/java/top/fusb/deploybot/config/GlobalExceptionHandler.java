@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.util.NoSuchElementException;
+import java.util.Locale;
 import java.util.stream.Collectors;
 
 @RestControllerAdvice(basePackages = {
@@ -104,12 +105,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Result<Void>> handleDataIntegrity(DataIntegrityViolationException ex, HttpServletRequest request) {
         String rootMessage = ex.getMostSpecificCause() != null ? ex.getMostSpecificCause().getMessage() : ex.getMessage();
-        String userMessage = "数据存在关联引用，当前操作无法完成。";
-        if (isUniqueViolation(rootMessage)) {
-            userMessage = resolveUniqueViolationMessage(rootMessage);
-        } else if (rootMessage != null && rootMessage.contains("Value too long for column")) {
-            userMessage = "提交内容过长，已超出字段限制，请检查部署变量、脚本或快照内容。";
-        }
+        String userMessage = resolveDataIntegrityMessage(rootMessage);
         log.warn("API data integrity error on {} {}: {}", request.getMethod(), request.getRequestURI(), ex.getMessage(), ex);
         return jsonFailure(
                 ErrorCode.DATA_INTEGRITY_ERROR.getCode(),
@@ -119,15 +115,51 @@ public class GlobalExceptionHandler {
         );
     }
 
+    private String resolveDataIntegrityMessage(String rootMessage) {
+        if (isUniqueViolation(rootMessage)) {
+            return resolveUniqueViolationMessage(rootMessage);
+        }
+        if (isForeignKeyViolation(rootMessage)) {
+            return "数据仍被其它记录引用，不能直接删除或修改。约束：" + extractConstraintName(rootMessage) + "；原因：" + summarizeDatabaseMessage(rootMessage);
+        }
+        if (isNotNullViolation(rootMessage)) {
+            return "必填字段缺失，字段：" + extractColumnName(rootMessage) + "；原因：" + summarizeDatabaseMessage(rootMessage);
+        }
+        if (rootMessage != null && rootMessage.contains("Value too long for column")) {
+            return "提交内容过长，字段：" + extractColumnName(rootMessage) + "；请缩短对应内容后重试。";
+        }
+        return "数据完整性校验失败：" + summarizeDatabaseMessage(rootMessage);
+    }
+
     private boolean isUniqueViolation(String rootMessage) {
         if (rootMessage == null || rootMessage.isBlank()) {
             return false;
         }
-        String normalized = rootMessage.toLowerCase();
+        String normalized = rootMessage.toLowerCase(Locale.ROOT);
         return normalized.contains("unique index")
                 || normalized.contains("unique constraint")
                 || normalized.contains("primary key violation")
                 || normalized.contains("duplicate key");
+    }
+
+    private boolean isForeignKeyViolation(String rootMessage) {
+        if (rootMessage == null || rootMessage.isBlank()) {
+            return false;
+        }
+        String normalized = rootMessage.toLowerCase(Locale.ROOT);
+        return normalized.contains("referential integrity constraint violation")
+                || normalized.contains("foreign key")
+                || normalized.contains("violates foreign key constraint");
+    }
+
+    private boolean isNotNullViolation(String rootMessage) {
+        if (rootMessage == null || rootMessage.isBlank()) {
+            return false;
+        }
+        String normalized = rootMessage.toLowerCase(Locale.ROOT);
+        return normalized.contains("null not allowed")
+                || normalized.contains("not-null property references a null")
+                || normalized.contains("violates not-null constraint");
     }
 
     private String resolveUniqueViolationMessage(String rootMessage) {
@@ -144,6 +176,35 @@ public class GlobalExceptionHandler {
             return rootMessage.substring(quotedStart + 1, quotedEnd);
         }
         return rootMessage.length() > 120 ? rootMessage.substring(0, 120) : rootMessage;
+    }
+
+    private String extractColumnName(String rootMessage) {
+        if (rootMessage == null || rootMessage.isBlank()) {
+            return "未识别字段";
+        }
+        String marker = "column \"";
+        String lower = rootMessage.toLowerCase(Locale.ROOT);
+        int start = lower.indexOf(marker);
+        if (start >= 0) {
+            int valueStart = start + marker.length();
+            int valueEnd = rootMessage.indexOf('"', valueStart);
+            if (valueEnd > valueStart) {
+                return rootMessage.substring(valueStart, valueEnd);
+            }
+        }
+        return extractConstraintName(rootMessage);
+    }
+
+    private String summarizeDatabaseMessage(String rootMessage) {
+        if (rootMessage == null || rootMessage.isBlank()) {
+            return "未识别数据库原因";
+        }
+        String sanitized = rootMessage
+                .replace('\n', ' ')
+                .replace('\r', ' ')
+                .replaceAll("\\s+", " ")
+                .trim();
+        return sanitized.length() > 180 ? sanitized.substring(0, 180) + "..." : sanitized;
     }
 
     @ExceptionHandler(Exception.class)

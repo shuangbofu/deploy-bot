@@ -579,18 +579,11 @@ public class DeploymentRunner {
             return Path.of(buildSourceDir);
         }
         String root = variables.get("buildWorkspaceRoot");
-        if (TextKit.isBlank(root)) {
-            root = variables.get("workspaceRoot");
-        }
         if (TextKit.isNotBlank(root) && deployment.getId() != null) {
             Path sourceDir = Path.of(root).resolve("runs").resolve(String.valueOf(deployment.getId()));
             if (Files.isDirectory(sourceDir.resolve(".git"))) {
                 return sourceDir;
             }
-        }
-        String workspace = variables.get("WORKSPACE");
-        if (TextKit.isNotBlank(workspace)) {
-            return Path.of(workspace);
         }
         if (TextKit.isBlank(root) || deployment.getId() == null) {
             return null;
