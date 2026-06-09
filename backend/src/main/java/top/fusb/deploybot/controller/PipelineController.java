@@ -7,7 +7,6 @@ import top.fusb.deploybot.dto.PipelineHallRunningServiceSummary;
 import top.fusb.deploybot.dto.PipelineHallPageRequest;
 import top.fusb.deploybot.dto.PipelineHallSummary;
 import top.fusb.deploybot.dto.PipelineHallStreamEvent;
-import top.fusb.deploybot.dto.PipelineLockRequest;
 import top.fusb.deploybot.dto.PipelineRequest;
 import top.fusb.deploybot.model.PipelineEntity;
 import top.fusb.deploybot.security.AuthContextHolder;
@@ -194,18 +193,6 @@ public class PipelineController {
     @DeleteMapping("/{id}/favorite")
     public void unfavorite(@PathVariable Long id) {
         service.unfavorite(id);
-    }
-
-    @AdminOnly
-    @PostMapping("/{id}/lock")
-    public PipelineEntity lock(@PathVariable Long id, @RequestBody PipelineLockRequest request) {
-        return service.lock(id, request);
-    }
-
-    @AdminOnly
-    @DeleteMapping("/{id}/lock")
-    public PipelineEntity unlock(@PathVariable Long id) {
-        return service.unlock(id);
     }
 
     /**

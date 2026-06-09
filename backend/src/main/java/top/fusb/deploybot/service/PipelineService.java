@@ -7,7 +7,6 @@ import top.fusb.deploybot.dto.PipelineHallFilterMode;
 import top.fusb.deploybot.dto.PipelineHallPageRequest;
 import top.fusb.deploybot.dto.PipelineHallSummary;
 import top.fusb.deploybot.dto.PipelineLatestDeploymentSummary;
-import top.fusb.deploybot.dto.PipelineLockRequest;
 import top.fusb.deploybot.dto.PipelineRequest;
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorSubCode;
@@ -76,18 +75,18 @@ public class PipelineService {
 
     @Transactional
     public List<PipelineEntity> findAll() {
-        return normalizeLockStates(pipelineRepository.findAll());
+        return pipelineRepository.findAll();
     }
 
     @Transactional
     public PipelineEntity findById(Long id) {
-        return normalizeLockState(pipelineRepository.findById(id)
-                .orElseThrow(() -> new BusinessException(ErrorSubCode.PIPELINE_NOT_FOUND)));
+        return pipelineRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorSubCode.PIPELINE_NOT_FOUND));
     }
 
     @Transactional
     public List<PipelineHallSummary> findHallSummaries() {
-        return buildHallSummaries(normalizeLockStates(pipelineRepository.findAll(Sort.by(Sort.Order.desc("id")))));
+        return buildHallSummaries(pipelineRepository.findAll(Sort.by(Sort.Order.desc("id"))));
     }
 
     @Transactional
@@ -107,7 +106,7 @@ public class PipelineService {
             return List.of();
         }
         return buildHallSummaries(
-                normalizeLockStates(pipelineRepository.findAllById(requestedIds)).stream()
+                pipelineRepository.findAllById(requestedIds).stream()
                         .sorted(Comparator.comparing(PipelineEntity::getId).reversed())
                         .toList()
         );
@@ -311,30 +310,6 @@ public class PipelineService {
                 });
     }
 
-    @Transactional
-    public PipelineEntity lock(Long id, PipelineLockRequest request) {
-        PipelineEntity entity = findById(id);
-        entity.setLocked(true);
-        entity.setLockReason(TextKit.trimToNull(request == null ? null : request.reason()));
-        entity.setLockStartAt(request == null ? null : request.startAt());
-        entity.setLockEndAt(request == null ? null : request.endAt());
-        PipelineEntity saved = pipelineRepository.save(entity);
-        pipelineHallEventService.publishChange();
-        return saved;
-    }
-
-    @Transactional
-    public PipelineEntity unlock(Long id) {
-        PipelineEntity entity = findById(id);
-        entity.setLocked(false);
-        entity.setLockReason(null);
-        entity.setLockStartAt(null);
-        entity.setLockEndAt(null);
-        PipelineEntity saved = pipelineRepository.save(entity);
-        pipelineHallEventService.publishChange();
-        return saved;
-    }
-
     private top.fusb.deploybot.model.DeploymentEntity enrichTriggeredByDisplayName(top.fusb.deploybot.model.DeploymentEntity entity) {
         if (entity == null) {
             return null;
@@ -410,31 +385,11 @@ public class PipelineService {
             return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
         }, PageRequest.of(Math.max(0, page - 1), Math.max(1, Math.min(100, pageSize)), Sort.by(Sort.Order.desc("id"))));
         return new PageResult<>(
-                normalizeLockStates(result.getContent()),
+                result.getContent(),
                 result.getTotalElements(),
                 result.getNumber() + 1,
                 result.getSize()
         );
-    }
-
-    private List<PipelineEntity> normalizeLockStates(List<PipelineEntity> pipelines) {
-        return pipelines.stream().map(this::normalizeLockState).toList();
-    }
-
-    private PipelineEntity normalizeLockState(PipelineEntity pipeline) {
-        if (pipeline == null || !Boolean.TRUE.equals(pipeline.getLocked()) || pipeline.getLockEndAt() == null) {
-            return pipeline;
-        }
-        if (LocalDateTime.now().isBefore(pipeline.getLockEndAt())) {
-            return pipeline;
-        }
-        pipeline.setLocked(false);
-        pipeline.setLockReason(null);
-        pipeline.setLockStartAt(null);
-        pipeline.setLockEndAt(null);
-        PipelineEntity saved = pipelineRepository.save(pipeline);
-        pipelineHallEventService.publishChange();
-        return saved;
     }
 
     public List<String> findAllTags() {

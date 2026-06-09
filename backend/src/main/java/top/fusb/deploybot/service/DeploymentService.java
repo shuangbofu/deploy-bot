@@ -9,6 +9,7 @@ import top.fusb.deploybot.dto.DeploymentPrecheckMissingItem;
 import top.fusb.deploybot.dto.DeploymentStreamStatus;
 import top.fusb.deploybot.dto.DeploymentFilterOptions;
 import top.fusb.deploybot.dto.DeploymentListSummary;
+import top.fusb.deploybot.dto.DeploymentRestrictionEvaluationResult;
 import top.fusb.deploybot.dto.PageResult;
 import top.fusb.deploybot.dto.TemplateVariableSchemaItem;
 import top.fusb.deploybot.dto.UserRecentPipelineSummary;
@@ -151,6 +152,7 @@ public class DeploymentService {
     private final DeploymentPluginBridgeService deploymentPluginBridgeService;
     private final PipelineTemplateResolverService pipelineTemplateResolverService;
     private final ShellVariableService shellVariableService;
+    private final DeploymentRestrictionPolicyService deploymentRestrictionPolicyService;
     @Value("${deploybot.workspace-root:./runtime}")
     private String workspaceRoot;
     private Path defaultWorkspaceRoot;
@@ -623,9 +625,9 @@ public class DeploymentService {
 
     private String resolvePipelineUnavailableMessage(List<DeploymentPrecheckMissingItem> missingItems) {
         return missingItems.stream()
-                .filter(item -> "PIPELINE_LOCKED".equals(item.code()))
+                .filter(item -> "DEPLOYMENT_RESTRICTED".equals(item.code()))
                 .findFirst()
-                .map(item -> TextKit.isBlank(item.label()) ? "流水线已锁定，暂时不能部署。" : "流水线已锁定：" + item.label())
+                .map(item -> TextKit.isBlank(item.label()) ? "当前时间不允许部署。" : "当前时间不允许部署：" + item.label())
                 .orElseGet(() -> "流水线配置不完整，请先补充：" + missingItems.stream()
                         .map(DeploymentPrecheckMissingItem::code)
                         .collect(java.util.stream.Collectors.joining("、")));
@@ -636,8 +638,9 @@ public class DeploymentService {
         if (pipeline == null) {
             missingItems.add(new DeploymentPrecheckMissingItem("PIPELINE", null, null));
         } else {
-            if (isPipelineLockedNow(pipeline)) {
-                missingItems.add(new DeploymentPrecheckMissingItem("PIPELINE_LOCKED", buildPipelineLockWindowText(pipeline), TextKit.trimToNull(pipeline.getLockReason())));
+            DeploymentRestrictionEvaluationResult restriction = deploymentRestrictionPolicyService.evaluate(pipeline, LocalDateTime.now());
+            if (!restriction.allowed()) {
+                missingItems.add(new DeploymentPrecheckMissingItem("DEPLOYMENT_RESTRICTED", restriction.policyName(), restriction.reason()));
             }
             if (pipeline.getProject() == null) {
                 missingItems.add(new DeploymentPrecheckMissingItem("PROJECT", null, null));
@@ -661,25 +664,6 @@ public class DeploymentService {
             }
         }
         return missingItems;
-    }
-
-    private boolean isPipelineLockedNow(PipelineEntity pipeline) {
-        if (pipeline == null || !Boolean.TRUE.equals(pipeline.getLocked())) {
-            return false;
-        }
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime startAt = pipeline.getLockStartAt();
-        LocalDateTime endAt = pipeline.getLockEndAt();
-        return (startAt == null || !now.isBefore(startAt)) && (endAt == null || now.isBefore(endAt));
-    }
-
-    private String buildPipelineLockWindowText(PipelineEntity pipeline) {
-        if (pipeline == null || (pipeline.getLockStartAt() == null && pipeline.getLockEndAt() == null)) {
-            return null;
-        }
-        String start = pipeline.getLockStartAt() == null ? "立即" : pipeline.getLockStartAt().toString();
-        String end = pipeline.getLockEndAt() == null ? "长期" : pipeline.getLockEndAt().toString();
-        return start + " 至 " + end;
     }
 
     private void validateRequiredRuntimeEnvironments(PipelineEntity pipeline, List<DeploymentPrecheckMissingItem> missingItems) {

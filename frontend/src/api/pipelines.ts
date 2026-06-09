@@ -1,6 +1,6 @@
 import client from './client';
 import type { PipelineBranchOption } from '../types/domain';
-import type { PageResult, PipelineHallRunningServiceSummary, PipelineHallSummary, PipelineLockPayload, PipelinePayload, PipelineSummary } from './types';
+import type { PageResult, PipelineHallRunningServiceSummary, PipelineHallSummary, PipelinePayload, PipelineSummary } from './types';
 
 /**
  * 流水线相关接口。
@@ -30,7 +30,5 @@ export const pipelinesApi = {
   getBranchOptions: async (pipelineId: number) => (await client.get<PipelineBranchOption[]>(`/pipelines/${pipelineId}/branch-options`)).data,
   create: async (payload: PipelinePayload) => (await client.post<PipelineSummary>('/pipelines', payload)).data,
   update: async (id: number, payload: PipelinePayload) => (await client.put<PipelineSummary>(`/pipelines/${id}`, payload)).data,
-  lock: async (id: number, payload: PipelineLockPayload) => (await client.post<PipelineSummary>(`/pipelines/${id}/lock`, payload)).data,
-  unlock: async (id: number) => (await client.delete<PipelineSummary>(`/pipelines/${id}/lock`)).data,
   remove: async (id: number) => client.delete(`/pipelines/${id}`),
 };

@@ -11,6 +11,8 @@ import top.fusb.deploybot.repo.SystemSettingsRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 public class SystemSettingsService {
@@ -58,6 +60,7 @@ public class SystemSettingsService {
         entity.setArtifactRetainSuccessCount(NumberKit.nonNegativeOrDefault(request.artifactRetainSuccessCount(), defaultArtifactRetainSuccessCount));
         entity.setCleanRunsOnSuccess(request.cleanRunsOnSuccess() == null ? defaultCleanRunsOnSuccess : request.cleanRunsOnSuccess());
         entity.setFailedRunRetainDays(NumberKit.nonNegativeOrDefault(request.failedRunRetainDays(), defaultFailedRunRetainDays));
+        entity.setDeploymentRestrictionPolicies(request.deploymentRestrictionPolicies() == null ? List.of() : request.deploymentRestrictionPolicies());
         return saveEntity(entity);
     }
 

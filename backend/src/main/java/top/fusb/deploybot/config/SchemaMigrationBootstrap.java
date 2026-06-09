@@ -59,6 +59,7 @@ public class SchemaMigrationBootstrap {
                 "ALTER TABLE IF EXISTS system_settings ADD COLUMN IF NOT EXISTS artifact_retain_success_count INTEGER",
                 "ALTER TABLE IF EXISTS system_settings ADD COLUMN IF NOT EXISTS clean_runs_on_success BOOLEAN",
                 "ALTER TABLE IF EXISTS system_settings ADD COLUMN IF NOT EXISTS failed_run_retain_days INTEGER",
+                "ALTER TABLE IF EXISTS system_settings ADD COLUMN IF NOT EXISTS deployment_restriction_policies CLOB",
                 "ALTER TABLE IF EXISTS notification_templates ADD COLUMN IF NOT EXISTS template_mode VARCHAR(50) DEFAULT 'TEXT'",
                 "ALTER TABLE IF EXISTS services ADD COLUMN IF NOT EXISTS heartbeat_miss_count INTEGER DEFAULT 0",
                 "ALTER TABLE IF EXISTS services ADD COLUMN IF NOT EXISTS version BIGINT DEFAULT 0",

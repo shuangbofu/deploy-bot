@@ -1,9 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Card, Collapse, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tabs, Typography, message } from 'antd';
+import { Button, Card, Collapse, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tabs, TimePicker, Typography, message } from 'antd';
+import dayjs from 'dayjs';
 import { notificationTemplatesApi } from '../../api/notificationTemplates';
 import { notificationWebhookConfigsApi } from '../../api/notificationWebhookConfigs';
+import { pipelinesApi } from '../../api/pipelines';
+import { projectsApi } from '../../api/projects';
 import { systemSettingsApi } from '../../api/systemSettings';
 import type {
+  DeploymentRestrictionPolicyConfig,
+  DeploymentRestrictionScopeType,
+  DeploymentRestrictionWeeklyWindow,
   NotificationTemplatePayload,
   NotificationTemplateSummary,
   NotificationWebhookConfigPayload,
@@ -11,8 +17,10 @@ import type {
   NotificationTemplateMode,
   SystemSettingsPayload,
 } from '../../api/types';
+import type { PipelineSummary, ProjectSummary } from '../../types/domain';
 import EmptyPane from '../../components/EmptyPane';
 import PageHeaderBar from '../../components/PageHeaderBar';
+import PipelineNameWithTags from '../../components/PipelineNameWithTags';
 import RefreshIconButton from '../../components/RefreshIconButton';
 import { getNotificationChannelTypeLabel, notificationTemplateVariableOptions } from '../../constants/notification';
 import { usePipelineHallPreferences } from '../../hooks/usePipelineHallPreferences';
@@ -30,6 +38,7 @@ const emptySettings: SystemSettingsPayload = {
   artifactRetainSuccessCount: 2,
   cleanRunsOnSuccess: true,
   failedRunRetainDays: 0,
+  deploymentRestrictionPolicies: [],
 };
 
 const emptyWebhookConfig: NotificationWebhookConfigPayload = {
@@ -53,6 +62,48 @@ const notificationTemplateModeOptions: { label: string; value: NotificationTempl
   { label: '文本', value: 'TEXT' },
   { label: '飞书卡片', value: 'FEISHU_CARD' },
 ];
+
+const restrictionScopeOptions: { label: string; value: DeploymentRestrictionScopeType }[] = [
+  { label: '全部流水线', value: 'GLOBAL' },
+  { label: '指定项目', value: 'PROJECT' },
+  { label: '指定流水线', value: 'PIPELINE' },
+];
+
+const weekdayOptions = [
+  { label: '周一', value: 1 },
+  { label: '周二', value: 2 },
+  { label: '周三', value: 3 },
+  { label: '周四', value: 4 },
+  { label: '周五', value: 5 },
+  { label: '周六', value: 6 },
+  { label: '周日', value: 7 },
+];
+
+const emptyRestrictionPolicy = (): DeploymentRestrictionPolicyConfig => ({
+  id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  name: '',
+  enabled: true,
+  scopeType: 'GLOBAL',
+  scopeIds: [],
+  weeklyWindows: [],
+  reason: '',
+});
+
+const emptyWeeklyWindow = (): DeploymentRestrictionWeeklyWindow => ({
+  daysOfWeek: [],
+  startTime: '',
+  endTime: '',
+  startMinute: null,
+  endMinute: null,
+});
+
+const restrictionTimeValue = (value?: string | null) => {
+  if (!value) {
+    return null;
+  }
+  const parsed = dayjs(value, 'HH:mm', true);
+  return parsed.isValid() ? parsed : null;
+};
 
 const defaultFeishuCardTemplate = `{
   "config": {
@@ -164,14 +215,19 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [webhookConfigs, setWebhookConfigs] = useState<NotificationWebhookConfigSummary[]>([]);
   const [templates, setTemplates] = useState<NotificationTemplateSummary[]>([]);
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [pipelines, setPipelines] = useState<PipelineSummary[]>([]);
   const [webhookLoading, setWebhookLoading] = useState(false);
   const [templateLoading, setTemplateLoading] = useState(false);
   const [webhookModalOpen, setWebhookModalOpen] = useState(false);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [restrictionModalOpen, setRestrictionModalOpen] = useState(false);
   const [editingWebhookId, setEditingWebhookId] = useState<number>();
   const [editingTemplateId, setEditingTemplateId] = useState<number>();
+  const [editingRestrictionId, setEditingRestrictionId] = useState<string>();
   const [webhookForm, setWebhookForm] = useState<NotificationWebhookConfigPayload>(emptyWebhookConfig);
   const [templateForm, setTemplateForm] = useState<NotificationTemplatePayload>(emptyTemplate);
+  const [restrictionForm, setRestrictionForm] = useState<DeploymentRestrictionPolicyConfig>(emptyRestrictionPolicy());
   const templateTextareaRef = useRef<any>(null);
 
   const hostInstallScript = form.hostSshPublicKey
@@ -204,7 +260,17 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
       artifactRetainSuccessCount: response.artifactRetainSuccessCount ?? 2,
       cleanRunsOnSuccess: response.cleanRunsOnSuccess ?? true,
       failedRunRetainDays: response.failedRunRetainDays ?? 0,
+      deploymentRestrictionPolicies: response.deploymentRestrictionPolicies || [],
     });
+  };
+
+  const loadRestrictionMeta = async () => {
+    const [projectRows, pipelineRows] = await Promise.all([
+      projectsApi.list(),
+      pipelinesApi.list(),
+    ]);
+    setProjects(projectRows);
+    setPipelines(pipelineRows);
   };
 
   const loadWebhookConfigs = async () => {
@@ -230,6 +296,7 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
       return;
     }
     loadSettings().catch(() => message.error('加载系统设置失败'));
+    loadRestrictionMeta().catch(() => message.error('加载部署限制范围失败'));
     loadWebhookConfigs().catch(() => message.error('加载 Webhook 配置失败'));
     loadTemplates().catch(() => message.error('加载通知模板失败'));
   }, [adminScope]);
@@ -240,6 +307,19 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
       await systemSettingsApi.update(form);
       await loadSettings();
       message.success('系统设置已保存');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveSettingsWithPolicies = async (policies: DeploymentRestrictionPolicyConfig[], successMessage: string) => {
+    setSaving(true);
+    try {
+      const nextForm = { ...form, deploymentRestrictionPolicies: policies };
+      await systemSettingsApi.update(nextForm);
+      setForm(nextForm);
+      await loadSettings();
+      message.success(successMessage);
     } finally {
       setSaving(false);
     }
@@ -353,6 +433,123 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
     message.success('通知模板已删除');
   };
 
+  const openCreateRestriction = () => {
+    setEditingRestrictionId(undefined);
+    setRestrictionForm(emptyRestrictionPolicy());
+    setRestrictionModalOpen(true);
+  };
+
+  const openEditRestriction = (record: DeploymentRestrictionPolicyConfig) => {
+    setEditingRestrictionId(record.id);
+    setRestrictionForm({
+      ...emptyRestrictionPolicy(),
+      ...record,
+      enabled: record.enabled !== false,
+      scopeType: record.scopeType || 'GLOBAL',
+      scopeIds: record.scopeIds || [],
+      weeklyWindows: record.weeklyWindows || [],
+    });
+    setRestrictionModalOpen(true);
+  };
+
+  const saveRestriction = async () => {
+    if (!restrictionForm.name.trim()) {
+      message.error('请填写策略名称');
+      return;
+    }
+    if (restrictionForm.scopeType !== 'GLOBAL' && !(restrictionForm.scopeIds || []).length) {
+      message.error('请选择策略生效范围');
+      return;
+    }
+    if ((restrictionForm.weeklyWindows || []).some((window) => !window.daysOfWeek?.length || !window.startTime || !window.endTime)) {
+      message.error('请完整填写每周时间窗口');
+      return;
+    }
+    if ((restrictionForm.weeklyWindows || []).some((window) => (window.startMinute != null || window.endMinute != null) && (window.startMinute == null || window.endMinute == null))) {
+      message.error('请完整填写时间段内的分钟窗口');
+      return;
+    }
+    const nextPolicy = {
+      ...restrictionForm,
+      name: restrictionForm.name.trim(),
+      reason: restrictionForm.reason?.trim() || '',
+      scopeIds: restrictionForm.scopeType === 'GLOBAL' ? [] : (restrictionForm.scopeIds || []),
+    };
+    const nextPolicies = editingRestrictionId
+      ? (form.deploymentRestrictionPolicies || []).map((item) => item.id === editingRestrictionId ? nextPolicy : item)
+      : [...(form.deploymentRestrictionPolicies || []), nextPolicy];
+    await saveSettingsWithPolicies(nextPolicies, editingRestrictionId ? '部署限制策略已更新' : '部署限制策略已创建');
+    setRestrictionModalOpen(false);
+    setEditingRestrictionId(undefined);
+    setRestrictionForm(emptyRestrictionPolicy());
+  };
+
+  const removeRestriction = async (id: string) => {
+    const nextPolicies = (form.deploymentRestrictionPolicies || []).filter((item) => item.id !== id);
+    await saveSettingsWithPolicies(nextPolicies, '部署限制策略已删除');
+  };
+
+  const toggleRestrictionEnabled = async (id: string, enabled: boolean) => {
+    const nextPolicies = (form.deploymentRestrictionPolicies || []).map((item) => item.id === id ? { ...item, enabled } : item);
+    await saveSettingsWithPolicies(nextPolicies, enabled ? '部署限制策略已启用' : '部署限制策略已停用');
+  };
+
+  const restrictionScopeText = (record: DeploymentRestrictionPolicyConfig) => {
+    if (record.scopeType === 'PROJECT') {
+      return projects.find((item) => item.id === record.scopeIds?.[0])?.name || '指定项目';
+    }
+    if (record.scopeType === 'PIPELINE') {
+      const selected = (record.scopeIds || [])
+        .map((id) => pipelines.find((item) => item.id === id))
+        .filter(Boolean);
+      if (!selected.length) {
+        return '指定流水线';
+      }
+      return (
+        <div className="space-y-1">
+          {selected.slice(0, 3).map((item) => (
+            <PipelineNameWithTags key={item.id} name={item.name} importantTags={item.importantTags} />
+          ))}
+          {selected.length > 3 ? <div className="text-xs text-slate-400">等 {selected.length} 条流水线</div> : null}
+        </div>
+      );
+    }
+    return '全部流水线';
+  };
+
+  const restrictionRuleText = (record: DeploymentRestrictionPolicyConfig) => {
+    const parts: string[] = [];
+    if (record.weeklyWindows?.length) {
+      parts.push(record.weeklyWindows.map((window) => {
+        const days = (window.daysOfWeek || []).map((value) => weekdayOptions.find((item) => item.value === value)?.label || value).join('、');
+        const minuteText = window.startMinute != null || window.endMinute != null ? `，每小时 ${window.startMinute ?? '-'} 分至 ${window.endMinute ?? '-'} 分` : '';
+        return `${days || '未选择星期'} ${window.startTime || '--:--'} 至 ${window.endTime || '--:--'}${minuteText}`;
+      }).join('；'));
+    }
+    return `${parts.length ? parts.join('，且 ') : '不限时间窗口'} 时禁止部署`;
+  };
+
+  const updateWeeklyWindow = (index: number, patch: Partial<DeploymentRestrictionWeeklyWindow>) => {
+    setRestrictionForm((current) => ({
+      ...current,
+      weeklyWindows: (current.weeklyWindows || []).map((window, currentIndex) => currentIndex === index ? { ...window, ...patch } : window),
+    }));
+  };
+
+  const addWeeklyWindow = () => {
+    setRestrictionForm((current) => ({
+      ...current,
+      weeklyWindows: [...(current.weeklyWindows || []), emptyWeeklyWindow()],
+    }));
+  };
+
+  const removeWeeklyWindow = (index: number) => {
+    setRestrictionForm((current) => ({
+      ...current,
+      weeklyWindows: (current.weeklyWindows || []).filter((_, currentIndex) => currentIndex !== index),
+    }));
+  };
+
   const enabledStatus = useMemo(() => (enabled: boolean) => (
     <span className="status-chip">
       <span className={`status-dot ${enabled ? 'status-dot--success' : 'status-dot--pending'}`} />
@@ -365,7 +562,6 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
       <PageHeaderBar
         title="系统设置"
         description={adminScope ? '集中维护界面偏好、平台基础能力和通知相关配置。' : '设置自己的界面显示偏好。'}
-        extra={adminScope ? <Button type="primary" loading={saving} onClick={() => saveSettings().catch(() => message.error('保存系统设置失败'))}>保存设置</Button> : null}
       />
       <Tabs
           className="system-settings-tabs app-fixed-tabs app-soft-tabs"
@@ -575,6 +771,9 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
               label: '基础设置',
               children: (
         <div className="space-y-6">
+          <div className="flex justify-end">
+            <Button type="primary" loading={saving} onClick={() => saveSettings().catch(() => message.error('保存基础设置失败'))}>保存基础设置</Button>
+          </div>
           <section className="space-y-4">
             <div className="px-1">
               <div className="text-lg font-semibold text-slate-900">Git</div>
@@ -788,6 +987,70 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
               ),
             },
             {
+              key: 'deployment-restrictions',
+              label: '部署限制策略',
+              children: (
+        <div className="space-y-6">
+          <section className="space-y-4">
+            <div className="px-1">
+              <div className="text-lg font-semibold text-slate-900">部署限制策略</div>
+              <div className="mt-1 text-sm text-slate-500">统一控制限制部署的时间，支持全局、项目和流水线范围。</div>
+            </div>
+            <Card className="app-card">
+              <div className="mb-4 flex justify-end">
+                <Button type="primary" onClick={openCreateRestriction}>新建限制策略</Button>
+              </div>
+              <Table
+                rowKey="id"
+                dataSource={form.deploymentRestrictionPolicies || []}
+                locale={{ emptyText: <EmptyPane description="还没有部署限制策略。" /> }}
+                pagination={false}
+                columns={[
+                  {
+                    title: '策略',
+                    width: 220,
+                    render: (_, record) => (
+                      <div>
+                        <div className="font-semibold text-slate-800 dark:text-slate-100">{record.name || '-'}</div>
+                        <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{record.reason || '未填写限制原因'}</div>
+                      </div>
+                    ),
+                  },
+                  { title: '范围', width: 160, render: (_, record) => restrictionScopeText(record) },
+                  { title: '规则', render: (_, record) => restrictionRuleText(record) },
+                  {
+                    title: '状态',
+                    width: 100,
+                    render: (_, record) => (
+                      <Switch
+                        checked={record.enabled !== false}
+                        checkedChildren="启用"
+                        unCheckedChildren="停用"
+                        loading={saving}
+                        onChange={(checked) => toggleRestrictionEnabled(record.id, checked).catch(() => message.error('更新部署限制策略失败'))}
+                      />
+                    ),
+                  },
+                  {
+                    title: '操作',
+                    width: 136,
+                    render: (_, record) => (
+                      <Space>
+                        <Button size="small" onClick={() => openEditRestriction(record)}>编辑</Button>
+                        <Popconfirm title="确认删除这条限制策略吗？" onConfirm={() => removeRestriction(record.id).catch(() => message.error('删除部署限制策略失败'))}>
+                          <Button size="small" danger>删除</Button>
+                        </Popconfirm>
+                      </Space>
+                    ),
+                  },
+                ]}
+              />
+            </Card>
+          </section>
+        </div>
+              ),
+            },
+            {
               key: 'notification',
               label: '通知设置',
               children: (
@@ -915,6 +1178,196 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
         )}
       >
         <Input.TextArea readOnly rows={8} value={previewContent} className="font-mono" />
+      </Modal>
+      <Modal
+        open={restrictionModalOpen}
+        title={editingRestrictionId ? '编辑部署限制策略' : '新建部署限制策略'}
+        okText="保存策略"
+        cancelText="取消"
+        onCancel={() => {
+          setRestrictionModalOpen(false);
+          setEditingRestrictionId(undefined);
+          setRestrictionForm(emptyRestrictionPolicy());
+        }}
+        confirmLoading={saving}
+        onOk={() => saveRestriction().catch(() => message.error('保存部署限制策略失败'))}
+        width={720}
+        destroyOnHidden
+      >
+        <Form layout="vertical">
+          <div className="grid gap-3 md:grid-cols-2">
+            <Form.Item label="策略名称" required className="!mb-0">
+              <Input
+                value={restrictionForm.name}
+                onChange={(event) => setRestrictionForm({ ...restrictionForm, name: event.target.value })}
+                placeholder="请输入策略名称"
+              />
+            </Form.Item>
+            <Form.Item label="生效范围" required className="!mb-0">
+              <Select
+                value={restrictionForm.scopeType}
+                options={restrictionScopeOptions}
+                onChange={(value) => setRestrictionForm({ ...restrictionForm, scopeType: value, scopeIds: [] })}
+              />
+            </Form.Item>
+            {restrictionForm.scopeType === 'PROJECT' ? (
+              <Form.Item label="项目" required className="!mb-0">
+                <Select
+                  showSearch
+                  value={restrictionForm.scopeIds?.[0]}
+                  optionFilterProp="label"
+                  options={projects.map((item) => ({ label: item.name, value: item.id }))}
+                  onChange={(value) => setRestrictionForm({ ...restrictionForm, scopeIds: value ? [value] : [] })}
+                  placeholder="请选择项目"
+                />
+              </Form.Item>
+            ) : null}
+            {restrictionForm.scopeType === 'PIPELINE' ? (
+              <Form.Item label="流水线" required className="!mb-0 md:col-span-2">
+                <Select
+                  mode="multiple"
+                  showSearch
+                  value={restrictionForm.scopeIds || []}
+                  optionLabelProp="label"
+                  filterOption={(input, option) => {
+                    const keyword = input.trim().toLowerCase();
+                    if (!keyword) {
+                      return true;
+                    }
+                    const label = String(option?.label || '').toLowerCase();
+                    const tags = ((option?.importantTags || []) as string[]).join(' ').toLowerCase();
+                    return label.includes(keyword) || tags.includes(keyword);
+                  }}
+                  options={pipelines.map((item) => ({
+                    label: item.name,
+                    value: item.id,
+                    importantTags: item.importantTags || [],
+                  }))}
+                  optionRender={(option) => {
+                    const tags = (option.data.importantTags || []) as string[];
+                    return (
+                      <PipelineNameWithTags name={String(option.data.label || '')} importantTags={tags} />
+                    );
+                  }}
+                  onChange={(value) => setRestrictionForm({ ...restrictionForm, scopeIds: value })}
+                  placeholder="请选择流水线"
+                />
+              </Form.Item>
+            ) : null}
+            <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/70">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">每周时间段</div>
+                  <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">可添加多个时间段，多个时间段之间为“或”。不添加则不限制星期和时段。</div>
+                </div>
+                <Button size="small" onClick={addWeeklyWindow}>添加时间段</Button>
+              </div>
+              <div className="space-y-3">
+                {(restrictionForm.weeklyWindows || []).map((window, index) => (
+                  <div key={`${index}-${window.startTime || ''}-${window.endTime || ''}`} className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950/40">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">时间段 {index + 1}</span>
+                      <Button size="small" danger onClick={() => removeWeeklyWindow(index)}>删除</Button>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <Form.Item label="星期" required className="!mb-0 md:col-span-3">
+                        <Select
+                          mode="multiple"
+                          value={window.daysOfWeek || []}
+                          options={weekdayOptions}
+                          onChange={(value) => updateWeeklyWindow(index, { daysOfWeek: value })}
+                          placeholder="请选择星期"
+                        />
+                      </Form.Item>
+                      <Form.Item label="开始时间" required className="!mb-0">
+                        <TimePicker
+                          format="HH:mm"
+                          value={restrictionTimeValue(window.startTime)}
+                          minuteStep={5}
+                          className="!w-full"
+                          placeholder="请选择开始时间"
+                          onChange={(value) => updateWeeklyWindow(index, { startTime: value ? value.format('HH:mm') : '' })}
+                        />
+                      </Form.Item>
+                      <Form.Item label="结束时间" required className="!mb-0">
+                        <TimePicker
+                          format="HH:mm"
+                          value={restrictionTimeValue(window.endTime)}
+                          minuteStep={5}
+                          className="!w-full"
+                          placeholder="请选择结束时间"
+                          onChange={(value) => updateWeeklyWindow(index, { endTime: value ? value.format('HH:mm') : '' })}
+                        />
+                      </Form.Item>
+                      <div className="md:col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/60">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <div className="text-xs font-semibold text-slate-600 dark:text-slate-300">每小时分钟窗口</div>
+                            <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                              {window.startMinute == null && window.endMinute == null ? '未设置，表示该时间段内 0-59 分钟都禁止部署。' : '仅在该时间段内匹配指定分钟范围。'}
+                            </div>
+                          </div>
+                          {window.startMinute == null && window.endMinute == null ? (
+                            <Button size="small" onClick={() => updateWeeklyWindow(index, { startMinute: 0, endMinute: 59 })}>设置分钟窗口</Button>
+                          ) : (
+                            <Button size="small" onClick={() => updateWeeklyWindow(index, { startMinute: null, endMinute: null })}>匹配整小时</Button>
+                          )}
+                        </div>
+                        {window.startMinute != null || window.endMinute != null ? (
+                          <div className="mt-3 grid gap-3 md:grid-cols-2">
+                            <Form.Item label="开始分钟" className="!mb-0">
+                              <InputNumber
+                                min={0}
+                                max={59}
+                                precision={0}
+                                value={window.startMinute}
+                                className="!w-full"
+                                onChange={(value) => updateWeeklyWindow(index, { startMinute: value })}
+                              />
+                            </Form.Item>
+                            <Form.Item label="结束分钟" className="!mb-0">
+                              <InputNumber
+                                min={0}
+                                max={59}
+                                precision={0}
+                                value={window.endMinute}
+                                className="!w-full"
+                                onChange={(value) => updateWeeklyWindow(index, { endMinute: value })}
+                              />
+                            </Form.Item>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {(restrictionForm.weeklyWindows || []).length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-slate-300 px-4 py-5 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                    未添加每周时间段，策略不限制星期和时段。
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+          <Form.Item label="限制原因" className="!mt-3">
+            <Input.TextArea
+              rows={3}
+              value={restrictionForm.reason || ''}
+              maxLength={500}
+              showCount
+              onChange={(event) => setRestrictionForm({ ...restrictionForm, reason: event.target.value })}
+              placeholder="请输入命中限制时展示的原因"
+            />
+          </Form.Item>
+          <Form.Item label="启用">
+            <Switch
+              checked={restrictionForm.enabled !== false}
+              checkedChildren="启用"
+              unCheckedChildren="停用"
+              onChange={(checked) => setRestrictionForm({ ...restrictionForm, enabled: checked })}
+            />
+          </Form.Item>
+        </Form>
       </Modal>
       <Modal
         open={webhookModalOpen}

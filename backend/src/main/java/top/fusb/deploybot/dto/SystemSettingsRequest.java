@@ -2,6 +2,8 @@ package top.fusb.deploybot.dto;
 
 import top.fusb.deploybot.model.GitAuthType;
 
+import java.util.List;
+
 /**
  * 系统设置请求体。
  */
@@ -33,6 +35,8 @@ public record SystemSettingsRequest(
         /** 成功后是否立即清理 runs 工作区。 */
         Boolean cleanRunsOnSuccess,
         /** 失败/停止 runs 工作区保留天数。 */
-        Integer failedRunRetainDays
+        Integer failedRunRetainDays,
+        /** 部署限制策略。 */
+        List<DeploymentRestrictionPolicyConfig> deploymentRestrictionPolicies
 ) {
 }

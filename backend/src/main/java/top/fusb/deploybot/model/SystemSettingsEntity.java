@@ -1,6 +1,7 @@
 package top.fusb.deploybot.model;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -8,6 +9,11 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.Data;
 import lombok.ToString;
+import top.fusb.deploybot.dto.DeploymentRestrictionPolicyConfig;
+import top.fusb.deploybot.model.converter.DeploymentRestrictionPolicyListJsonConverter;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 系统级设置。
@@ -81,4 +87,9 @@ public class SystemSettingsEntity {
 
     /** 失败/停止的 runs 工作区保留天数，0 表示结束后立即清理。 */
     private Integer failedRunRetainDays;
+
+    /** 部署限制策略。 */
+    @Convert(converter = DeploymentRestrictionPolicyListJsonConverter.class)
+    @Column(columnDefinition = "CLOB")
+    private List<DeploymentRestrictionPolicyConfig> deploymentRestrictionPolicies = new ArrayList<>();
 }

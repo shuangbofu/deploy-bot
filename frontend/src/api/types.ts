@@ -104,10 +104,24 @@ export interface PipelinePayload {
   notificationBindings?: Array<{ notificationId: number; eventType: string }>;
 }
 
-export interface PipelineLockPayload {
-  reason?: string;
-  startAt?: string;
-  endAt?: string;
+export type DeploymentRestrictionScopeType = 'GLOBAL' | 'PROJECT' | 'PIPELINE';
+
+export interface DeploymentRestrictionWeeklyWindow {
+  daysOfWeek: number[];
+  startTime?: string | null;
+  endTime?: string | null;
+  startMinute?: number | null;
+  endMinute?: number | null;
+}
+
+export interface DeploymentRestrictionPolicyConfig {
+  id: string;
+  name: string;
+  enabled: boolean;
+  scopeType: DeploymentRestrictionScopeType;
+  scopeIds?: number[];
+  weeklyWindows?: DeploymentRestrictionWeeklyWindow[];
+  reason?: string | null;
 }
 
 export interface NotificationPayload {
@@ -240,6 +254,7 @@ export interface SystemSettingsPayload {
   artifactRetainSuccessCount?: number;
   cleanRunsOnSuccess?: boolean;
   failedRunRetainDays?: number;
+  deploymentRestrictionPolicies?: DeploymentRestrictionPolicyConfig[];
 }
 
 export interface LogResponse {
@@ -298,6 +313,7 @@ export interface SystemSettingsResponse {
   artifactRetainSuccessCount?: number;
   cleanRunsOnSuccess?: boolean;
   failedRunRetainDays?: number;
+  deploymentRestrictionPolicies?: DeploymentRestrictionPolicyConfig[];
 }
 
 export interface ServiceProcessSummary {

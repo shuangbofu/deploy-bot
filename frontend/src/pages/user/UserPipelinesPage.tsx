@@ -32,6 +32,7 @@ type HallView = PipelineHallFilterMode;
 
 const DEPLOYMENT_PRECHECK_LABEL: Record<string, string> = {
   PIPELINE_LOCKED: '流水线已锁定',
+  DEPLOYMENT_RESTRICTED: '当前时间不允许部署',
   PIPELINE: '流水线',
   PROJECT: '项目',
   TEMPLATE: '模板',
@@ -44,6 +45,9 @@ const DEPLOYMENT_PRECHECK_LABEL: Record<string, string> = {
 const deploymentPrecheckItemLabel = (item: DeploymentPrecheckMissingItem) => {
   if (item.code === 'PIPELINE_LOCKED') {
     return item.label ? `流水线已锁定：${item.label}` : '流水线已锁定';
+  }
+  if (item.code === 'DEPLOYMENT_RESTRICTED') {
+    return item.name ? `命中策略“${item.name}”${item.label ? `，原因：${item.label}` : ''}` : (item.label || '当前时间不允许部署');
   }
   if (item.code === 'BUILD_RUNTIME_ENVIRONMENT') {
     return `本机构建 ${item.label || item.name || ''} 环境`.trim();
@@ -76,6 +80,27 @@ const deploymentPrecheckMessage = (missingItems?: DeploymentPrecheckMissingItem[
     return '部署前检查未通过';
   }
   return `部署前检查未通过：${missingItems.map(deploymentPrecheckItemLabel).join('、')}`;
+};
+
+const showRestrictedDeploymentModal = (item: DeploymentPrecheckMissingItem) => {
+  if (item.code === 'PIPELINE_LOCKED') {
+    Modal.warning({
+      title: '流水线已锁定',
+      content: lockModalContent(item.label, item.name),
+      okText: '知道了',
+    });
+    return;
+  }
+  Modal.warning({
+    title: '当前时间不允许部署',
+    content: (
+      <div className="space-y-2">
+        <div>{item.name ? `命中策略：${item.name}` : '当前时间命中部署限制策略。'}</div>
+        {item.label ? <div className="text-sm text-slate-500 dark:text-slate-400">原因：{item.label}</div> : null}
+      </div>
+    ),
+    okText: '知道了',
+  });
 };
 
 const stableTagStyle = (tag: string): CSSProperties => ({
@@ -569,14 +594,23 @@ export default function UserPipelinesPage({
     setRecentPipelines((current) => [...current]);
   };
 
-  /** 打开部署弹窗时顺便拉取可选分支。 */
+  /** 打开部署弹窗前先做限制预检，通过后再拉取可选分支。 */
   const openDeployModal = async (pipeline: PipelineSummary) => {
-    if (pipeline.locked) {
-      Modal.warning({
-        title: '流水线已锁定',
-        content: lockModalContent(pipeline.lockReason, pipeline.lockStartAt, pipeline.lockEndAt),
-        okText: '知道了',
-      });
+    const activePipeline = hallItems.find((item) => item.pipelineId === pipeline.id);
+    const precheckPayload = {
+      pipelineId: pipeline.id,
+      branchName: pipeline.defaultBranch,
+      triggeredBy: 'user',
+      replaceRunning: Boolean(activePipeline?.latestStatus && ACTIVE_DEPLOYMENT_STATUSES.includes(activePipeline.latestStatus)),
+    };
+    const precheck = await deploymentsApi.precheck(precheckPayload);
+    if (!precheck.passed) {
+      const restrictedItem = precheck.missingItems.find((item) => item.code === 'DEPLOYMENT_RESTRICTED' || item.code === 'PIPELINE_LOCKED');
+      if (restrictedItem) {
+        showRestrictedDeploymentModal(restrictedItem);
+        return;
+      }
+      message.error(deploymentPrecheckMessage(precheck.missingItems));
       return;
     }
     setDeployingPipeline(pipeline);
@@ -621,13 +655,9 @@ export default function UserPipelinesPage({
     try {
       const precheck = await deploymentsApi.precheck(payload);
       if (!precheck.passed) {
-        const lockedItem = precheck.missingItems.find((item) => item.code === 'PIPELINE_LOCKED');
-        if (lockedItem) {
-          Modal.warning({
-            title: '流水线已锁定',
-            content: lockModalContent(lockedItem.label, lockedItem.name),
-            okText: '知道了',
-          });
+        const restrictedItem = precheck.missingItems.find((item) => item.code === 'DEPLOYMENT_RESTRICTED' || item.code === 'PIPELINE_LOCKED');
+        if (restrictedItem) {
+          showRestrictedDeploymentModal(restrictedItem);
           return;
         }
         message.error(deploymentPrecheckMessage(precheck.missingItems));
