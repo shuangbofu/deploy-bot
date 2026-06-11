@@ -1,7 +1,6 @@
 import type { CSSProperties } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { EllipsisOutlined } from '@ant-design/icons';
-import { LockSimple } from '@phosphor-icons/react';
 import { Button, Card, Dropdown, Form, Input, Modal, Select, Space, Steps, Table, Tag, message } from 'antd';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { deploymentPluginsApi } from '../../api/deploymentPlugins';
@@ -47,21 +46,6 @@ const phaseClassName = (phase?: string | null) => `app-phase-tag--${phase || 'sh
 const phaseLabelClassName = (phase?: string | null) => `app-phase-label--${phase || 'shared'}`;
 
 const PIPELINE_TABLE_SCROLL_LEFT_KEY = 'deploy-bot:pipeline-table-scroll-left';
-
-const lockWindowText = (startAt?: string | null, endAt?: string | null) => {
-  if (!startAt && !endAt) {
-    return '长期锁定';
-  }
-  return `${startAt ? formatDateTime(startAt) : '立即'} 至 ${endAt ? formatDateTime(endAt) : '长期'}`;
-};
-
-function PipelineLockIcon({ reason, startAt, endAt }: { reason?: string | null; startAt?: string | null; endAt?: string | null }) {
-  return (
-    <span className="pipeline-lock-icon" title={`${reason || '流水线已锁定'}｜${lockWindowText(startAt, endAt)}`}>
-      <LockSimple size={14} weight="fill" />
-    </span>
-  );
-}
 
 interface PipelineFormState {
   name: string;
@@ -1534,7 +1518,6 @@ const selectedTemplateVariables = useMemo(
                     </div>
                     <div className="min-w-0">
                       <span className="inline-flex max-w-full min-w-0 items-center gap-1.5">
-                        {row.locked ? <PipelineLockIcon reason={row.lockReason} startAt={row.lockStartAt} endAt={row.lockEndAt} /> : null}
                         <PipelineNameWithTags name={row.name} importantTags={row.importantTags} />
                       </span>
                     </div>

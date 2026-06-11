@@ -8,6 +8,7 @@ import top.fusb.deploybot.dto.PipelineHallPageRequest;
 import top.fusb.deploybot.dto.PipelineHallSummary;
 import top.fusb.deploybot.dto.PipelineLatestDeploymentSummary;
 import top.fusb.deploybot.dto.PipelineRequest;
+import top.fusb.deploybot.dto.DeploymentRestrictionEvaluationResult;
 import top.fusb.deploybot.exception.BusinessException;
 import top.fusb.deploybot.exception.ErrorSubCode;
 import top.fusb.deploybot.kit.CollectionKit;
@@ -72,6 +73,7 @@ public class PipelineService {
     private final ServicePidHistoryRepository servicePidHistoryRepository;
     private final PipelineTemplateResolverService pipelineTemplateResolverService;
     private final PipelineHallEventService pipelineHallEventService;
+    private final DeploymentRestrictionPolicyService deploymentRestrictionPolicyService;
 
     @Transactional
     public List<PipelineEntity> findAll() {
@@ -129,6 +131,8 @@ public class PipelineService {
                     var latestDeployment = latestDeploymentMap.get(pipeline.getId());
                     var progress = resolveHallProgress(latestDeployment);
                     Long latestDeploymentOrder = latestDeployment == null ? null : deploymentRepository.countByPipelineId(pipeline.getId());
+                    DeploymentRestrictionEvaluationResult restriction = deploymentRestrictionPolicyService.evaluate(pipeline, LocalDateTime.now());
+                    boolean restricted = !restriction.allowed();
                     return new PipelineHallSummary(
                             pipeline.getId(),
                             pipeline.getName(),
@@ -138,10 +142,9 @@ public class PipelineService {
                             pipeline.getTemplateTypeSnapshot(),
                             pipeline.getTags() == null ? List.of() : pipeline.getTags(),
                             pipeline.getImportantTags() == null ? List.of() : pipeline.getImportantTags(),
-                            pipeline.getLocked(),
-                            pipeline.getLockReason(),
-                            pipeline.getLockStartAt(),
-                            pipeline.getLockEndAt(),
+                            restricted,
+                            restriction.policyName(),
+                            restriction.reason(),
                             latestDeployment == null ? null : latestDeployment.id(),
                             latestDeploymentOrder,
                             latestDeployment == null || latestDeployment.status() == null ? null : latestDeployment.status().name(),

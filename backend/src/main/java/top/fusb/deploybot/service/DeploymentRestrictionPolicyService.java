@@ -79,8 +79,8 @@ public class DeploymentRestrictionPolicyService {
         if (!daysOfWeek.contains(currentDayValue)) {
             return false;
         }
-        LocalTime startTime = parseTime(window.startTime());
-        LocalTime endTime = parseTime(window.endTime());
+        LocalTime startTime = parseTime(window.startTime(), LocalTime.MIN);
+        LocalTime endTime = parseTime(window.endTime(), LocalTime.MAX);
         if (startTime == null || endTime == null) {
             return false;
         }
@@ -112,9 +112,9 @@ public class DeploymentRestrictionPolicyService {
         return currentMinute >= startMinute || currentMinute <= endMinute;
     }
 
-    private LocalTime parseTime(String value) {
+    private LocalTime parseTime(String value, LocalTime fallback) {
         if (TextKit.isBlank(value)) {
-            return null;
+            return fallback;
         }
         try {
             return LocalTime.parse(value, TIME_FORMATTER);

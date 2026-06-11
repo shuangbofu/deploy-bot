@@ -461,8 +461,8 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
       message.error('请选择策略生效范围');
       return;
     }
-    if ((restrictionForm.weeklyWindows || []).some((window) => !window.daysOfWeek?.length || !window.startTime || !window.endTime)) {
-      message.error('请完整填写每周时间窗口');
+    if ((restrictionForm.weeklyWindows || []).some((window) => !window.daysOfWeek?.length)) {
+      message.error('请选择每周时间窗口的星期');
       return;
     }
     if ((restrictionForm.weeklyWindows || []).some((window) => (window.startMinute != null || window.endMinute != null) && (window.startMinute == null || window.endMinute == null))) {
@@ -523,7 +523,7 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
       parts.push(record.weeklyWindows.map((window) => {
         const days = (window.daysOfWeek || []).map((value) => weekdayOptions.find((item) => item.value === value)?.label || value).join('、');
         const minuteText = window.startMinute != null || window.endMinute != null ? `，每小时 ${window.startMinute ?? '-'} 分至 ${window.endMinute ?? '-'} 分` : '';
-        return `${days || '未选择星期'} ${window.startTime || '--:--'} 至 ${window.endTime || '--:--'}${minuteText}`;
+        return `${days || '未选择星期'} ${window.startTime || '00:00'} 至 ${window.endTime || '23:59'}${minuteText}`;
       }).join('；'));
     }
     return `${parts.length ? parts.join('，且 ') : '不限时间窗口'} 时禁止部署`;
@@ -1279,23 +1279,21 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
                           placeholder="请选择星期"
                         />
                       </Form.Item>
-                      <Form.Item label="开始时间" required className="!mb-0">
+                      <Form.Item label="开始时间" className="!mb-0">
                         <TimePicker
                           format="HH:mm"
                           value={restrictionTimeValue(window.startTime)}
-                          minuteStep={5}
                           className="!w-full"
-                          placeholder="请选择开始时间"
+                          placeholder="不选则为 00:00"
                           onChange={(value) => updateWeeklyWindow(index, { startTime: value ? value.format('HH:mm') : '' })}
                         />
                       </Form.Item>
-                      <Form.Item label="结束时间" required className="!mb-0">
+                      <Form.Item label="结束时间" className="!mb-0">
                         <TimePicker
                           format="HH:mm"
                           value={restrictionTimeValue(window.endTime)}
-                          minuteStep={5}
                           className="!w-full"
-                          placeholder="请选择结束时间"
+                          placeholder="不选则为 23:59"
                           onChange={(value) => updateWeeklyWindow(index, { endTime: value ? value.format('HH:mm') : '' })}
                         />
                       </Form.Item>

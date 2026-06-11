@@ -31,7 +31,6 @@ import { getStableTagColor, getStableTagDarkColor, sortTagNames } from '../../ut
 type HallView = PipelineHallFilterMode;
 
 const DEPLOYMENT_PRECHECK_LABEL: Record<string, string> = {
-  PIPELINE_LOCKED: '流水线已锁定',
   DEPLOYMENT_RESTRICTED: '当前时间不允许部署',
   PIPELINE: '流水线',
   PROJECT: '项目',
@@ -43,9 +42,6 @@ const DEPLOYMENT_PRECHECK_LABEL: Record<string, string> = {
 };
 
 const deploymentPrecheckItemLabel = (item: DeploymentPrecheckMissingItem) => {
-  if (item.code === 'PIPELINE_LOCKED') {
-    return item.label ? `流水线已锁定：${item.label}` : '流水线已锁定';
-  }
   if (item.code === 'DEPLOYMENT_RESTRICTED') {
     return item.name ? `命中策略“${item.name}”${item.label ? `，原因：${item.label}` : ''}` : (item.label || '当前时间不允许部署');
   }
@@ -61,20 +57,6 @@ const deploymentPrecheckItemLabel = (item: DeploymentPrecheckMissingItem) => {
   return DEPLOYMENT_PRECHECK_LABEL[item.code] || item.label || item.name || item.code;
 };
 
-const lockWindowText = (startAt?: string | null, endAt?: string | null) => {
-  if (!startAt && !endAt) {
-    return '长期锁定';
-  }
-  return `${startAt ? formatDateTime(startAt) : '立即'} 至 ${endAt ? formatDateTime(endAt) : '长期'}`;
-};
-
-const lockModalContent = (reason?: string | null, startAt?: string | null, endAt?: string | null) => (
-  <div className="space-y-2">
-    <div>{reason || '管理员已锁定该流水线，暂时不能部署。'}</div>
-    <div className="text-sm text-slate-500 dark:text-slate-400">锁定时间：{lockWindowText(startAt, endAt)}</div>
-  </div>
-);
-
 const deploymentPrecheckMessage = (missingItems?: DeploymentPrecheckMissingItem[]) => {
   if (!missingItems?.length) {
     return '部署前检查未通过';
@@ -83,14 +65,6 @@ const deploymentPrecheckMessage = (missingItems?: DeploymentPrecheckMissingItem[
 };
 
 const showRestrictedDeploymentModal = (item: DeploymentPrecheckMissingItem) => {
-  if (item.code === 'PIPELINE_LOCKED') {
-    Modal.warning({
-      title: '流水线已锁定',
-      content: lockModalContent(item.label, item.name),
-      okText: '知道了',
-    });
-    return;
-  }
   Modal.warning({
     title: '当前时间不允许部署',
     content: (
@@ -124,9 +98,10 @@ function DeploymentUser({ item }: { item: Pick<PipelineHallSummary, 'latestTrigg
   );
 }
 
-function PipelineLockIcon({ reason, startAt, endAt }: { reason?: string | null; startAt?: string | null; endAt?: string | null }) {
+function PipelineRestrictionIcon({ name, reason }: { name?: string | null; reason?: string | null }) {
+  const title = [name ? `命中策略：${name}` : '当前命中部署限制策略', reason ? `原因：${reason}` : undefined].filter(Boolean).join('｜');
   return (
-    <span className="pipeline-lock-icon" title={`${reason || '流水线已锁定'}｜${lockWindowText(startAt, endAt)}`}>
+    <span className="pipeline-lock-icon" title={title}>
       <LockSimple size={14} weight="fill" />
     </span>
   );
@@ -623,7 +598,7 @@ export default function UserPipelinesPage({
     };
     const precheck = await deploymentsApi.precheck(precheckPayload);
     if (!precheck.passed) {
-      const restrictedItem = precheck.missingItems.find((item) => item.code === 'DEPLOYMENT_RESTRICTED' || item.code === 'PIPELINE_LOCKED');
+      const restrictedItem = precheck.missingItems.find((item) => item.code === 'DEPLOYMENT_RESTRICTED');
       if (restrictedItem) {
         showRestrictedDeploymentModal(restrictedItem);
         return;
@@ -673,7 +648,7 @@ export default function UserPipelinesPage({
     try {
       const precheck = await deploymentsApi.precheck(payload);
       if (!precheck.passed) {
-        const restrictedItem = precheck.missingItems.find((item) => item.code === 'DEPLOYMENT_RESTRICTED' || item.code === 'PIPELINE_LOCKED');
+        const restrictedItem = precheck.missingItems.find((item) => item.code === 'DEPLOYMENT_RESTRICTED');
         if (restrictedItem) {
           showRestrictedDeploymentModal(restrictedItem);
           return;
@@ -913,7 +888,7 @@ export default function UserPipelinesPage({
                                       {item.projectName || 'Project'}
                                     </Typography.Text>
                                     <div className="pipeline-card-title-meta-row">
-                                      {item.locked ? <PipelineLockIcon reason={item.lockReason} startAt={item.lockStartAt} endAt={item.lockEndAt} /> : null}
+                                      {item.deploymentRestricted ? <PipelineRestrictionIcon name={item.restrictionName} reason={item.restrictionReason} /> : null}
                                       <button
                                         type="button"
                                         className={`pipeline-hall-favorite-button${item.favorited ? ' pipeline-hall-favorite-button--active' : ''}`}
@@ -1009,10 +984,6 @@ export default function UserPipelinesPage({
                                       tags: item.tags || undefined,
                                       project: item.projectName ? { id: 0, name: item.projectName } : undefined,
                                       template: item.templateType ? { id: 0, name: item.templateType, templateType: item.templateType } : undefined,
-                                      locked: item.locked || false,
-                                      lockReason: item.lockReason || undefined,
-                                      lockStartAt: item.lockStartAt || undefined,
-                                      lockEndAt: item.lockEndAt || undefined,
                                     } as PipelineSummary).catch(() => message.error('打开部署窗口失败'))}
                                   >
                                     部署
@@ -1099,7 +1070,7 @@ export default function UserPipelinesPage({
                             <PipelineIcon type={row.templateType} />
                             <div className="pipeline-table-name-block min-w-0">
                               <div className="pipeline-table-title-row">
-                                {row.locked ? <PipelineLockIcon reason={row.lockReason} startAt={row.lockStartAt} endAt={row.lockEndAt} /> : null}
+                                {row.deploymentRestricted ? <PipelineRestrictionIcon name={row.restrictionName} reason={row.restrictionReason} /> : null}
                                 {row.latestDeploymentOrder ? (
                                   <div className="pipeline-table-order shrink-0 text-xs font-semibold text-sky-600">
                                     #{row.latestDeploymentOrder}
@@ -1237,10 +1208,6 @@ export default function UserPipelinesPage({
                                   tags: row.tags || undefined,
                                   project: row.projectName ? { id: 0, name: row.projectName } : undefined,
                                   template: row.templateType ? { id: 0, name: row.templateType, templateType: row.templateType } : undefined,
-                                  locked: row.locked || false,
-                                  lockReason: row.lockReason || undefined,
-                                  lockStartAt: row.lockStartAt || undefined,
-                                  lockEndAt: row.lockEndAt || undefined,
                                 } as PipelineSummary).catch(() => message.error('打开部署窗口失败'))}
                               >
                                 部署
