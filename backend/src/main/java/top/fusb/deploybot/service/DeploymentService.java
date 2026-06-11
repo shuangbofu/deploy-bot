@@ -153,6 +153,7 @@ public class DeploymentService {
     private final PipelineTemplateResolverService pipelineTemplateResolverService;
     private final ShellVariableService shellVariableService;
     private final DeploymentRestrictionPolicyService deploymentRestrictionPolicyService;
+    private final PipelineHallEventService pipelineHallEventService;
     @Value("${deploybot.workspace-root:./runtime}")
     private String workspaceRoot;
     private Path defaultWorkspaceRoot;
@@ -487,9 +488,11 @@ public class DeploymentService {
         );
 
         Long deploymentId = entity.getId();
+        Long pipelineId = pipeline.getId();
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
+                pipelineHallEventService.publishPipelineChange(pipelineId);
                 deploymentRunner.runAsync(deploymentId);
             }
         });

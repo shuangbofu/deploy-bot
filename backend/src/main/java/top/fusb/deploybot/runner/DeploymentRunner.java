@@ -757,7 +757,14 @@ public class DeploymentRunner {
     }
 
     private void publishHallProgressChange(Long deploymentId) {
-        pipelineHallEventService.publishDeploymentLogChange(deploymentId);
+        deploymentRepository.findById(deploymentId)
+                .map(DeploymentEntity::getPipeline)
+                .filter(java.util.Objects::nonNull)
+                .map(top.fusb.deploybot.model.PipelineEntity::getId)
+                .ifPresentOrElse(
+                        pipelineHallEventService::publishPipelineChange,
+                        pipelineHallEventService::publishChange
+                );
     }
 
     private void appendSystemLog(Path logFile, String message) throws Exception {

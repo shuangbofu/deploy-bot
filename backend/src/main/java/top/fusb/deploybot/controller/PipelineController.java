@@ -100,13 +100,25 @@ public class PipelineController {
             try {
                 AuthContextHolder.set(currentUser);
                 if (version == null || version < observedVersion) {
-                    emitter.send(SseEmitter.event().name("hall").data(new PipelineHallStreamEvent(observedVersion)));
+                    emitter.send(SseEmitter.event().name("hall").data(new PipelineHallStreamEvent(
+                            observedVersion,
+                            true,
+                            service.findHallSummaries()
+                    )));
                 }
                 while (!Thread.currentThread().isInterrupted() && !closed.get()) {
                     long nextVersion = pipelineHallEventService.awaitChange(observedVersion, HALL_IDLE_WAIT_MILLIS);
                     if (nextVersion != observedVersion) {
-                        observedVersion = nextVersion;
-                        emitter.send(SseEmitter.event().name("hall").data(new PipelineHallStreamEvent(observedVersion)));
+                        PipelineHallEventService.ChangeSnapshot snapshot = pipelineHallEventService.changesSince(observedVersion);
+                        observedVersion = snapshot.version();
+                        List<PipelineHallSummary> items = snapshot.full()
+                                ? service.findHallSummaries()
+                                : service.findHallSummariesByIds(snapshot.pipelineIds().stream().toList());
+                        emitter.send(SseEmitter.event().name("hall").data(new PipelineHallStreamEvent(
+                                snapshot.version(),
+                                snapshot.full(),
+                                items
+                        )));
                     } else {
                         emitter.send(SseEmitter.event().comment("heartbeat"));
                     }

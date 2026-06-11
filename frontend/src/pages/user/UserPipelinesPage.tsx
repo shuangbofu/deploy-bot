@@ -364,6 +364,27 @@ export default function UserPipelinesPage({
     }
   };
 
+  const mergeHallStreamItems = (items: PipelineHallSummary[], full?: boolean) => {
+    if (!items.length && !full) {
+      return;
+    }
+    setHallItems((current) => {
+      if (full) {
+        return items;
+      }
+      const nextById = new Map(current.map((item) => [item.pipelineId, item]));
+      items.forEach((item) => nextById.set(item.pipelineId, item));
+      return current.map((item) => nextById.get(item.pipelineId) || item);
+    });
+    setTableItems((current) => {
+      if (!current.length) {
+        return current;
+      }
+      const nextById = new Map(items.map((item) => [item.pipelineId, item]));
+      return current.map((item) => nextById.get(item.pipelineId) || item);
+    });
+  };
+
   /** 首次加载大厅卡片和最近部署统计，后续变化由 SSE 推送。 */
   const loadData = async (silent = false) => {
     if (!silent) {
@@ -421,12 +442,9 @@ export default function UserPipelinesPage({
   usePipelineHallStream({
     enabled: true,
     version: hallStreamVersion,
-    onUpdate: (version) => {
-      setHallStreamVersion(version);
-      loadHallItems(true).catch(() => undefined);
-      if (viewMode === 'table') {
-        loadTablePage(true).catch(() => undefined);
-      }
+    onUpdate: (payload) => {
+      setHallStreamVersion(payload.version);
+      mergeHallStreamItems(payload.items || [], payload.full);
     },
     onError: () => {},
   });
@@ -667,7 +685,6 @@ export default function UserPipelinesPage({
       setDeployModalOpen(false);
       setDeployingPipeline(undefined);
       setBranchOptions([]);
-      await loadData();
       message.success('部署已触发');
       if (autoOpenDeploymentDetail) {
         navigate(`${deploymentDetailBasePath}/${deployment.id}`, {
