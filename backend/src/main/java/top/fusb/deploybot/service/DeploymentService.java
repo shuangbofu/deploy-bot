@@ -811,7 +811,8 @@ public class DeploymentService {
                 "deploymentId",
                 "buildWorkspaceRoot",
                 "buildSourceDir",
-                "artifactDir"
+                "artifactDir",
+                "sourceArtifactPath"
         )
                 : List.of(
                 "branch",
@@ -1024,6 +1025,7 @@ public class DeploymentService {
         }
 
         PipelineEntity pipeline = source.getPipeline();
+        validatePipelineReadyForDeployment(pipeline);
         if (pipeline.getMavenSettings() != null && Boolean.TRUE.equals(pipeline.getMavenSettings().getDeleted())) {
             throw new BusinessException(ErrorSubCode.MAVEN_SETTINGS_NOT_FOUND, "当前流水线绑定的 Maven settings.xml 已被删除，请重新选择。");
         }
