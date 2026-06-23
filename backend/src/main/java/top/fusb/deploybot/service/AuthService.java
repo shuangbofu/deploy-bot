@@ -26,6 +26,7 @@ public class AuthService {
     private static final int TOKEN_EXPIRE_DAYS = 7;
 
     private final UserRepository userRepository;
+    private final ApiTokenService apiTokenService;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     public LoginResponse login(LoginRequest request) {
@@ -73,13 +74,16 @@ public class AuthService {
         userRepository.save(user);
     }
 
-    public AuthenticatedUser authenticate(String token) {
+    public AuthenticatedUser authenticate(String token, String remoteAddress) {
+        if (apiTokenService.supports(token)) {
+            return apiTokenService.authenticate(token, remoteAddress);
+        }
         UserEntity user = userRepository.findByAuthTokenAndAuthTokenExpiresAtAfter(token, LocalDateTime.now())
                 .orElseThrow(() -> new BusinessException(ErrorSubCode.AUTH_TOKEN_INVALID));
         if (!Boolean.TRUE.equals(user.getEnabled())) {
             throw new BusinessException(ErrorSubCode.AUTH_USER_DISABLED);
         }
-        return new AuthenticatedUser(user.getId(), user.getUsername(), user.getDisplayName(), user.getRole());
+        return AuthenticatedUser.loginSession(user.getId(), user.getUsername(), user.getDisplayName(), user.getRole());
     }
 
     public String encodePassword(String password) {

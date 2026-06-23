@@ -1,12 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button, Card, Collapse, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tabs, TimePicker, Typography, message } from 'antd';
+import { Button, Card, Collapse, DatePicker, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tabs, TimePicker, Typography, message } from 'antd';
 import dayjs from 'dayjs';
+import { apiTokensApi } from '../../api/apiTokens';
 import { notificationTemplatesApi } from '../../api/notificationTemplates';
 import { notificationWebhookConfigsApi } from '../../api/notificationWebhookConfigs';
 import { pipelinesApi } from '../../api/pipelines';
 import { projectsApi } from '../../api/projects';
 import { systemSettingsApi } from '../../api/systemSettings';
+import { usersApi } from '../../api/users';
 import type {
+  ApiTokenCreatePayload,
+  ApiTokenScope,
+  ApiTokenSummary,
   DeploymentRestrictionPolicyConfig,
   DeploymentRestrictionScopeType,
   DeploymentRestrictionWeeklyWindow,
@@ -17,7 +22,7 @@ import type {
   NotificationTemplateMode,
   SystemSettingsPayload,
 } from '../../api/types';
-import type { PipelineSummary, ProjectSummary } from '../../types/domain';
+import type { PipelineSummary, ProjectSummary, UserSummary } from '../../types/domain';
 import EmptyPane from '../../components/EmptyPane';
 import PageHeaderBar from '../../components/PageHeaderBar';
 import PipelineNameWithTags from '../../components/PipelineNameWithTags';
@@ -27,6 +32,7 @@ import { usePipelineHallPreferences } from '../../hooks/usePipelineHallPreferenc
 import { useAppTheme } from '../../theme/AppThemeProvider';
 import { useLayoutMode } from '../../theme/LayoutModeProvider';
 import { copyText } from '../../utils/clipboard';
+import { formatDateTime } from '../../utils/datetime';
 import NotificationAdminPage from './NotificationAdminPage';
 
 const emptySettings: SystemSettingsPayload = {
@@ -58,9 +64,24 @@ const emptyTemplate: NotificationTemplatePayload = {
   enabled: true,
 };
 
+const emptyApiTokenForm: ApiTokenCreatePayload = {
+  name: '',
+  scopes: ['READ', 'PROJECT_WRITE', 'TEMPLATE_WRITE', 'PIPELINE_WRITE', 'DEPLOYMENT_RUN'],
+  expiresAt: null,
+};
+
 const notificationTemplateModeOptions: { label: string; value: NotificationTemplateMode }[] = [
   { label: '文本', value: 'TEXT' },
   { label: '飞书卡片', value: 'FEISHU_CARD' },
+];
+
+const apiTokenScopeOptions: { label: string; value: ApiTokenScope; description: string }[] = [
+  { label: '读取资源', value: 'READ', description: '读取项目、主机、环境、插件、流水线和部署记录。' },
+  { label: '项目写入', value: 'PROJECT_WRITE', description: '创建或更新项目，并测试 Git 连通性。' },
+  { label: '模板写入', value: 'TEMPLATE_WRITE', description: '创建或更新派生模板。' },
+  { label: '流水线写入', value: 'PIPELINE_WRITE', description: '创建或更新流水线。' },
+  { label: '执行部署', value: 'DEPLOYMENT_RUN', description: '部署预检查、触发部署、停止部署和回滚。' },
+  { label: '平台管理', value: 'ADMIN', description: '允许调用全部管理员接口，请谨慎发放。' },
 ];
 
 const restrictionScopeOptions: { label: string; value: DeploymentRestrictionScopeType }[] = [
@@ -215,18 +236,24 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [webhookConfigs, setWebhookConfigs] = useState<NotificationWebhookConfigSummary[]>([]);
   const [templates, setTemplates] = useState<NotificationTemplateSummary[]>([]);
+  const [apiTokens, setApiTokens] = useState<ApiTokenSummary[]>([]);
+  const [users, setUsers] = useState<UserSummary[]>([]);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [pipelines, setPipelines] = useState<PipelineSummary[]>([]);
   const [webhookLoading, setWebhookLoading] = useState(false);
   const [templateLoading, setTemplateLoading] = useState(false);
+  const [apiTokenLoading, setApiTokenLoading] = useState(false);
   const [webhookModalOpen, setWebhookModalOpen] = useState(false);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [apiTokenModalOpen, setApiTokenModalOpen] = useState(false);
+  const [createdApiToken, setCreatedApiToken] = useState('');
   const [restrictionModalOpen, setRestrictionModalOpen] = useState(false);
   const [editingWebhookId, setEditingWebhookId] = useState<number>();
   const [editingTemplateId, setEditingTemplateId] = useState<number>();
   const [editingRestrictionId, setEditingRestrictionId] = useState<string>();
   const [webhookForm, setWebhookForm] = useState<NotificationWebhookConfigPayload>(emptyWebhookConfig);
   const [templateForm, setTemplateForm] = useState<NotificationTemplatePayload>(emptyTemplate);
+  const [apiTokenForm, setApiTokenForm] = useState<ApiTokenCreatePayload>(emptyApiTokenForm);
   const [restrictionForm, setRestrictionForm] = useState<DeploymentRestrictionPolicyConfig>(emptyRestrictionPolicy());
   const templateTextareaRef = useRef<any>(null);
 
@@ -291,6 +318,20 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
     }
   };
 
+  const loadApiTokens = async () => {
+    setApiTokenLoading(true);
+    try {
+      const [tokenRows, userRows] = await Promise.all([
+        apiTokensApi.list(),
+        usersApi.list(),
+      ]);
+      setApiTokens(tokenRows);
+      setUsers(userRows);
+    } finally {
+      setApiTokenLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!adminScope) {
       return;
@@ -299,6 +340,7 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
     loadRestrictionMeta().catch(() => message.error('加载部署限制范围失败'));
     loadWebhookConfigs().catch(() => message.error('加载 Webhook 配置失败'));
     loadTemplates().catch(() => message.error('加载通知模板失败'));
+    loadApiTokens().catch(() => message.error('加载 API Token 失败'));
   }, [adminScope]);
 
   const saveSettings = async () => {
@@ -432,6 +474,47 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
     await loadTemplates();
     message.success('通知模板已删除');
   };
+
+  const openCreateApiToken = () => {
+    setApiTokenForm(emptyApiTokenForm);
+    setApiTokenModalOpen(true);
+  };
+
+  const createApiToken = async () => {
+    if (!apiTokenForm.name.trim()) {
+      message.error('请填写 Token 名称');
+      return;
+    }
+    if (!apiTokenForm.scopes.length) {
+      message.error('请至少选择一个权限范围');
+      return;
+    }
+    const result = await apiTokensApi.create({
+      ...apiTokenForm,
+      name: apiTokenForm.name.trim(),
+    });
+    setCreatedApiToken(result.token);
+    setApiTokenModalOpen(false);
+    setApiTokenForm(emptyApiTokenForm);
+    await loadApiTokens();
+    message.success('API Token 已创建');
+  };
+
+  const toggleApiTokenEnabled = async (record: ApiTokenSummary, enabled: boolean) => {
+    await apiTokensApi.update(record.id, { enabled });
+    await loadApiTokens();
+    message.success(enabled ? 'API Token 已启用' : 'API Token 已停用');
+  };
+
+  const revokeApiToken = async (id: number) => {
+    await apiTokensApi.revoke(id);
+    await loadApiTokens();
+    message.success('API Token 已撤销');
+  };
+
+  const apiTokenScopeText = (scopes: ApiTokenScope[] = []) => scopes
+    .map((scope) => apiTokenScopeOptions.find((item) => item.value === scope)?.label || scope)
+    .join('、') || '-';
 
   const openCreateRestriction = () => {
     setEditingRestrictionId(undefined);
@@ -987,6 +1070,84 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
               ),
             },
             {
+              key: 'api-tokens',
+              label: 'API Token',
+              children: (
+        <div className="space-y-6">
+          <section className="space-y-4">
+            <div className="px-1">
+              <div className="text-lg font-semibold text-slate-900">API Token</div>
+              <div className="mt-1 text-sm text-slate-500">给 Codex、Claude Code 或后续 CLI 使用的机器调用凭证。明文只在创建后显示一次，请及时复制保存。</div>
+            </div>
+            <Card className="app-card">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div className="text-sm text-slate-500">Token 按权限范围限制可调用接口，建议只给 Agent 发放接入项目和触发部署所需的最小权限。</div>
+                <Space>
+                  <RefreshIconButton onClick={() => loadApiTokens().catch(() => message.error('加载 API Token 失败'))} />
+                  <Button type="primary" onClick={openCreateApiToken}>新建 Token</Button>
+                </Space>
+              </div>
+              <Table
+                rowKey="id"
+                loading={apiTokenLoading}
+                dataSource={apiTokens}
+                locale={{ emptyText: <EmptyPane description="还没有 API Token。" /> }}
+                pagination={{ showSizeChanger: true, showTotal: (total) => `共 ${total} 条` }}
+                columns={[
+                  {
+                    title: 'Token',
+                    width: 220,
+                    render: (_, record) => (
+                      <div>
+                        <div className="font-semibold text-slate-800 dark:text-slate-100">{record.name}</div>
+                        <div className="mt-1 font-mono text-xs text-slate-500 dark:text-slate-400">{record.tokenPrefix}...</div>
+                      </div>
+                    ),
+                  },
+                  { title: '归属用户', width: 150, render: (_, record) => record.displayName || record.username || '-' },
+                  { title: '权限范围', render: (_, record) => <div className="text-sm text-slate-600 dark:text-slate-300">{apiTokenScopeText(record.scopes)}</div> },
+                  { title: '过期时间', width: 170, render: (_, record) => formatDateTime(record.expiresAt) },
+                  { title: '最近使用', width: 190, render: (_, record) => (
+                    <div>
+                      <div>{formatDateTime(record.lastUsedAt)}</div>
+                      <div className="mt-1 text-xs text-slate-400">{record.lastUsedIp || ''}</div>
+                    </div>
+                  ) },
+                  {
+                    title: '状态',
+                    width: 100,
+                    render: (_, record) => record.revokedAt ? (
+                      <span className="status-chip">
+                        <span className="status-dot status-dot--failed" />
+                        <span>已撤销</span>
+                      </span>
+                    ) : (
+                      <Switch
+                        size="small"
+                        checked={record.enabled}
+                        checkedChildren="启用"
+                        unCheckedChildren="停用"
+                        onChange={(checked) => toggleApiTokenEnabled(record, checked).catch(() => message.error('更新 API Token 失败'))}
+                      />
+                    ),
+                  },
+                  {
+                    title: '操作',
+                    width: 88,
+                    render: (_, record) => record.revokedAt ? '-' : (
+                      <Popconfirm title="确认撤销这个 API Token 吗？" description="撤销后无法恢复，正在使用它的 Agent 或 CLI 会立即失效。" onConfirm={() => revokeApiToken(record.id).catch(() => message.error('撤销 API Token 失败'))}>
+                        <Button size="small" danger>撤销</Button>
+                      </Popconfirm>
+                    ),
+                  },
+                ]}
+              />
+            </Card>
+          </section>
+        </div>
+              ),
+            },
+            {
               key: 'deployment-restrictions',
               label: '部署限制策略',
               children: (
@@ -1366,6 +1527,89 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
             />
           </Form.Item>
         </Form>
+      </Modal>
+      <Modal
+        open={apiTokenModalOpen}
+        title="新建 API Token"
+        okText="创建 Token"
+        cancelText="取消"
+        confirmLoading={apiTokenLoading}
+        onCancel={() => {
+          setApiTokenModalOpen(false);
+          setApiTokenForm(emptyApiTokenForm);
+        }}
+        onOk={() => createApiToken().catch(() => message.error('创建 API Token 失败'))}
+        destroyOnHidden
+      >
+        <Form layout="vertical">
+          <Form.Item label="Token 名称" required>
+            <Input
+              value={apiTokenForm.name}
+              onChange={(event) => setApiTokenForm({ ...apiTokenForm, name: event.target.value })}
+              placeholder="例如：Codex 本地接入"
+            />
+          </Form.Item>
+          <Form.Item label="归属用户">
+            <Select
+              allowClear
+              showSearch
+              value={apiTokenForm.userId}
+              optionFilterProp="label"
+              options={users.map((item) => ({
+                label: `${item.displayName || item.username}（${item.username}）`,
+                value: item.id,
+              }))}
+              onChange={(value) => setApiTokenForm({ ...apiTokenForm, userId: value })}
+              placeholder="默认使用当前管理员"
+            />
+          </Form.Item>
+          <Form.Item label="权限范围" required>
+            <Select
+              mode="multiple"
+              value={apiTokenForm.scopes}
+              optionLabelProp="label"
+              options={apiTokenScopeOptions.map((item) => ({ label: item.label, value: item.value, description: item.description }))}
+              optionRender={(option) => (
+                <div>
+                  <div className="text-sm font-medium text-slate-800 dark:text-slate-100">{option.data.label}</div>
+                  <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{option.data.description}</div>
+                </div>
+              )}
+              onChange={(value) => setApiTokenForm({ ...apiTokenForm, scopes: value })}
+              placeholder="请选择权限范围"
+            />
+          </Form.Item>
+          <Form.Item label="过期时间">
+            <DatePicker
+              showTime
+              className="!w-full"
+              value={apiTokenForm.expiresAt ? dayjs(apiTokenForm.expiresAt) : null}
+              onChange={(value) => setApiTokenForm({ ...apiTokenForm, expiresAt: value ? value.format('YYYY-MM-DDTHH:mm:ss') : null })}
+              placeholder="不选表示不过期"
+            />
+          </Form.Item>
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+            创建后只会显示一次完整 Token。后续列表只保留前缀，平台也不会保存明文。
+          </div>
+        </Form>
+      </Modal>
+      <Modal
+        open={Boolean(createdApiToken)}
+        title="API Token 已创建"
+        okText="我已保存"
+        cancelButtonProps={{ style: { display: 'none' } }}
+        onOk={() => setCreatedApiToken('')}
+        onCancel={() => setCreatedApiToken('')}
+      >
+        <div className="space-y-3">
+          <div className="text-sm leading-6 text-slate-600 dark:text-slate-300">
+            请现在复制保存。关闭后将无法再次查看完整 Token，只能撤销后重新创建。
+          </div>
+          <Input.TextArea readOnly rows={4} value={createdApiToken} className="font-mono" />
+          <Button type="primary" onClick={() => copyText(createdApiToken).then(() => message.success('Token 已复制')).catch(() => message.error('复制失败，请手动复制'))}>
+            复制 Token
+          </Button>
+        </div>
       </Modal>
       <Modal
         open={webhookModalOpen}

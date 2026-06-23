@@ -28,5 +28,6 @@
         <module>common</module>
         <module>plugin</module>
         <module>backend</module>
+        <module>cli</module>
     </modules>
 </project>

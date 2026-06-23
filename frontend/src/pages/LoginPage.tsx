@@ -1,4 +1,4 @@
-import { GithubOutlined, LockOutlined, UserOutlined } from '@ant-design/icons';
+import { ApiOutlined, GithubOutlined, LockOutlined, RobotOutlined, ThunderboltOutlined, UserOutlined } from '@ant-design/icons';
 import { Button, Card, Form, Input, Typography } from 'antd';
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -6,6 +6,11 @@ import { useAuth } from '../auth/AuthContext';
 import deployBotLogo from '../assets/deploy-bot-logo.svg';
 
 const GITHUB_REPOSITORY_URL = 'https://github.com/shuangbofu/deploy-bot';
+const aiFeatureCards = [
+  { icon: <RobotOutlined />, title: 'Agent 接入', description: 'Codex / Claude Code 可以读取 SKILL，并按平台约定接入项目。' },
+  { icon: <ApiOutlined />, title: '免登调用', description: '不让 Agent 走账号密码登录，按权限范围控制读取、写入和部署能力。' },
+  { icon: <ThunderboltOutlined />, title: '命令行自动化', description: '通过 deploy-bot CLI 创建项目、派生模板、流水线并触发预检查。' },
+];
 
 /**
  * 登录页。
@@ -47,7 +52,25 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-app px-6 py-10">
-      <div className="mx-auto flex min-h-[calc(100vh-5rem)] max-w-5xl items-center justify-center">
+      <div className="mx-auto grid min-h-[calc(100vh-5rem)] max-w-6xl items-center gap-6 lg:grid-cols-[1fr_460px]">
+        <section className="login-ai-hero">
+          <div className="login-ai-hero__eyebrow">AI Agent</div>
+          <h1 className="login-ai-hero__title">让本地 Agent 也能按平台规则完成部署接入</h1>
+          <p className="login-ai-hero__description">
+            Deploy Bot 现在提供 API Token、仓库内 CLI 和 SKILL。AI 不需要拿账号密码登录，也不用猜接口，可以先识别项目，再生成可审查的模板、流水线和部署请求。
+          </p>
+          <div className="login-ai-feature-grid">
+            {aiFeatureCards.map((item) => (
+              <div key={item.title} className="login-ai-feature-card">
+                <span className="login-ai-feature-card__icon">{item.icon}</span>
+                <span className="login-ai-feature-card__body">
+                  <span className="login-ai-feature-card__title">{item.title}</span>
+                  <span className="login-ai-feature-card__description">{item.description}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
         <Card className="app-card w-full max-w-[460px] !rounded-[28px] !border-white/10">
           <div className="mb-8 text-center">
             <img src={deployBotLogo} alt="Deploy Bot Logo" className="mx-auto mb-4 h-20 w-20" />

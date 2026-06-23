@@ -10,6 +10,8 @@
   <img src="https://img.shields.io/badge/backend-Spring%20Boot%203.3.5-111827.svg" alt="Spring Boot 3.3.5" />
   <img src="https://img.shields.io/badge/frontend-React%2018.3-2563eb.svg" alt="React 18.3" />
   <img src="https://img.shields.io/badge/bundler-Vite%205-059669.svg" alt="Vite 5" />
+  <img src="https://img.shields.io/badge/AI-Agent%20Ready-7c3aed.svg" alt="AI Agent Ready" />
+  <img src="https://img.shields.io/badge/CLI-API%20Token-0f766e.svg" alt="CLI API Token" />
 </p>
 
 <p align="center">
@@ -38,13 +40,13 @@ Deploy Bot 的目标是补上中间这一层：比手工脚本更可追踪、可
 
 Deploy Bot 想解决的就是这类问题：有点子时可以尽快做出项目，也可以尽快把项目发出去。项目会优先覆盖个人和小团队最常用的部署流程，而不是一开始就做完整 DevOps 平台。
 
-后续也可以接入 AI 辅助，主要围绕项目接入和流水线配置。例如：
+当前开发版已经开始补齐 AI Agent 接入能力，主要围绕“让 Codex / Claude Code 这类本地 Agent 能按平台规则创建项目、派生模板、流水线并触发部署”：
 
-- 对外提供 MCP 服务，让 AI 能直接读取平台里的项目、模板、主机、环境和流水线信息
-- 提供配套 skill，让 AI 按平台约定快速接入新项目、创建流水线、补齐运行配置
-- 在现有模板不满足时，由 AI 辅助创建派生模板，抽取变量并生成默认配置
-- 当部署类型明显不同，比如 Docker、Python、Go 时，辅助生成新的部署插件
-- 根据 Git 地址和目标环境，生成一条可检查、可修改的流水线草稿
+- 系统设置里提供 API Token，给外部 Agent / CLI 使用，不需要让 Agent 走账号密码登录
+- API Token 按 scope 控制能力，支持读取资源、项目写入、模板写入、流水线写入和部署执行
+- 仓库内置 `cli` 模块，Agent 可以通过 `./cli/bin/deploy-bot` 查询项目、模板、环境、流水线和部署记录
+- 仓库内置 `cli/SKILL.md`，让 Agent 明确项目识别、插件选择、派生模板判断、预检查和部署执行流程
+- 在现有模板不满足时，可以由 Agent 先生成可审查的派生模板和流水线 JSON，再通过 CLI 写入平台
 
 当前开发版已经覆盖：
 
@@ -62,6 +64,7 @@ Deploy Bot 想解决的就是这类问题：有点子时可以尽快做出项目
 - 部署差异：异步生成本次部署与上一次成功部署之间的 Git 提交和文件变更摘要
 - 服务管理：对可监控进程进行启停、重启、心跳刷新、PID 轨迹和活跃时间展示
 - 通知：支持 Webhook 配置、通知模板、通知配置绑定与通知记录查询，通知记录已并入部署记录视角
+- AI Agent 接入：支持 API Token、Deploy Bot CLI 和仓库内 SKILL，让 Codex / Claude Code 能按平台约定辅助接入项目
 - 版本重发：保留历史构建产物，支持按部署记录重新发布某个历史版本
 - 用户体系：提供真实登录态、管理员 / 普通用户角色和默认管理员账号
 - 用户资料：支持头像上传、显示名称展示、修改密码与管理员重置密码
@@ -90,6 +93,7 @@ Deploy Bot 想解决的就是这类问题：有点子时可以尽快做出项目
 
 ```text
 backend/    Spring Boot 后端服务
+cli/        面向 AI Agent / 脚本调用的 Deploy Bot CLI 与 SKILL
 common/     后端通用工具模块
 frontend/   React + TypeScript 前端应用
 plugin/     部署类型插件 API、运行时与内置插件
@@ -262,7 +266,35 @@ npm run dev
 
 默认端口：`5173`
 
-### 3. 访问系统
+### 3. 使用 CLI / Agent 接入
+
+系统设置中创建 API Token 后，可以在本仓库构建 CLI：
+
+```bash
+mvn -pl cli -am -DskipTests package
+```
+
+配置环境变量：
+
+```bash
+export DEPLOY_BOT_BASE_URL="http://localhost:8080"
+export DEPLOY_BOT_TOKEN="dbot_xxx"
+```
+
+执行常用操作：
+
+```bash
+./cli/bin/deploy-bot projects list
+./cli/bin/deploy-bot plugins list
+./cli/bin/deploy-bot pipelines apply @pipeline.json
+./cli/bin/deploy-bot deployments precheck @deployment.json
+./cli/bin/deploy-bot deployments run @deployment.json
+./cli/bin/deploy-bot deployments logs 123 --follow
+```
+
+给 Codex、Claude Code 或其他本地 Agent 接入时，可以让它读取 `cli/SKILL.md`，再通过 `./cli/bin/deploy-bot` 完成项目识别、模板选择、流水线创建、预检查和部署触发。
+
+### 4. 访问系统
 
 - 工作台入口：`http://<frontend-host>:<frontend-port>/`
 - 管理员完整菜单：`http://<frontend-host>:<frontend-port>/admin`
@@ -486,7 +518,7 @@ curl -X POST http://<backend-host>:<backend-port>/api/projects/test-connection \
 - 更多内置插件类型，例如 Docker、Python、Go 等轻量部署场景
 - 部署队列、并发限制与停止申请等协作功能
 - 更完整的审计日志、操作追踪与通知中心
-- 面向 AI / MCP 的项目、主机、流水线上下文读取与辅助生成
+- 面向 AI / MCP 的更多工具化能力，例如移动端触发、部署诊断和插件草稿生成
 
 ## License
 

@@ -46,6 +46,41 @@ export interface PageResult<T> {
   pageSize: number;
 }
 
+export type ApiTokenScope = 'READ' | 'PROJECT_WRITE' | 'TEMPLATE_WRITE' | 'PIPELINE_WRITE' | 'DEPLOYMENT_RUN' | 'ADMIN';
+
+export interface ApiTokenSummary {
+  id: number;
+  name: string;
+  tokenPrefix: string;
+  userId?: number | null;
+  username?: string | null;
+  displayName?: string | null;
+  scopes: ApiTokenScope[];
+  expiresAt?: string | null;
+  lastUsedAt?: string | null;
+  lastUsedIp?: string | null;
+  enabled: boolean;
+  createdAt: string;
+  revokedAt?: string | null;
+}
+
+export interface ApiTokenCreatePayload {
+  name: string;
+  userId?: number;
+  scopes: ApiTokenScope[];
+  expiresAt?: string | null;
+}
+
+export interface ApiTokenCreateResult {
+  token: string;
+  summary: ApiTokenSummary;
+}
+
+export interface ApiTokenUpdatePayload {
+  name?: string;
+  enabled?: boolean;
+}
+
 export interface DeploymentFilterOptions {
   projectNames: string[];
   pipelineNames: string[];
