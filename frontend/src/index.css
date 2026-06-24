@@ -6715,147 +6715,16 @@ body.dark .ant-notification-notice-close,
   color: #fb7185;
 }
 
-.login-ai-hero {
-  position: relative;
-  overflow: hidden;
-  border: 1px solid rgba(203, 213, 225, 0.72);
-  border-radius: 30px;
-  background:
-    radial-gradient(circle at 18% 18%, rgba(20, 184, 166, 0.22), transparent 30%),
-    radial-gradient(circle at 86% 12%, rgba(59, 130, 246, 0.2), transparent 30%),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(241, 245, 249, 0.78));
-  box-shadow: 0 28px 70px rgba(15, 23, 42, 0.1);
-  padding: 34px;
-  backdrop-filter: blur(18px);
-}
-
-.login-ai-hero::after {
-  content: "";
-  position: absolute;
-  right: -80px;
-  bottom: -90px;
-  width: 240px;
-  height: 240px;
-  border-radius: 999px;
-  background: conic-gradient(from 180deg, rgba(20, 184, 166, 0.22), rgba(59, 130, 246, 0.14), rgba(20, 184, 166, 0.22));
-  filter: blur(2px);
-}
-
-.login-ai-hero__eyebrow {
-  position: relative;
-  z-index: 1;
-  color: #0f766e;
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.28em;
-  text-transform: uppercase;
-}
-
-.login-ai-hero__title {
-  position: relative;
-  z-index: 1;
-  max-width: 640px;
-  margin: 14px 0 0;
-  color: #0f172a;
-  font-size: clamp(32px, 5vw, 54px);
-  font-weight: 850;
-  line-height: 1.05;
-  letter-spacing: -0.045em;
-}
-
-.login-ai-hero__description {
-  position: relative;
-  z-index: 1;
-  max-width: 620px;
-  margin: 18px 0 0;
-  color: #475569;
-  font-size: 15px;
-  line-height: 1.9;
-}
-
-.login-ai-feature-grid {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  gap: 12px;
-  margin-top: 26px;
-}
-
-.login-ai-feature-card {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  border: 1px solid rgba(226, 232, 240, 0.82);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.76);
-  padding: 14px;
-}
-
-.login-ai-feature-card__icon {
-  display: inline-flex;
-  width: 36px;
-  height: 36px;
-  flex: 0 0 36px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 14px;
-  background: linear-gradient(135deg, rgba(20, 184, 166, 0.16), rgba(59, 130, 246, 0.14));
-  color: #0f766e;
-  font-size: 18px;
-}
-
-.login-ai-feature-card__body {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.login-ai-feature-card__title {
-  color: #0f172a;
-  font-size: 14px;
-  font-weight: 780;
-}
-
-.login-ai-feature-card__description {
-  color: #64748b;
-  font-size: 13px;
-  line-height: 1.65;
-}
-
-.dark .login-ai-hero {
-  border-color: rgba(71, 85, 105, 0.72);
-  background:
-    radial-gradient(circle at 18% 18%, rgba(20, 184, 166, 0.2), transparent 30%),
-    radial-gradient(circle at 86% 12%, rgba(96, 165, 250, 0.18), transparent 30%),
-    linear-gradient(135deg, rgba(15, 23, 42, 0.84), rgba(15, 23, 42, 0.56));
-  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.28);
-}
-
-.dark .login-ai-hero__eyebrow {
-  color: #5eead4;
-}
-
-.dark .login-ai-hero__title {
-  color: #e2e8f0;
-}
-
-.dark .login-ai-hero__description,
-.dark .login-ai-feature-card__description {
+.login-agent-hint {
+  margin-top: 12px;
+  text-align: center;
   color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.6;
 }
 
-.dark .login-ai-feature-card {
-  border-color: rgba(71, 85, 105, 0.64);
-  background: rgba(15, 23, 42, 0.62);
-}
-
-.dark .login-ai-feature-card__icon {
-  color: #5eead4;
-}
-
-.dark .login-ai-feature-card__title {
-  color: #e2e8f0;
+.dark .login-agent-hint {
+  color: #64748b;
 }
 
 @media (max-width: 960px) {
@@ -6909,7 +6778,4 @@ body.dark .ant-notification-notice-close,
     grid-column: auto;
   }
 
-  .login-ai-hero {
-    padding: 24px;
-  }
 }
