@@ -730,7 +730,16 @@ body {
   background: #102542;
 }
 
+.app-card .ant-pagination .ant-pagination-item-active:hover {
+  border-color: rgba(16, 37, 66, 0.18);
+  background: #102542;
+}
+
 .app-card .ant-pagination .ant-pagination-item-active a {
+  color: #fff;
+}
+
+.app-card .ant-pagination .ant-pagination-item-active:hover a {
   color: #fff;
 }
 
@@ -1840,7 +1849,16 @@ body {
   background: #102542;
 }
 
+.service-process-table .ant-pagination .ant-pagination-item-active:hover {
+  border-color: rgba(16, 37, 66, 0.18);
+  background: #102542;
+}
+
 .service-process-table .ant-pagination .ant-pagination-item-active a {
+  color: #fff;
+}
+
+.service-process-table .ant-pagination .ant-pagination-item-active:hover a {
   color: #fff;
 }
 
@@ -1918,7 +1936,16 @@ body {
   background: rgba(37, 99, 235, 0.34);
 }
 
+.dark .service-process-table .ant-pagination .ant-pagination-item-active:hover {
+  border-color: rgba(96, 165, 250, 0.76);
+  background: rgba(37, 99, 235, 0.34);
+}
+
 .dark .service-process-table .ant-pagination .ant-pagination-item-active a {
+  color: #dbeafe;
+}
+
+.dark .service-process-table .ant-pagination .ant-pagination-item-active:hover a {
   color: #dbeafe;
 }
 
@@ -6216,7 +6243,16 @@ body {
   background: rgba(37, 99, 235, 0.34);
 }
 
+.dark .app-card .ant-pagination .ant-pagination-item-active:hover {
+  border-color: #60a5fa;
+  background: rgba(37, 99, 235, 0.34);
+}
+
 .dark .app-card .ant-pagination .ant-pagination-item-active a {
+  color: #dbeafe;
+}
+
+.dark .app-card .ant-pagination .ant-pagination-item-active:hover a {
   color: #dbeafe;
 }
 
