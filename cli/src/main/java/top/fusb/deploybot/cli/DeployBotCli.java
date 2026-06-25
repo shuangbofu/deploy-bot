@@ -87,7 +87,12 @@ public class DeployBotCli {
     private void projects(String[] args) throws Exception {
         requireSubCommand(args, "projects");
         switch (args[1]) {
-            case "list" -> printApi("GET", "/projects", null);
+            case "list" -> {
+                List<String> query = pageQuery(args);
+                addQuery(query, "keyword", optionValue(args, "--keyword"));
+                addQuery(query, "gitAuthType", optionValue(args, "--git-auth-type"));
+                printApi("GET", "/projects/page" + queryString(query), null);
+            }
             case "create" -> printApi("POST", "/projects", readBodyArg(args, 2));
             case "update" -> {
                 requireArgCount(args, 4, "projects update <id> <json|@file|->");
@@ -102,8 +107,13 @@ public class DeployBotCli {
         if (!"list".equals(args[1])) {
             throw new CliException("未知 hosts 子命令：" + args[1]);
         }
-        String path = hasFlag(args, "--all") ? "/hosts" : "/hosts?enabledOnly=true";
-        printApi("GET", path, null);
+        List<String> query = pageQuery(args);
+        addQuery(query, "keyword", optionValue(args, "--keyword"));
+        addQuery(query, "type", optionValue(args, "--type"));
+        if (!hasFlag(args, "--all")) {
+            addQuery(query, "enabled", "true");
+        }
+        printApi("GET", "/hosts/page" + queryString(query), null);
     }
 
     private void runtimes(String[] args) throws Exception {
@@ -129,7 +139,14 @@ public class DeployBotCli {
     private void templates(String[] args) throws Exception {
         requireSubCommand(args, "templates");
         switch (args[1]) {
-            case "list" -> printApi("GET", "/templates", null);
+            case "list" -> {
+                List<String> query = pageQuery(args);
+                addQuery(query, "keyword", optionValue(args, "--keyword"));
+                addQuery(query, "templateType", optionValue(args, "--template-type"));
+                addQuery(query, "pluginId", optionValue(args, "--plugin-id"));
+                addQuery(query, "monitorProcess", optionValue(args, "--monitor-process"));
+                printApi("GET", "/templates/page" + queryString(query), null);
+            }
             case "create" -> printApi("POST", "/templates", readBodyArg(args, 2));
             case "update" -> {
                 requireArgCount(args, 4, "templates update <id> <json|@file|->");
@@ -142,7 +159,15 @@ public class DeployBotCli {
     private void pipelines(String[] args) throws Exception {
         requireSubCommand(args, "pipelines");
         switch (args[1]) {
-            case "list" -> printApi("GET", "/pipelines", null);
+            case "list" -> {
+                List<String> query = pageQuery(args);
+                addQuery(query, "keyword", optionValue(args, "--keyword"));
+                addQuery(query, "projectId", optionValue(args, "--project-id"));
+                addQuery(query, "templateId", optionValue(args, "--template-id"));
+                addQuery(query, "hostId", optionValue(args, "--host-id"));
+                addQuery(query, "tags", optionValue(args, "--tags"));
+                printApi("GET", "/pipelines/page" + queryString(query), null);
+            }
             case "detail" -> {
                 requireArgCount(args, 3, "pipelines detail <id>");
                 printApi("GET", "/pipelines/" + args[2], null);
@@ -381,6 +406,23 @@ public class DeployBotCli {
         }
     }
 
+    /**
+     * 构建分页查询参数，避免 Agent 场景默认拉取全量资源。
+     *
+     * @param args 命令行参数
+     * @return 包含 page 和 pageSize 的查询参数列表
+     */
+    private List<String> pageQuery(String[] args) {
+        List<String> query = new ArrayList<>();
+        String pageSize = optionValue(args, "--page-size");
+        if (pageSize == null || pageSize.isBlank()) {
+            pageSize = optionValue(args, "--limit");
+        }
+        addQuery(query, "page", String.valueOf(parseLong(optionValue(args, "--page"), 1L)));
+        addQuery(query, "pageSize", String.valueOf(parseLong(pageSize, 20L)));
+        return query;
+    }
+
     private void addQuery(List<String> query, String name, String value) {
         if (value != null && !value.isBlank()) {
             query.add(URLEncoder.encode(name, StandardCharsets.UTF_8) + "=" + URLEncoder.encode(value, StandardCharsets.UTF_8));
@@ -428,17 +470,17 @@ public class DeployBotCli {
                   deploy-bot request POST /projects @project.json
 
                 常用命令：
-                  deploy-bot projects list
+                  deploy-bot projects list [--page <n>] [--page-size <n>|--limit <n>] [--keyword <kw>] [--git-auth-type <type>]
                   deploy-bot projects create <json|@file|->
                   deploy-bot projects update <id> <json|@file|->
-                  deploy-bot hosts list [--all]
+                  deploy-bot hosts list [--all] [--page <n>] [--page-size <n>|--limit <n>] [--keyword <kw>] [--type LOCAL|SSH]
                   deploy-bot runtimes list [--host-id <id>] [--type JAVA|NODE|MAVEN]
                   deploy-bot plugins list
                   deploy-bot plugins shell-variables
-                  deploy-bot templates list
+                  deploy-bot templates list [--page <n>] [--page-size <n>|--limit <n>] [--keyword <kw>] [--template-type <type>] [--plugin-id <id>] [--monitor-process <true|false>]
                   deploy-bot templates create <json|@file|->
                   deploy-bot templates update <id> <json|@file|->
-                  deploy-bot pipelines list
+                  deploy-bot pipelines list [--page <n>] [--page-size <n>|--limit <n>] [--keyword <kw>] [--project-id <id>] [--template-id <id>] [--host-id <id>] [--tags <tag>]
                   deploy-bot pipelines detail <id>
                   deploy-bot pipelines create <json|@file|->
                   deploy-bot pipelines apply [--id <id>] <json|@file|->

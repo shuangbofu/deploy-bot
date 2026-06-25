@@ -27,28 +27,39 @@ export DEPLOY_BOT_TOKEN="dbot_xxx"
 
 If either variable is missing, stop and ask the user for it. Never use browser login, username/password, cookies, or copied session tokens.
 
-Build the CLI when needed:
+Verify the CLI command first:
 
 ```bash
-mvn -pl cli -am -DskipTests package
+deploy-bot help
 ```
 
-Use either form:
+If `deploy-bot` is not found, the local CLI has not been installed into `PATH`. Build and expose it from the local Deploy Bot repository. Prefer `DEPLOY_BOT_REPO` when the current working directory is another project:
+
+```bash
+DEPLOY_BOT_REPO="${DEPLOY_BOT_REPO:-$(git rev-parse --show-toplevel 2>/dev/null)}"
+test -x "$DEPLOY_BOT_REPO/cli/bin/deploy-bot"
+mvn -f "$DEPLOY_BOT_REPO/pom.xml" -pl cli -am -DskipTests package
+mkdir -p "$HOME/.local/bin"
+ln -sf "$DEPLOY_BOT_REPO/cli/bin/deploy-bot" "$HOME/.local/bin/deploy-bot"
+```
+
+If this fails because `DEPLOY_BOT_REPO` is empty or points to another repository, ask the user for their local Deploy Bot repository path. If `$HOME/.local/bin` is not in `PATH`, either add it for the current shell or call `$HOME/.local/bin/deploy-bot` directly.
+
+Use the repository-local form only when the current working directory is the Deploy Bot repository:
 
 ```bash
 ./cli/bin/deploy-bot help
-deploy-bot help
 ```
 
 ## 60 Second Start
 
-Run these first to verify the token works and collect selectable platform resources:
+Run these first to verify the token works and collect selectable platform resources. List commands are paged by default with page size 20. Prefer `--keyword`, `--plugin-id`, `--project-id`, `--host-id`, or `--tags` instead of pulling broad pages. Use `--limit` as a short alias of `--page-size`.
 
 ```bash
-./cli/bin/deploy-bot projects list
-./cli/bin/deploy-bot hosts list
-./cli/bin/deploy-bot plugins list
-./cli/bin/deploy-bot templates list
+deploy-bot projects list --keyword <repo-or-project-keyword> --limit 20
+deploy-bot hosts list --keyword <host-keyword> --limit 20
+deploy-bot plugins list
+deploy-bot templates list --plugin-id <plugin-id> --limit 20
 ```
 
 Use the output to match existing project, host, plugin, and template IDs. If a required resource is missing, decide whether to create it or ask the user.
@@ -66,9 +77,9 @@ Use the output to choose Spring Boot, Node static, fullstack, or another availab
 If a pipeline may already exist, inspect it before creating anything new:
 
 ```bash
-./cli/bin/deploy-bot pipelines list
-./cli/bin/deploy-bot pipelines detail <pipelineId>
-./cli/bin/deploy-bot pipelines plugin-plan <pipelineId>
+deploy-bot pipelines list
+deploy-bot pipelines detail <pipelineId>
+deploy-bot pipelines plugin-plan <pipelineId>
 ```
 
 Use `pipelines detail` as the source of truth when updating. Use `plugin-plan` to understand the plugin-resolved build/deploy steps and required runtime/config fields.
@@ -110,15 +121,15 @@ Collect:
 Use these commands to read Deploy Bot state before generating JSON:
 
 ```bash
-./cli/bin/deploy-bot projects list
-./cli/bin/deploy-bot hosts list [--all]
-./cli/bin/deploy-bot runtimes list [--host-id <id>] [--type JAVA|NODE|MAVEN]
-./cli/bin/deploy-bot plugins list
-./cli/bin/deploy-bot plugins shell-variables
-./cli/bin/deploy-bot templates list
-./cli/bin/deploy-bot pipelines list
-./cli/bin/deploy-bot pipelines detail <id>
-./cli/bin/deploy-bot pipelines plugin-plan <id>
+deploy-bot projects list [--page <n>] [--page-size <n>|--limit <n>] [--keyword <kw>] [--git-auth-type <type>]
+deploy-bot hosts list [--all] [--page <n>] [--page-size <n>|--limit <n>] [--keyword <kw>] [--type LOCAL|SSH]
+deploy-bot runtimes list [--host-id <id>] [--type JAVA|NODE|MAVEN]
+deploy-bot plugins list
+deploy-bot plugins shell-variables
+deploy-bot templates list [--page <n>] [--page-size <n>|--limit <n>] [--keyword <kw>] [--template-type <type>] [--plugin-id <id>] [--monitor-process <true|false>]
+deploy-bot pipelines list [--page <n>] [--page-size <n>|--limit <n>] [--keyword <kw>] [--project-id <id>] [--template-id <id>] [--host-id <id>] [--tags <tag>]
+deploy-bot pipelines detail <id>
+deploy-bot pipelines plugin-plan <id>
 ```
 
 - `projects list`: find or verify the project for the Git repository.
@@ -131,7 +142,7 @@ Use these commands to read Deploy Bot state before generating JSON:
 - `pipelines detail`: copy existing values when updating.
 - `pipelines plugin-plan`: verify how a pipeline resolves to actual build/deploy steps.
 
-Use command output IDs. Never invent IDs.
+Use command output IDs. Never invent IDs. If the first page does not contain the target, narrow the query before increasing `--page-size`; only page forward when the keyword/filter is already specific.
 
 ## JSON Shapes
 
@@ -190,11 +201,11 @@ When updating an existing pipeline, start from `pipelines detail <id>` and prese
 Use `@file` for reviewable JSON. Use `-` only when piping generated JSON.
 
 ```bash
-./cli/bin/deploy-bot projects create @project.json
-./cli/bin/deploy-bot templates create @template.json
-./cli/bin/deploy-bot templates update <id> @template.json
-./cli/bin/deploy-bot pipelines apply @pipeline.json
-./cli/bin/deploy-bot pipelines apply --id <id> @pipeline.json
+deploy-bot projects create @project.json
+deploy-bot templates create @template.json
+deploy-bot templates update <id> @template.json
+deploy-bot pipelines apply @pipeline.json
+deploy-bot pipelines apply --id <id> @pipeline.json
 ```
 
 - `projects create`: create a project only when the Git repository is not already registered.
@@ -209,7 +220,7 @@ Ask before running write commands unless the user explicitly asked you to create
 Always precheck before deployment:
 
 ```bash
-./cli/bin/deploy-bot deployments precheck @deployment.json
+deploy-bot deployments precheck @deployment.json
 ```
 
 Use precheck to validate pipeline existence, branch, deployment restriction policies, and basic deployability before triggering a deployment.
@@ -217,9 +228,9 @@ Use precheck to validate pipeline existence, branch, deployment restriction poli
 Only deploy when precheck succeeds:
 
 ```bash
-./cli/bin/deploy-bot deployments run @deployment.json
-./cli/bin/deploy-bot deployments detail <deploymentId>
-./cli/bin/deploy-bot deployments logs <deploymentId> --follow
+deploy-bot deployments run @deployment.json
+deploy-bot deployments detail <deploymentId>
+deploy-bot deployments logs <deploymentId> --follow
 ```
 
 - `deployments run`: trigger the deployment.
