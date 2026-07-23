@@ -6,7 +6,7 @@ import { Avatar, Button, Card, Dropdown, Input, Modal, Popconfirm, Progress, Seg
 import { useNavigate } from 'react-router-dom';
 import { deploymentsApi } from '../../api/deployments';
 import { pipelinesApi } from '../../api/pipelines';
-import type { DeploymentPrecheckMissingItem } from '../../api/types';
+import type { DeploymentPrecheckMissingItem, DeploymentSummary } from '../../api/types';
 import { resolveBackendAssetUrl } from '../../api/client';
 import EmptyPane from '../../components/EmptyPane';
 import HallSwitchIcon from '../../components/HallSwitchIcon';
@@ -360,6 +360,35 @@ export default function UserPipelinesPage({
     });
   };
 
+  const mergeCreatedDeployment = (deployment: DeploymentSummary, fallbackPipelineId?: number) => {
+    const pipelineId = deployment.pipeline?.id || fallbackPipelineId;
+    if (!pipelineId) {
+      return;
+    }
+    const updateItem = (item: PipelineHallSummary): PipelineHallSummary => {
+      if (item.pipelineId !== pipelineId) {
+        return item;
+      }
+      return {
+        ...item,
+        latestDeploymentId: deployment.id,
+        latestStatus: deployment.status || 'PENDING',
+        latestBranchName: deployment.branchName || item.defaultBranch,
+        latestTriggeredBy: deployment.triggeredBy || item.latestTriggeredBy,
+        latestTriggeredByDisplayName: deployment.triggeredByDisplayName || item.latestTriggeredByDisplayName,
+        latestCreatedAt: deployment.createdAt || item.latestCreatedAt,
+        latestStartedAt: deployment.startedAt || item.latestStartedAt,
+        latestFinishedAt: deployment.finishedAt || undefined,
+        latestProgressPercent: deployment.progressPercent ?? 0,
+        latestProgressStage: deployment.progressStage || null,
+        latestProgressCurrent: deployment.progressCurrent ?? null,
+        latestProgressTotal: deployment.progressTotal ?? null,
+      };
+    };
+    setHallItems((current) => current.map(updateItem));
+    setTableItems((current) => current.map(updateItem));
+  };
+
   /** 首次加载大厅卡片和最近部署统计，后续变化由 SSE 推送。 */
   const loadData = async (silent = false) => {
     if (!silent) {
@@ -391,8 +420,13 @@ export default function UserPipelinesPage({
     } else if (!silent) {
       setRunningLoading(false);
     }
+    await Promise.allSettled(tasks);
+  };
+
+  const refreshData = async () => {
+    const tasks = [loadData()];
     if (viewMode === 'table') {
-      tasks.push(loadTablePage(silent));
+      tasks.push(loadTablePage());
     }
     await Promise.allSettled(tasks);
   };
@@ -657,6 +691,7 @@ export default function UserPipelinesPage({
         return;
       }
       const deployment = await deploymentsApi.create(payload);
+      mergeCreatedDeployment(deployment, deployingPipeline.id);
       setDeployModalOpen(false);
       setDeployingPipeline(undefined);
       setBranchOptions([]);
@@ -717,7 +752,7 @@ export default function UserPipelinesPage({
         description={description}
         extra={(
           <Space className="pipeline-hall-header-actions" wrap>
-            <RefreshIconButton onClick={() => loadData().catch(() => message.error('加载流水线失败'))} />
+            <RefreshIconButton onClick={() => refreshData().catch(() => message.error('加载流水线失败'))} />
             <Segmented
               className="pipeline-hall-header-switch pipeline-hall-view-switch"
               value={hallView}

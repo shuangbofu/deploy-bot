@@ -65,57 +65,74 @@ export function usePipelineHallStream({ enabled, version, onUpdate, onError }: O
       return undefined;
     }
     const controller = new AbortController();
+    let retryDelay = 800;
+    let retryTimer: number | undefined;
+
     const connect = async () => {
-      try {
-        const token = authStorage.getToken();
-        if (!token) {
-          handleAuthExpired('AUTH-001');
-          return;
-        }
-        const response = await fetch(resolveStreamUrl(versionRef.current), {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          signal: controller.signal,
-        });
-        if (!response.ok || !response.body) {
-          if (response.status === 401 || response.status === 403) {
-            try {
-              const payload = await response.clone().json();
-              handleAuthExpired(payload?.subCode);
-            } catch {
-              handleAuthExpired('AUTH-001');
-            }
+      while (!controller.signal.aborted) {
+        try {
+          const token = authStorage.getToken();
+          if (!token) {
+            handleAuthExpired('AUTH-001');
+            return;
           }
-          throw new Error('流水线大厅状态流连接失败');
-        }
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        let done = false;
-        while (!done) {
-          const result = await reader.read();
-          done = result.done;
-          buffer += decoder.decode(result.value || new Uint8Array(), { stream: !done });
-          const parsed = parseSseEvents(buffer);
-          buffer = parsed.buffer;
-          parsed.events.forEach((item) => {
-            if (item.event !== 'hall' || !item.data) {
-              return;
-            }
-            const payload = JSON.parse(item.data) as HallStreamPayload;
-            if (typeof payload.version === 'number') {
-              onUpdateRef.current(payload as Required<Pick<HallStreamPayload, 'version'>> & Pick<HallStreamPayload, 'full' | 'items'>);
-            }
+          const response = await fetch(resolveStreamUrl(versionRef.current), {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            signal: controller.signal,
           });
+          if (!response.ok || !response.body) {
+            if (response.status === 401 || response.status === 403) {
+              try {
+                const payload = await response.clone().json();
+                handleAuthExpired(payload?.subCode);
+              } catch {
+                handleAuthExpired('AUTH-001');
+              }
+            }
+            throw new Error('流水线大厅状态流连接失败');
+          }
+          retryDelay = 800;
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          let done = false;
+          while (!done && !controller.signal.aborted) {
+            const result = await reader.read();
+            done = result.done;
+            buffer += decoder.decode(result.value || new Uint8Array(), { stream: !done });
+            const parsed = parseSseEvents(buffer);
+            buffer = parsed.buffer;
+            parsed.events.forEach((item) => {
+              if (item.event !== 'hall' || !item.data) {
+                return;
+              }
+              const payload = JSON.parse(item.data) as HallStreamPayload;
+              if (typeof payload.version === 'number') {
+                onUpdateRef.current(payload as Required<Pick<HallStreamPayload, 'version'>> & Pick<HallStreamPayload, 'full' | 'items'>);
+              }
+            });
+          }
+        } catch {
+          if (!controller.signal.aborted) {
+            onErrorRef.current?.();
+          }
         }
-      } catch {
         if (!controller.signal.aborted) {
-          onErrorRef.current?.();
+          await new Promise<void>((resolve) => {
+            retryTimer = window.setTimeout(resolve, retryDelay);
+          });
+          retryDelay = Math.min(retryDelay * 2, 8_000);
         }
       }
     };
     connect();
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      if (retryTimer !== undefined) {
+        window.clearTimeout(retryTimer);
+      }
+    };
   }, [enabled]);
 }
