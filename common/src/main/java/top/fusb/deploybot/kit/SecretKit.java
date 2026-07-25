@@ -16,9 +16,9 @@ public final class SecretKit {
      * @return 合并后的结果
      */
     public static String mergeOptionalSecret(String currentValue, String requestValue) {
-        if (requestValue == null) {
+        if (TextKit.isBlank(requestValue)) {
             return currentValue;
         }
-        return TextKit.trimToNull(requestValue);
+        return requestValue.trim();
     }
 }

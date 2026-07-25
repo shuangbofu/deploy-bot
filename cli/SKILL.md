@@ -5,18 +5,19 @@ description: Use when Codex, Claude Code, OpenCode, or another local coding agen
 
 # Deploy Bot Agent Skill
 
-Use this as an Agent runbook. Do not ask the user to manually execute CLI commands unless the environment blocks you. The Agent should inspect, query, generate JSON, run precheck, and report results.
+Use this as an Agent runbook. The skill is the source of truth for the workflow; do not read Deploy Bot source code or the target project source code to guess behavior. Use explicit deployment manifests, user-provided values, existing Deploy Bot resources, CLI help, and CLI outputs instead. Do not ask the user to manually execute CLI commands unless the environment blocks you. The Agent should query Deploy Bot resources, generate JSON, run precheck, and report results.
 
 ## Fast Path
 
 1. Verify CLI access.
-2. Inspect the target repository.
-3. Query existing Deploy Bot resources.
-4. Choose an existing plugin/template.
-5. Generate a reviewable `pipeline.json`.
-6. Run precheck with `deployment.json`.
-7. Ask for confirmation only before writing/updating resources or deploying when target details are unclear or production-like.
-8. Trigger deployment only after precheck passes.
+2. Query existing Deploy Bot resources with narrow list commands.
+3. Read the repository deployment manifest if the user provided one.
+4. Ask for missing deployment inputs instead of scanning source code.
+5. Choose an existing plugin/template.
+6. Generate a reviewable `pipeline.json`.
+7. Run precheck with `deployment.json`.
+8. Ask for confirmation only before writing/updating resources or deploying when target details are unclear or production-like.
+9. Trigger deployment only after precheck passes.
 
 ## Required Environment
 
@@ -33,17 +34,22 @@ Verify the CLI command first:
 deploy-bot help
 ```
 
-If `deploy-bot` is not found, the local CLI has not been installed into `PATH`. Build and expose it from the local Deploy Bot repository. Prefer `DEPLOY_BOT_REPO` when the current working directory is another project:
+If `deploy-bot` is not found, the local CLI has not been installed into `PATH`. Do not search the current repository for Deploy Bot source code. First check whether the user provided an explicit CLI path:
 
 ```bash
-DEPLOY_BOT_REPO="${DEPLOY_BOT_REPO:-$(git rev-parse --show-toplevel 2>/dev/null)}"
+test -x "${DEPLOY_BOT_CLI:-}" && "$DEPLOY_BOT_CLI" help
+```
+
+If `DEPLOY_BOT_CLI` is missing, build and expose it only from an explicit local Deploy Bot repository path:
+
+```bash
 test -x "$DEPLOY_BOT_REPO/cli/bin/deploy-bot"
 mvn -f "$DEPLOY_BOT_REPO/pom.xml" -pl cli -am -DskipTests package
 mkdir -p "$HOME/.local/bin"
 ln -sf "$DEPLOY_BOT_REPO/cli/bin/deploy-bot" "$HOME/.local/bin/deploy-bot"
 ```
 
-If this fails because `DEPLOY_BOT_REPO` is empty or points to another repository, ask the user for their local Deploy Bot repository path. If `$HOME/.local/bin` is not in `PATH`, either add it for the current shell or call `$HOME/.local/bin/deploy-bot` directly.
+If `DEPLOY_BOT_REPO` is empty, ask the user for the CLI path or their local Deploy Bot repository path. Never infer `DEPLOY_BOT_REPO` from the current Git repository because the current directory is usually the application being deployed. If `$HOME/.local/bin` is not in `PATH`, either add it for the current shell or call `$HOME/.local/bin/deploy-bot` directly.
 
 Use the repository-local form only when the current working directory is the Deploy Bot repository:
 
@@ -64,15 +70,11 @@ deploy-bot templates list --plugin-id <plugin-id> --limit 20
 
 Use the output to match existing project, host, plugin, and template IDs. If a required resource is missing, decide whether to create it or ask the user.
 
-Then inspect the target repo to infer deployment shape and default branch:
+Do not inspect target project source code. If project type, Git URL, branch, build command, artifact path, runtime, startup command, target host, or target directory is unclear, use one of these sources only:
 
-```bash
-git remote -v
-git branch --show-current
-find . -maxdepth 3 -name pom.xml -o -name package.json -o -name Dockerfile
-```
-
-Use the output to choose Spring Boot, Node static, fullstack, or another available plugin.
+- A deployment manifest explicitly provided by the project or user, such as `deploybot.json`.
+- Existing Deploy Bot project, template, pipeline, and plugin-plan outputs.
+- Direct user answers.
 
 If a pipeline may already exist, inspect it before creating anything new:
 
@@ -98,16 +100,31 @@ Before creating/updating a pipeline, know these values:
 
 If `targetHostId`, `targetDir`, runtime, branch, or production-like target is ambiguous, ask the user a short question before writing anything.
 
-## Project Detection
+## Deployment Input Source
 
-Choose deployment shape from local files:
+Do not detect deployment shape by reading source code. A project that wants Agent onboarding should provide a small deployment manifest, or the user should provide the missing fields during the conversation.
 
-- Spring Boot Jar: `pom.xml` or `build.gradle`, Spring Boot dependency, `@SpringBootApplication`, Jar output.
-- Node static site: `package.json`, Vite/Webpack/React/Vue, static output such as `dist` or `build`.
-- Fullstack: frontend and Spring Boot backend released from one repository.
-- Dockerfile: only use Docker if Deploy Bot exposes a Docker plugin/template. Do not invent Docker support.
+A recommended `deploybot.json` shape:
 
-Collect:
+```json
+{
+  "projectName": "my-service",
+  "gitUrl": "git@github.com:owner/repo.git",
+  "defaultBranch": "main",
+  "pluginId": "springboot-deployment",
+  "builtinTemplateKey": "default",
+  "targetDir": "/home/admin/apps/my-service",
+  "buildCommand": "mvn clean package -DskipTests",
+  "artifactPath": "target/my-service.jar",
+  "startupArgs": "--spring.profiles.active=test",
+  "startupKeyword": "Started",
+  "tags": ["test"]
+}
+```
+
+This manifest is optional, but missing values must come from platform queries or user input. If the manifest is absent, do not scan `pom.xml`, `package.json`, `Dockerfile`, source directories, or arbitrary files to infer values.
+
+Required values must come from the manifest, platform queries, or direct user answers:
 
 - Git URL and current branch.
 - build command.

@@ -984,31 +984,27 @@ export default function SystemSettingsPage({ scope = 'admin' }: Props) {
               </Space>
             </div>
           </div>
-          <Collapse
-            ghost
-            className="mt-4"
-            items={[
-              {
-                key: 'host-script',
-                label: '快捷脚本：追加到 authorized_keys',
-                children: (
-                  <div className="space-y-3">
-                    <div className="text-sm leading-7 text-slate-600">
-                      登录到目标主机后，进入任意目录执行这段脚本即可。它会自动创建 `~/.ssh`，并把当前公钥追加到 `authorized_keys`。
-                    </div>
-                    <Space wrap>
-                      <Button disabled={!hostInstallScript} onClick={() => openPreview('主机 SSH 快捷脚本', hostInstallScript)}>
-                        查看脚本
-                      </Button>
-                      <Button disabled={!hostInstallScript} onClick={() => copyText(hostInstallScript).then(() => message.success('快捷脚本已复制')).catch(() => message.error('复制失败，请点击“查看脚本”后手动复制'))}>
-                        复制脚本
-                      </Button>
-                    </Space>
-                  </div>
-                ),
-              },
-            ]}
-          />
+          <div className="mt-4 rounded-2xl border border-sky-100 bg-sky-50/70 p-4 dark:border-sky-500/20 dark:bg-sky-500/10">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">快捷脚本：追加到 authorized_keys</div>
+                <div className="mt-1 text-sm leading-7 text-slate-600 dark:text-slate-300">
+                  登录到目标主机后执行这段脚本，会自动创建 ~/.ssh，并把当前主机公钥追加到 authorized_keys。
+                </div>
+              </div>
+              <Space wrap>
+                <Button disabled={!hostInstallScript} onClick={() => openPreview('主机 SSH 快捷脚本', hostInstallScript)}>
+                  查看脚本
+                </Button>
+                <Button type="primary" disabled={!hostInstallScript} onClick={() => copyText(hostInstallScript).then(() => message.success('快捷脚本已复制')).catch(() => message.error('复制失败，请点击“查看脚本”后手动复制'))}>
+                  复制脚本
+                </Button>
+              </Space>
+            </div>
+            {!hostInstallScript ? (
+              <div className="mt-3 text-sm text-amber-600 dark:text-amber-300">生成主机 SSH 密钥对后，系统会自动生成这段脚本。</div>
+            ) : null}
+          </div>
           <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-7 text-slate-600">
             这套密钥专门用于平台登录远程主机执行部署。请把上面的公钥添加到目标主机的 `authorized_keys`，不要和 Git 仓库的 SSH 密钥混用。
           </div>
