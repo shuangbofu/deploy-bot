@@ -269,9 +269,9 @@ public class SpringBootDeploymentPlugin extends AbstractManagedServiceDeployment
             return;
         }
         String javaCommand = ShellKit.joinCommandFragments(
-                "env LANG=C.UTF-8 LC_ALL=C.UTF-8 java",
+                "java",
                 variables.get("javaOpts"),
-                withDefaultEncodingProperties(variables.get("javaSystemProperties")),
+                variables.get("javaSystemProperties"),
                 "-jar " + ShellKit.singleQuote(serviceName + ".jar"),
                 variables.get("springBootArgs"),
                 variables.get("applicationArgs")
@@ -285,25 +285,6 @@ public class SpringBootDeploymentPlugin extends AbstractManagedServiceDeployment
         );
         variables.put("startCommand", startCommand);
         variables.put("START_COMMAND", startCommand);
-    }
-
-    private String withDefaultEncodingProperties(String javaSystemProperties) {
-        String properties = TextKit.trimToNull(javaSystemProperties);
-        java.util.List<String> defaults = new java.util.ArrayList<>();
-        if (!containsJvmProperty(properties, "file.encoding")) {
-            defaults.add("-Dfile.encoding=UTF-8");
-        }
-        if (!containsJvmProperty(properties, "sun.jnu.encoding")) {
-            defaults.add("-Dsun.jnu.encoding=UTF-8");
-        }
-        return ShellKit.joinCommandFragments(properties, String.join(" ", defaults));
-    }
-
-    private boolean containsJvmProperty(String properties, String key) {
-        return properties != null && java.util.regex.Pattern
-                .compile("(^|\\s)-D" + java.util.regex.Pattern.quote(key) + "=")
-                .matcher(properties)
-                .find();
     }
 
     /**
