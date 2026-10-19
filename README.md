@@ -5,7 +5,7 @@
 
 <p align="center">
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-0f766e.svg" alt="MIT License" /></a>
-  <a href="https://fusb.top/deploy-bot"><img src="https://img.shields.io/badge/官网-fusb.top%2Fdeploy--bot-285fbd.svg" alt="介绍网站" /></a>
+  <a href="https://deploy-bot.site.fusb.top/"><img src="https://img.shields.io/badge/官网-deploy--bot.site.fusb.top-285fbd.svg" alt="介绍网站" /></a>
   <img src="https://img.shields.io/badge/java-17-f59e0b.svg" alt="Java 17" />
   <img src="https://img.shields.io/badge/backend-Spring%20Boot%203.3.5-111827.svg" alt="Spring Boot 3.3.5" />
   <img src="https://img.shields.io/badge/frontend-React%2018.3-2563eb.svg" alt="React 18.3" />
@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  介绍与文档：<a href="https://fusb.top/deploy-bot">https://fusb.top/deploy-bot</a>
+  介绍与文档：<a href="https://deploy-bot.site.fusb.top/">https://deploy-bot.site.fusb.top/</a>
 </p>
 
 ## 项目定位
@@ -168,33 +168,33 @@ scripts/    一次性维护脚本或迁移脚本
 
 ### 登录页
 
-![Deploy Bot 登录页](https://fusb.top/deploy-bot/docs/screenshots/login.png)
+![Deploy Bot 登录页](https://deploy-bot.site.fusb.top/docs/screenshots/login.png)
 
 ### 仪表盘
 
-![仪表盘](https://fusb.top/deploy-bot/docs/screenshots/admin-dashboard.png)
+![仪表盘](https://deploy-bot.site.fusb.top/docs/screenshots/admin-dashboard.png)
 
 ### 管理员流水线管理
 
-![管理员流水线管理](https://fusb.top/deploy-bot/docs/screenshots/admin-pipelines.png)
+![管理员流水线管理](https://deploy-bot.site.fusb.top/docs/screenshots/admin-pipelines.png)
 
 ### 普通用户流水线大厅
 
-![普通用户流水线大厅](https://fusb.top/deploy-bot/docs/screenshots/user-pipelines.png)
+![普通用户流水线大厅](https://deploy-bot.site.fusb.top/docs/screenshots/user-pipelines.png)
 
 使用文章和 Docker 快速启动说明已经整理到独立站点。
 
-- [Deploy Bot 官网与文档](https://fusb.top/deploy-bot)
-- [Deploy Bot 介绍 01：为什么做 Deploy Bot](https://fusb.top/deploy-bot/#/docs/articles/01-why-deploy-bot.md)
-- [Deploy Bot 使用介绍 02：登录、仪表盘与工作台入口](https://fusb.top/deploy-bot/#/docs/articles/02-login-dashboard-and-dual-views.md)
-- [Deploy Bot 使用介绍 03：项目怎么配置](https://fusb.top/deploy-bot/#/docs/articles/03-project-setup.md)
-- [Deploy Bot 使用介绍 04：主机怎么配置](https://fusb.top/deploy-bot/#/docs/articles/04-host-setup.md)
-- [Deploy Bot 使用介绍 05：运行环境怎么配置](https://fusb.top/deploy-bot/#/docs/articles/05-runtime-environments.md)
-- [Deploy Bot 使用介绍 06：插件和模板怎么设计](https://fusb.top/deploy-bot/#/docs/articles/06-template-design.md)
-- [Deploy Bot 使用介绍 07：流水线怎么拼出完整部署流程](https://fusb.top/deploy-bot/#/docs/articles/07-pipeline-setup.md)
-- [Deploy Bot 使用介绍 08：怎么发起部署、查看记录与详情](https://fusb.top/deploy-bot/#/docs/articles/08-deployments-and-history.md)
-- [Deploy Bot 使用介绍 09：服务、通知与系统设置怎么用](https://fusb.top/deploy-bot/#/docs/articles/09-ops-and-settings.md)
-- [Docker 快速启动](https://fusb.top/deploy-bot/#/docs/docker-quick-start.md)
+- [Deploy Bot 官网与文档](https://deploy-bot.site.fusb.top/)
+- [Deploy Bot 介绍 01：为什么做 Deploy Bot](https://deploy-bot.site.fusb.top/#/docs/articles/01-why-deploy-bot.md)
+- [Deploy Bot 使用介绍 02：登录、仪表盘与工作台入口](https://deploy-bot.site.fusb.top/#/docs/articles/02-login-dashboard-and-dual-views.md)
+- [Deploy Bot 使用介绍 03：项目怎么配置](https://deploy-bot.site.fusb.top/#/docs/articles/03-project-setup.md)
+- [Deploy Bot 使用介绍 04：主机怎么配置](https://deploy-bot.site.fusb.top/#/docs/articles/04-host-setup.md)
+- [Deploy Bot 使用介绍 05：运行环境怎么配置](https://deploy-bot.site.fusb.top/#/docs/articles/05-runtime-environments.md)
+- [Deploy Bot 使用介绍 06：插件和模板怎么设计](https://deploy-bot.site.fusb.top/#/docs/articles/06-template-design.md)
+- [Deploy Bot 使用介绍 07：流水线怎么拼出完整部署流程](https://deploy-bot.site.fusb.top/#/docs/articles/07-pipeline-setup.md)
+- [Deploy Bot 使用介绍 08：怎么发起部署、查看记录与详情](https://deploy-bot.site.fusb.top/#/docs/articles/08-deployments-and-history.md)
+- [Deploy Bot 使用介绍 09：服务、通知与系统设置怎么用](https://deploy-bot.site.fusb.top/#/docs/articles/09-ops-and-settings.md)
+- [Docker 快速启动](https://deploy-bot.site.fusb.top/#/docs/docker-quick-start.md)
 
 ## 本地快速部署到云端
 
@@ -233,7 +233,7 @@ docker compose up -d --build
 http://localhost:8080
 ```
 
-运行数据会挂载到项目根目录的 `runtime`，升级或重建容器时保留这个目录即可。更多端口、访问地址和 JVM 参数配置见 [Docker 快速启动](https://fusb.top/deploy-bot/#/docs/docker-quick-start.md)。
+运行数据会挂载到项目根目录的 `runtime`，升级或重建容器时保留这个目录即可。更多端口、访问地址和 JVM 参数配置见 [Docker 快速启动](https://deploy-bot.site.fusb.top/#/docs/docker-quick-start.md)。
 
 ### 1. 启动后端
 
